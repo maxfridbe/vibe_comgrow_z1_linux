@@ -52,6 +52,17 @@ struct AppState {
     paths: Vec<PathSegment>,
     last_command: String,
     copied_at: Option<std::time::Instant>,
+    serial_logs: Vec<String>,
+}
+
+impl AppState {
+    fn log_command(&mut self, cmd: String) {
+        self.last_command = cmd.clone();
+        self.serial_logs.push(cmd);
+        if self.serial_logs.len() > 10 {
+            self.serial_logs.remove(0);
+        }
+    }
 }
 
 struct StringArena {
@@ -100,6 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         paths: Vec::new(),
         last_command: String::new(),
         copied_at: None,
+        serial_logs: Vec::new(),
     }));
 
     let (mut rl, thread) = raylib::init()
@@ -335,7 +347,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                             if mouse_pressed {
                                                 let mut guard = state.lock().unwrap();
                                                 let full_cmd = format!("echo '{}' > {}", cmd.cmd, guard.port);
-                                                guard.last_command = full_cmd.clone();
+                                                guard.log_command(full_cmd.clone());
                                                 guard.copied_at = Some(std::time::Instant::now());
                                                 if let Some(cb) = &mut clipboard {
                                                     let _ = cb.set_text(full_cmd);
@@ -364,7 +376,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                 // Middle Column: Virtual Canvas
                 let mut mid_col = Declaration::<Texture2D, ()>::new();
-                mid_col.layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).child_gap((16.0 * font_scale) as u16).end();
+                mid_col.layout()
+                    .width(grow!())
+                    .height(fixed!(400.0 * font_scale))
+                    .direction(LayoutDirection::TopToBottom)
+                    .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
+                    .child_gap((16.0 * font_scale) as u16)
+                    .end();
                 clay_scope.with(&mid_col, |clay_scope| {
                     let mut canvas_box = Declaration::<Texture2D, ()>::new();
                     canvas_box.id(clay_scope.id("canvas"))
@@ -482,7 +500,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                         let mut guard = state.lock().unwrap();
                                         guard.v_pos = Vector2::new(0.0, 0.0);
                                         let cmd = format!("echo 'G92 X0 Y0' > {}", guard.port);
-                                        guard.last_command = cmd.clone();
+                                        guard.log_command(cmd.clone());
                                         guard.copied_at = Some(std::time::Instant::now());
                                         if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
                                     }
@@ -540,7 +558,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 guard.v_pos.x = new_x;
                                 
                                 let cmd = format!("echo 'G1 X{:.2} F{} S{}' > {}", new_x, f, s, port);
-                                guard.last_command = cmd.clone();
+                                guard.log_command(cmd.clone());
                                 guard.copied_at = Some(std::time::Instant::now());
                                 if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
                             }
@@ -563,7 +581,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 let mut guard = state.lock().unwrap();
                                 let fire_cmd = if guard.wattage == "10W" { "M3 S5" } else { "M3 S10" };
                                 let cmd = format!("echo '{}' > {}", fire_cmd, guard.port);
-                                guard.last_command = cmd.clone();
+                                guard.log_command(cmd.clone());
                                 guard.copied_at = Some(std::time::Instant::now());
                                 if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
                             }
@@ -580,6 +598,30 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 });
             });
 
+            // Serial Output
+            let mut serial_box = Declaration::<Texture2D, ()>::new();
+            serial_box.layout()
+                .width(grow!())
+                .height(fixed!(150.0 * font_scale))
+                .padding(Padding::all((12.0 * font_scale) as u16))
+                .direction(LayoutDirection::TopToBottom)
+                .child_gap((4.0 * font_scale) as u16)
+                .end()
+                .background_color(Color::u_rgb(2, 6, 23))
+                .corner_radius().all(16.0 * font_scale).end();
+            
+            clay_scope.with(&serial_box, |clay_scope| {
+                clay_scope.text("SERIAL OUTPUT (RECENT COMMANDS)", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
+                
+                let logs = {
+                    let guard = state.lock().unwrap();
+                    guard.serial_logs.clone()
+                };
+                
+                for log in logs.iter().rev() {
+                    clay_scope.text(arena.push(log.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
+                }
+            });
 
             // Footer
             let mut footer_box = Declaration::<Texture2D, ()>::new();
@@ -623,13 +665,25 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         // Draw Canvas Content
         if canvas_rect.width > 0.0 {
-            let margin = 20.0;
-            let draw_area = raylib::math::Rectangle::new(canvas_rect.x + margin, canvas_rect.y + margin, canvas_rect.width - margin * 2.0, canvas_rect.height - margin * 2.0);
+            let margin = 20.0 * font_scale;
+            let full_draw_width = canvas_rect.width - margin * 2.0;
+            let full_draw_height = canvas_rect.height - margin * 2.0;
+            let side = full_draw_width.min(full_draw_height);
+            
+            let offset_x = (full_draw_width - side) / 2.0;
+            let offset_y = (full_draw_height - side) / 2.0;
+
+            let draw_area = raylib::math::Rectangle::new(
+                canvas_rect.x + margin + offset_x, 
+                canvas_rect.y + margin + offset_y, 
+                side, 
+                side
+            );
             
             // Grid
             for i in 0..=10 {
-                let x = draw_area.x + (i as f32 / 10.0) * draw_area.width;
-                let y = draw_area.y + (i as f32 / 10.0) * draw_area.height;
+                let x = draw_area.x + (i as f32 / 10.0) * side;
+                let y = draw_area.y + (i as f32 / 10.0) * side;
                 d.draw_line_v(raylib::math::Vector2::new(x, draw_area.y), raylib::math::Vector2::new(x, draw_area.y + draw_area.height), raylib::color::Color::new(59, 130, 246, 20));
                 d.draw_line_v(raylib::math::Vector2::new(draw_area.x, y), raylib::math::Vector2::new(draw_area.x + draw_area.width, y), raylib::color::Color::new(59, 130, 246, 20));
             }
@@ -637,15 +691,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // Paths
             let guard = state.lock().unwrap();
             for p in &guard.paths {
-                let start = raylib::math::Vector2::new(draw_area.x + (p.x1 / 400.0) * draw_area.width, draw_area.y + draw_area.height - (p.y1 / 400.0) * draw_area.height);
-                let end = raylib::math::Vector2::new(draw_area.x + (p.x2 / 400.0) * draw_area.width, draw_area.y + draw_area.height - (p.y2 / 400.0) * draw_area.height);
+                let start = raylib::math::Vector2::new(draw_area.x + (p.x1 / 400.0) * side, draw_area.y + draw_area.height - (p.y1 / 400.0) * side);
+                let end = raylib::math::Vector2::new(draw_area.x + (p.x2 / 400.0) * side, draw_area.y + draw_area.height - (p.y2 / 400.0) * side);
                 d.draw_line_ex(start, end, 2.0, raylib::color::Color::new(255, 71, 87, (p.s / 1000.0 * 255.0) as u8));
             }
 
             // Laser Head
-            let head_pos = raylib::math::Vector2::new(draw_area.x + (guard.v_pos.x / 400.0) * draw_area.width, draw_area.y + draw_area.height - (guard.v_pos.y / 400.0) * draw_area.height);
-            d.draw_circle_v(head_pos, 5.0, raylib::color::Color::new(59, 130, 246, 100));
-            d.draw_circle_v(head_pos, 2.0, raylib::color::Color::RED);
+            let head_pos = raylib::math::Vector2::new(draw_area.x + (guard.v_pos.x / 400.0) * side, draw_area.y + draw_area.height - (guard.v_pos.y / 400.0) * side);
+            d.draw_circle_v(head_pos, 5.0 * font_scale, raylib::color::Color::new(59, 130, 246, 100));
+            d.draw_circle_v(head_pos, 2.0 * font_scale, raylib::color::Color::RED);
         }
     }
 
@@ -678,7 +732,7 @@ fn render_jog_btn<'a, 'render>(
                 guard.v_pos.y = (guard.v_pos.y + d * direction).clamp(0.0, 400.0);
             }
             let cmd = format!("echo '$J=G91 G21 {}{} F{}' > {}", axis, direction * d, guard.feed_rate, guard.port);
-            guard.last_command = cmd.clone();
+            guard.log_command(cmd.clone());
             guard.copied_at = Some(std::time::Instant::now());
             if let Some(cb) = clipboard { let _ = cb.set_text(cmd); }
         }
