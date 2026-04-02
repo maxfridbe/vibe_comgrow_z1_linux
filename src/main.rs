@@ -274,7 +274,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             header_decl.layout()
                     .width(grow!())
                     .height(fixed!(80.0 * font_scale))
-                    .padding(Padding::all(6))
+                    .padding(Padding::all(3))
                     .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
                 .end()
                 .background_color(Color::u_rgb(30, 41, 59)) // slate-900
