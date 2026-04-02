@@ -141,7 +141,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut clay = Clay::new(Dimensions::new(rl.get_screen_width() as f32, rl.get_screen_height() as f32));
     clay.set_measure_text_function(|text, config| {
         let size = config.font_size as f32;
-        let width = text.len() as f32 * (size * 0.52);
+        let width = text.len() as f32 * (size * 0.60);
         Dimensions::new(width, size)
     });
     let arena = StringArena::new();
@@ -600,12 +600,19 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             // Serial Output
             let mut serial_box = Declaration::<Texture2D, ()>::new();
-            serial_box.layout()
-                .width(grow!())
-                .height(fixed!(150.0 * font_scale))
-                .padding(Padding::all((12.0 * font_scale) as u16))
-                .direction(LayoutDirection::TopToBottom)
-                .child_gap((4.0 * font_scale) as u16)
+            serial_box
+                .floating()
+                    .attach_points(clay_layout::elements::FloatingAttachPointType::CenterBottom, clay_layout::elements::FloatingAttachPointType::CenterBottom)
+                    .attach_to(clay_layout::elements::FloatingAttachToElement::Parent)
+                    .z_index(1000)
+                    .parent_id(clay_scope.id("root").id.id)
+                .end()
+                .layout()
+                    .width(grow!())
+                    .height(fixed!(150.0 * font_scale))
+                    .padding(Padding::all((12.0 * font_scale) as u16))
+                    .direction(LayoutDirection::TopToBottom)
+                    .child_gap((4.0 * font_scale) as u16)
                 .end()
                 .background_color(Color::u_rgb(2, 6, 23))
                 .corner_radius().all(16.0 * font_scale).end();
