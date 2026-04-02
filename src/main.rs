@@ -465,6 +465,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 right_col.layout()
                     .height(grow!())
                     .direction(LayoutDirection::TopToBottom)
+                    .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
                     .child_gap(16)
                     .width(fit!())
                     .end();
@@ -497,12 +498,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         jog_grid.layout().child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).direction(LayoutDirection::TopToBottom).child_gap(8).end();
                         clay_scope.with(&jog_grid, |clay_scope| {
                             // Up
-                            let mut row1 = Declaration::<Texture2D, ()>::new(); row1.layout().child_gap(8).end();
+                            let mut row1 = Declaration::<Texture2D, ()>::new(); row1.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
                             clay_scope.with(&row1, |clay_scope| {
                                 render_jog_btn(clay_scope, "up", ICON_ARROW_UP, &state, "Y", 1.0, mouse_pressed, &mut clipboard, font_scale);
                             });
                             // Left, Cross, Right
-                            let mut row2 = Declaration::<Texture2D, ()>::new(); row2.layout().child_gap(8).end();
+                            let mut row2 = Declaration::<Texture2D, ()>::new(); row2.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
                             clay_scope.with(&row2, |clay_scope| {
                                 render_jog_btn(clay_scope, "left", ICON_ARROW_LEFT, &state, "X", -1.0, mouse_pressed, &mut clipboard, font_scale);
                                 
@@ -536,7 +537,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 render_jog_btn(clay_scope, "right", ICON_ARROW_RIGHT, &state, "X", 1.0, mouse_pressed, &mut clipboard, font_scale);
                             });
                             // Down
-                            let mut row3 = Declaration::<Texture2D, ()>::new(); row3.layout().child_gap(8).end();
+                            let mut row3 = Declaration::<Texture2D, ()>::new(); row3.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
                             clay_scope.with(&row3, |clay_scope| {
                                 render_jog_btn(clay_scope, "down", ICON_ARROW_DOWN, &state, "Y", -1.0, mouse_pressed, &mut clipboard, font_scale);
                             });
@@ -611,6 +612,54 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         };
                         render_slider(clay_scope, "power_slider", "Intensity (S)", pwr, 0.0, 1000.0, Color::u_rgb(168, 85, 247), &state, |s, v| s.power = v, mouse_pos, mouse_down, &arena, font_scale);
 
+                        // Laser ON/OFF row
+                        let mut laser_row = Declaration::<Texture2D, ()>::new();
+                        laser_row.layout().width(grow!()).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
+                        clay_scope.with(&laser_row, |clay_scope| {
+                            let on_id = clay_scope.id("laser_on_btn");
+                            let mut on_color = Color::u_rgb(153, 27, 27); // red-800
+                            if clay_scope.pointer_over(on_id) {
+                                on_color = Color::u_rgb(185, 28, 28); // red-700
+                                if mouse_pressed {
+                                    let mut guard = state.lock().unwrap();
+                                    let s = guard.power;
+                                    let cmd = format!("echo 'M3 S{:.0}' > {}", s, guard.port);
+                                    guard.log_command(cmd.clone());
+                                    guard.copied_at = Some(std::time::Instant::now());
+                                    if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
+                                }
+                            }
+                            let mut on_btn = Declaration::<Texture2D, ()>::new();
+                            on_btn.id(on_id)
+                                .layout().width(fixed!(85.0 * font_scale)).padding(Padding::all(6)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                                .background_color(on_color)
+                                .corner_radius().all(12.0 * font_scale).end();
+                            clay_scope.with(&on_btn, |clay_scope| {
+                                clay_scope.text("LASER ON", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+                            });
+
+                            let off_id = clay_scope.id("laser_off_btn");
+                            let mut off_color = Color::u_rgb(51, 65, 85); // slate-700
+                            if clay_scope.pointer_over(off_id) {
+                                off_color = Color::u_rgb(71, 85, 105); // slate-600
+                                if mouse_pressed {
+                                    let mut guard = state.lock().unwrap();
+                                    let cmd = format!("echo 'M5' > {}", guard.port);
+                                    guard.log_command(cmd.clone());
+                                    guard.copied_at = Some(std::time::Instant::now());
+                                    if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
+                                }
+                            }
+                            let mut off_btn = Declaration::<Texture2D, ()>::new();
+                            off_btn.id(off_id)
+                                .layout().width(fixed!(85.0 * font_scale)).padding(Padding::all(6)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                                .background_color(off_color)
+                                .corner_radius().all(12.0 * font_scale).end();
+                            clay_scope.with(&off_btn, |clay_scope| {
+                                clay_scope.text("LASER OFF", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+                            });
+                        });
+
                         let burn_id = clay_scope.id("burn_btn");
                         let mut burn_color = Color::u_rgb(147, 51, 234); // purple-600
                         if clay_scope.pointer_over(burn_id) {
@@ -637,8 +686,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         let mut burn_btn = Declaration::<Texture2D, ()>::new();
                         burn_btn.id(burn_id)
                             .layout()
-                                .width(fixed!(100.0 * font_scale))
-                                .padding(Padding::all(4))
+                                .width(fixed!(140.0 * font_scale))
+                                .padding(Padding::all(6))
                                 .direction(LayoutDirection::TopToBottom)
                                 .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
                             .end()
@@ -664,8 +713,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         let mut fire_btn = Declaration::<Texture2D, ()>::new();
                         fire_btn.id(fire_id)
                             .layout()
-                                .width(fixed!(100.0 * font_scale))
-                                .padding(Padding::all(4))
+                                .width(fixed!(140.0 * font_scale))
+                                .padding(Padding::all(6))
                                 .direction(LayoutDirection::TopToBottom)
                                 .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
                             .end()
@@ -874,7 +923,7 @@ fn render_slider<'a, 'render, F>(
 {
     let slider_id = clay.id(id);
     let mut container = Declaration::<Texture2D, ()>::new();
-    container.layout().width(fixed!(180.0 * font_scale)).direction(LayoutDirection::TopToBottom).child_gap(4).end();
+    container.layout().width(fixed!(180.0 * font_scale)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(4).end();
     
     clay.with(&container, |clay| {
         let mut header = Declaration::<Texture2D, ()>::new();
