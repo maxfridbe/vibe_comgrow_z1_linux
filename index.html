@@ -1,0 +1,324 @@
+
+import React, { useState } from 'react';
+import { 
+  Terminal, 
+  Move, 
+  Zap, 
+  Home, 
+  Unlock, 
+  Settings, 
+  CheckCircle2, 
+  ArrowUp, 
+  ArrowDown, 
+  ArrowLeft, 
+  ArrowRight,
+  Crosshair,
+  Usb,
+  Flame,
+  Gauge,
+  ShieldAlert,
+  RefreshCw,
+  Cpu,
+  Trash2,
+  Layers
+} from 'lucide-react';
+
+const App = () => {
+  // Machine State
+  const [distance, setDistance] = useState(10);
+  const [feedRate, setFeedRate] = useState(1000);
+  const [power, setPower] = useState(100);
+  const [port, setPort] = useState('/dev/ttyUSB0');
+  const [wattage, setWattage] = useState('10W');
+  
+  // Virtual State
+  const [vPos, setVPos] = useState({ x: 0, y: 0 }); 
+  const [paths, setPaths] = useState([]); 
+  const [lastCommand, setLastCommand] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const formatBash = (grblCmd) => `echo '${grblCmd}' > ${port}`;
+
+  const copyToClipboard = (text, updateVirtual = false, delta = null) => {
+    const fullCmd = formatBash(text);
+    const textArea = document.createElement("textarea");
+    textArea.value = fullCmd;
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      setLastCommand(fullCmd);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+
+      if (delta) {
+        setVPos(prev => {
+          const newX = Math.max(0, Math.min(400, prev.x + (delta.x || 0)));
+          const newY = Math.max(0, Math.min(400, prev.y + (delta.y || 0)));
+          if (delta.isBurn) {
+             setPaths(curr => [...curr, { x1: prev.x, y1: prev.y, x2: newX, y2: newY, s: power }]);
+          }
+          return { x: newX, y: newY };
+        });
+      }
+    } catch (err) {
+      console.error('Copy failed', err);
+    }
+    document.body.removeChild(textArea);
+  };
+
+  const generateJog = (axis, direction) => {
+    const d = parseFloat(distance);
+    const cmd = `$J=G91 G21 ${axis}${direction * d} F${feedRate}`;
+    copyToClipboard(cmd, true, { 
+      x: axis === 'X' ? direction * d : 0, 
+      y: axis === 'Y' ? direction * d : 0,
+      isBurn: false 
+    });
+  };
+
+  const clearCanvas = () => setPaths([]);
+  const resetVirtualPos = () => {
+    setVPos({ x: 0, y: 0 });
+    copyToClipboard('G92 X0 Y0');
+  };
+
+  const commandSections = [
+    {
+      title: "Real-Time & System",
+      icon: <RefreshCw className="w-4 h-4 text-blue-400" />,
+      commands: [
+        { label: 'Status', cmd: '?' },
+        { label: 'Hold', cmd: '!' },
+        { label: 'Resume', cmd: '~' },
+        { label: 'Unlock', cmd: '$X' },
+        { label: 'Home', cmd: '$H' },
+        { label: 'Reset', cmd: '0x18' },
+      ]
+    },
+    {
+      title: "Laser & Air",
+      icon: <Flame className="w-4 h-4 text-orange-400" />,
+      commands: [
+        { label: 'Dynamic', cmd: 'M4' },
+        { label: 'Constant', cmd: 'M3' },
+        { label: 'Off', cmd: 'M5' },
+        { label: 'Air On', cmd: 'M8' },
+        { label: 'Air Off', cmd: 'M9' },
+      ]
+    },
+    {
+      title: "Calibration",
+      icon: <Gauge className="w-4 h-4 text-emerald-400" />,
+      commands: [
+        { label: 'Max S', cmd: '$30=1000' },
+        { label: 'Laser Mode', cmd: '$32=1' },
+        { label: 'Y-Steps', cmd: '$101=80' },
+        { label: 'Rotary', cmd: '$101=65' },
+        { label: 'X-Steps', cmd: '$100=80' },
+      ]
+    },
+    {
+      title: "Safety",
+      icon: <ShieldAlert className="w-4 h-4 text-red-400" />,
+      commands: [
+        { label: 'Gyro', cmd: '$140=16' },
+        { label: 'Hard Lmt', cmd: '$21=1' },
+        { label: 'Soft Lmt', cmd: '$20=1' },
+        { label: 'X-Travel', cmd: '$130=400' },
+        { label: 'Y-Travel', cmd: '$131=400' },
+      ]
+    },
+    {
+      title: "Modals",
+      icon: <Layers className="w-4 h-4 text-purple-400" />,
+      commands: [
+        { label: 'Abs', cmd: 'G90' },
+        { label: 'Inc', cmd: 'G91' },
+        { label: 'mm', cmd: 'G21' },
+        { label: 'inch', cmd: 'G20' },
+      ]
+    }
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 font-sans selection:bg-blue-500/30">
+      <div className="max-w-[1600px] mx-auto space-y-6">
+        
+        {/* Header */}
+        <header className="flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-900 p-5 rounded-2xl border border-slate-800">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-blue-600 rounded-xl shadow-lg">
+              <Terminal className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <h1 className="text-xl font-black uppercase tracking-tight italic">Z1 Power Dash</h1>
+              <p className="text-[10px] text-slate-500 font-mono tracking-widest uppercase italic">Full Protocol Implementation • {wattage}</p>
+            </div>
+          </div>
+          
+          <div className="flex gap-3">
+            <div className="flex items-center gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
+              <Usb className="w-4 h-4 text-blue-400" />
+              <input 
+                type="text" value={port} onChange={(e) => setPort(e.target.value)}
+                className="bg-transparent border-none text-xs focus:ring-0 text-blue-200 w-28 font-mono"
+              />
+            </div>
+            <div className="flex items-center gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800">
+              <Cpu className="w-4 h-4 text-purple-400" />
+              <select 
+                value={wattage} onChange={(e) => setWattage(e.target.value)}
+                className="bg-transparent border-none text-xs font-bold uppercase focus:ring-0 text-purple-300 cursor-pointer"
+              >
+                <option value="5W" className="bg-slate-900">5W</option>
+                <option value="10W" className="bg-slate-900">10W</option>
+              </select>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Interface Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          {/* LEFT COLUMN: Quick Command Sets */}
+          <div className="lg:col-span-3 space-y-4">
+            <div className="grid grid-cols-1 gap-4">
+              {commandSections.map((section) => (
+                <section key={section.title} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 space-y-3 shadow-lg">
+                  <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2 border-b border-slate-800 pb-2">
+                    {section.icon} {section.title}
+                  </h2>
+                  <div className="grid grid-cols-2 gap-2">
+                    {section.commands.map((c) => (
+                      <button
+                        key={c.label}
+                        onClick={() => copyToClipboard(c.cmd)}
+                        className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-950/50 hover:bg-slate-800 border border-slate-800 group transition-all text-center"
+                      >
+                        <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-100 mb-0.5 tracking-tight">{c.label}</span>
+                        <code className="text-[8px] font-mono text-slate-600 group-hover:text-blue-400 uppercase tracking-tighter">{c.cmd}</code>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </div>
+
+          {/* MIDDLE COLUMN: Virtual Canvas */}
+          <div className="lg:col-span-6 space-y-4">
+            <section className="bg-slate-900 p-1 rounded-2xl border border-slate-800 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-4 left-4 z-10 flex items-center gap-2 bg-black/60 backdrop-blur px-3 py-1.5 rounded-lg border border-white/10 text-[11px] font-mono shadow-xl">
+                <span className="text-blue-400">X: {vPos.x.toFixed(1)}</span>
+                <span className="text-slate-600">|</span>
+                <span className="text-blue-400">Y: {vPos.y.toFixed(1)}</span>
+              </div>
+              <div className="absolute top-4 right-4 z-10">
+                <button onClick={clearCanvas} className="p-2.5 bg-red-900/40 hover:bg-red-900/60 rounded-xl border border-red-500/30 text-red-400 transition-all shadow-xl" title="Wipe Simulation">
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="aspect-square w-full bg-slate-950 relative overflow-hidden flex items-center justify-center p-6">
+                <div className="absolute inset-0 opacity-[0.03]" 
+                  style={{ backgroundImage: 'linear-gradient(#3b82f6 1px, transparent 1px), linear-gradient(90deg, #3b82f6 1px, transparent 1px)', backgroundSize: '40px 40px' }} 
+                />
+                <div className="relative w-full h-full bg-[#111111] border-2 border-blue-900/20 shadow-[inset_0_0_40px_rgba(0,0,0,0.8)] overflow-hidden rounded-sm">
+                  <svg viewBox="0 0 400 400" className="absolute inset-0 w-full h-full" style={{ transform: 'scaleY(-1)' }}>
+                    {paths.map((p, i) => (
+                      <line key={i} x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} stroke="#ff4757" strokeWidth="1.2" strokeOpacity={p.s / 1000 + 0.15} strokeLinecap="round" />
+                    ))}
+                  </svg>
+                  {/* Laser Head Visual */}
+                  <div className="absolute w-10 h-10 -ml-5 -mb-5 transition-all duration-300 ease-out" style={{ left: `${(vPos.x / 400) * 100}%`, bottom: `${(vPos.y / 400) * 100}%` }}>
+                    <div className="w-full h-full border border-blue-400/40 bg-blue-500/5 rounded-full flex items-center justify-center relative">
+                      <div className="w-1.5 h-1.5 bg-red-500 rounded-full shadow-[0_0_12px_#ff0000]" />
+                      <div className="absolute w-full h-[1px] bg-blue-400/10" />
+                      <div className="absolute h-full w-[1px] bg-blue-400/10" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="p-4 bg-slate-800/40 flex justify-between items-center text-[10px] font-mono text-slate-500 uppercase tracking-widest">
+                <span>400MM TRAVEL AREA</span>
+                <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"/> SIM SYNCED</span>
+              </div>
+            </section>
+          </div>
+
+          {/* RIGHT COLUMN: CLI, Movement & Power */}
+          <div className="lg:col-span-3 space-y-6">
+            <div className="bg-black p-5 rounded-2xl border border-blue-900/30 shadow-2xl overflow-hidden">
+              <div className="flex justify-between items-center mb-2 text-[10px] font-mono text-blue-500 font-bold uppercase tracking-widest">
+                <span>Active CLI String</span>
+                {copied && <span className="text-green-400 animate-pulse uppercase">Copied</span>}
+              </div>
+              <div className="text-sm text-blue-100 font-mono break-all min-h-[3.5rem] flex items-center border-l-2 border-blue-700 pl-4 bg-slate-950/50 p-2">
+                {lastCommand || <span className="text-slate-700 italic text-xs uppercase">Ready...</span>}
+              </div>
+            </div>
+
+            <section className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-5 shadow-xl">
+              <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <Move className="w-4 h-4 text-blue-400" /> Movement
+              </h2>
+              <div className="space-y-4 bg-slate-950 p-4 rounded-xl border border-slate-800/50">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-[10px] font-mono uppercase"><span className="text-slate-500">Step (mm)</span><span className="text-blue-400">{distance}</span></div>
+                  <input type="range" min="0.1" max="100" step="0.1" value={distance} onChange={(e)=>setDistance(e.target.value)} className="w-full accent-blue-500" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-[10px] font-mono uppercase"><span className="text-slate-500">Speed (F)</span><span className="text-emerald-400">{feedRate}</span></div>
+                  <input type="range" min="10" max="6000" step="10" value={feedRate} onChange={(e)=>setFeedRate(e.target.value)} className="w-full accent-emerald-500" />
+                </div>
+              </div>
+              <div className="flex justify-center pt-2">
+                <div className="grid grid-cols-3 gap-2">
+                  <div />
+                  <button onClick={() => generateJog('Y', 1)} className="p-4 bg-slate-800 rounded-lg hover:bg-blue-600 active:scale-90 transition-all"><ArrowUp/></button>
+                  <div />
+                  <button onClick={() => generateJog('X', -1)} className="p-4 bg-slate-800 rounded-lg hover:bg-blue-600 active:scale-90 transition-all"><ArrowLeft/></button>
+                  <button onClick={resetVirtualPos} className="p-4 bg-black border border-blue-900/40 rounded-lg text-blue-500 active:scale-90 transition-all"><Crosshair className="w-5 h-5"/></button>
+                  <button onClick={() => generateJog('X', 1)} className="p-4 bg-slate-800 rounded-lg hover:bg-blue-600 active:scale-90 transition-all"><ArrowRight/></button>
+                  <div />
+                  <button onClick={() => generateJog('Y', -1)} className="p-4 bg-slate-800 rounded-lg hover:bg-blue-600 active:scale-90 transition-all"><ArrowDown/></button>
+                  <div />
+                </div>
+              </div>
+            </section>
+
+            <section className="bg-slate-900 p-5 rounded-2xl border border-slate-800 space-y-4 shadow-xl">
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <Flame className="w-4 h-4 text-purple-400" /> Power Tuning
+              </h3>
+              <div className="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800/50">
+                <div className="flex justify-between text-[10px] font-mono uppercase"><span className="text-slate-500">Intensity (S)</span><span className="text-purple-400 font-bold">{power}</span></div>
+                <input type="range" min="0" max="1000" step="10" value={power} onChange={(e)=>setPower(e.target.value)} className="w-full accent-purple-500" />
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                <button onClick={() => {
+                    const d = parseFloat(distance);
+                    copyToClipboard(`G1 X${(vPos.x + d).toFixed(2)} F${feedRate} S${power}`, true, { x: d, y: 0, isBurn: true });
+                  }} className="bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-black py-3 rounded-xl uppercase tracking-widest transition-all active:scale-95">
+                  Burn Segment ({distance}mm)
+                </button>
+                <button onClick={() => copyToClipboard(wattage === '10W' ? 'M3 S5' : 'M3 S10')} className="bg-slate-800 border border-purple-500/30 text-purple-400 text-[10px] font-black py-3 rounded-xl uppercase tracking-widest hover:border-purple-500 transition-all">
+                  Focus Mode Fire
+                </button>
+              </div>
+            </section>
+          </div>
+
+        </div>
+
+        <footer className="text-center p-8 opacity-40 text-[9px] tracking-[0.4em] uppercase font-mono border-t border-slate-900 mt-6">
+          Comgrow Z1 Engineering Tool • focal range {wattage === '10W' ? '45mm' : '23mm'}
+        </footer>
+      </div>
+    </div>
+  );
+};
+
+export default App;
