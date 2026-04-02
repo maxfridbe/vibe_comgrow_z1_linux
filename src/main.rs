@@ -280,7 +280,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 settings_group.layout().child_gap((12.0 * font_scale) as u16).child_alignment(Alignment::new(LayoutAlignmentX::Right, LayoutAlignmentY::Center)).end();
                 clay_scope.with(&settings_group, |clay_scope| {
                     let mut input_box = Declaration::<Texture2D, ()>::new();
-                    input_box.layout().padding(Padding::new((8.0 * font_scale) as u16, (8.0 * font_scale) as u16, (6.0 * font_scale) as u16, (6.0 * font_scale) as u16)).child_gap((8.0 * font_scale) as u16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end()
+                    input_box.layout().padding(Padding::all((6.0 * font_scale) as u16)).child_gap((8.0 * font_scale) as u16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end()
                         .background_color(Color::u_rgb(2, 6, 23)) // slate-950
                         .corner_radius().all(12.0 * font_scale).end();
                     
@@ -294,7 +294,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     });
 
                     let mut wattage_box = Declaration::<Texture2D, ()>::new();
-                    wattage_box.layout().padding(Padding::new((8.0 * font_scale) as u16, (8.0 * font_scale) as u16, (6.0 * font_scale) as u16, (6.0 * font_scale) as u16)).child_gap((8.0 * font_scale) as u16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end()
+                    wattage_box.layout().padding(Padding::all((6.0 * font_scale) as u16)).child_gap((8.0 * font_scale) as u16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end()
                         .background_color(Color::u_rgb(2, 6, 23))
                         .corner_radius().all(12.0 * font_scale).end();
                     
@@ -357,7 +357,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                                         let mut btn = Declaration::<Texture2D, ()>::new();
                                         btn.id(btn_id)
-                                            .layout().width(grow!()).padding(Padding::all((5.0 * font_scale) as u16)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                                            .layout().width(fixed!(120.0 * font_scale)).padding(Padding::all((6.0 * font_scale) as u16)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
                                             .background_color(btn_color)
                                             .corner_radius().all(12.0 * font_scale).end();
                                         clay_scope.with(&btn, |clay_scope| {
@@ -458,13 +458,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                     // Movement
                     let mut move_box = Declaration::<Texture2D, ()>::new();
-                    move_box.layout().width(grow!()).padding(Padding::all((12.0 * font_scale) as u16)).direction(LayoutDirection::TopToBottom).child_gap((16.0 * font_scale) as u16).end()
+                    move_box.layout().width(grow!()).padding(Padding::all((12.0 * font_scale) as u16)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap((16.0 * font_scale) as u16).end()
                         .background_color(Color::u_rgb(30, 41, 59))
                         .corner_radius().all(16.0 * font_scale).end();
                     
                     clay_scope.with(&move_box, |clay_scope| {
                         let mut title = Declaration::<Texture2D, ()>::new();
-                        title.layout().child_gap((8.0 * font_scale) as u16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+                        title.layout().width(grow!()).child_gap((8.0 * font_scale) as u16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
                         clay_scope.with(&title, |clay_scope| {
                             clay_scope.text(ICON_MOVE, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(Color::u_rgb(96, 165, 250)).end());
                             clay_scope.text("Movement", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
@@ -506,7 +506,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     }
                                 }
                                 let mut center_btn = Declaration::<Texture2D, ()>::new();
-                                center_btn.id(center_id).layout().padding(Padding::all((10.0 * font_scale) as u16)).end().background_color(center_color).corner_radius().all(8.0 * font_scale).end();
+                                center_btn.id(center_id).layout().padding(Padding::all((6.0 * font_scale) as u16)).end().background_color(center_color).corner_radius().all(8.0 * font_scale).end();
                                 clay_scope.with(&center_btn, |clay_scope| {
                                     clay_scope.text(ICON_CROSSHAIR, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(59, 130, 246)).end());
                                 });
@@ -523,13 +523,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                     // Power Tuning
                     let mut power_box = Declaration::<Texture2D, ()>::new();
-                    power_box.layout().width(grow!()).padding(Padding::all((12.0 * font_scale) as u16)).direction(LayoutDirection::TopToBottom).child_gap((16.0 * font_scale) as u16).end()
+                    power_box.layout().width(grow!()).padding(Padding::all((12.0 * font_scale) as u16)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap((16.0 * font_scale) as u16).end()
                         .background_color(Color::u_rgb(30, 41, 59))
                         .corner_radius().all(16.0 * font_scale).end();
                     
                     clay_scope.with(&power_box, |clay_scope| {
                         let mut title = Declaration::<Texture2D, ()>::new();
-                        title.layout().child_gap((8.0 * font_scale) as u16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+                        title.layout().width(grow!()).child_gap((8.0 * font_scale) as u16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
                         clay_scope.with(&title, |clay_scope| {
                             clay_scope.text(ICON_FLAME, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(Color::u_rgb(192, 132, 252)).end());
                             clay_scope.text("Power Tuning", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
@@ -566,7 +566,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                         let mut burn_btn = Declaration::<Texture2D, ()>::new();
                         burn_btn.id(burn_id)
-                            .layout().width(grow!()).padding(Padding::all((8.0 * font_scale) as u16)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                            .layout().width(fixed!(220.0 * font_scale)).padding(Padding::all((6.0 * font_scale) as u16)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
                             .background_color(burn_color)
                             .corner_radius().all(12.0 * font_scale).end();
                         clay_scope.with(&burn_btn, |clay_scope| {
@@ -588,7 +588,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         }
                         let mut fire_btn = Declaration::<Texture2D, ()>::new();
                         fire_btn.id(fire_id)
-                            .layout().width(grow!()).padding(Padding::all((8.0 * font_scale) as u16)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                            .layout().width(fixed!(220.0 * font_scale)).padding(Padding::all((6.0 * font_scale) as u16)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
                             .background_color(fire_color)
                             .corner_radius().all(12.0 * font_scale).end();
                         clay_scope.with(&fire_btn, |clay_scope| {
@@ -738,7 +738,7 @@ fn render_jog_btn<'a, 'render>(
         }
     }
     let mut btn = Declaration::<Texture2D, ()>::new();
-    btn.id(btn_id).layout().padding(Padding::all((10.0 * font_scale) as u16)).end().background_color(color).corner_radius().all(8.0 * font_scale).end();
+    btn.id(btn_id).layout().padding(Padding::all((6.0 * font_scale) as u16)).end().background_color(color).corner_radius().all(8.0 * font_scale).end();
     clay.with(&btn, |clay| {
         clay.text(icon, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
     });
@@ -764,7 +764,7 @@ fn render_slider<'a, 'render, F>(
 {
     let slider_id = clay.id(id);
     let mut container = Declaration::<Texture2D, ()>::new();
-    container.layout().width(grow!()).direction(LayoutDirection::TopToBottom).child_gap((4.0 * font_scale) as u16).end();
+    container.layout().width(fixed!(260.0 * font_scale)).direction(LayoutDirection::TopToBottom).child_gap((4.0 * font_scale) as u16).end();
     
     clay.with(&container, |clay| {
         let mut header = Declaration::<Texture2D, ()>::new();
