@@ -524,6 +524,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 center_btn.id(center_id)
                                     .layout()
                                         .width(fixed!(30.0 * font_scale))
+                                        .height(fixed!(30.0 * font_scale))
                                         .padding(Padding::all(4))
                                         .direction(LayoutDirection::TopToBottom)
                                         .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
@@ -797,7 +798,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 RenderCommandConfig::Text(text) => {
                     let sanitized = text.text.replace('\0', "");
                     let color = raylib::color::Color::new(text.color.r as u8, text.color.g as u8, text.color.b as u8, text.color.a as u8);
-                    let pos = raylib::math::Vector2::new(command.bounding_box.x, command.bounding_box.y);
+                    
+                    let text_size = font.measure_text(&sanitized, command.bounding_box.height, 0.0);
+                    let pos = raylib::math::Vector2::new(
+                        command.bounding_box.x + (command.bounding_box.width - text_size.x) / 2.0,
+                        command.bounding_box.y + (command.bounding_box.height - text_size.y) / 2.0
+                    );
                     
                     d.draw_text_ex(&font, &sanitized, pos, command.bounding_box.height, 0.0, color);
                 }
@@ -892,6 +898,7 @@ fn render_jog_btn<'a, 'render>(
     btn.id(btn_id)
         .layout()
             .width(fixed!(30.0 * font_scale))
+            .height(fixed!(30.0 * font_scale))
             .padding(Padding::all(4))
             .direction(LayoutDirection::TopToBottom)
             .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
@@ -938,17 +945,17 @@ fn render_slider<'a, 'render, F>(
             .background_color(Color::u_rgb(2, 6, 23))
             .corner_radius().all(3.0 * font_scale).end();
         
-        // Clay 0.4.0 doesn't easily expose bounding boxes for elements during layout
-        // We can use pointer_over for hover, but for click position we might need another way
-        // For now, let's simplify and just use pointer_over + mouse_down to update value
-        // based on a fixed assumption of width if we can't get it
+        // Use the actual bounding box if available to follow the mouse
         if clay.pointer_over(slider_id) && mouse_down {
-             // In a real clay app we'd get the bounding box from the previous frame's render commands
-             // or use a custom element. For this port, let's use a simpler heuristic or just toggle
-             let mut guard = state.lock().unwrap();
-             // Just incrementing for now since we don't have rect here
-             let next = if value + (max - min) / 20.0 > max { min } else { value + (max - min) / 20.0 };
-             update(&mut guard, next);
+            let data = unsafe { clay_layout::bindings::Clay_GetElementData(slider_id.id) };
+            if data.found {
+                let rect = data.boundingBox;
+                let mouse_x = _mouse_pos.x;
+                let percent = ((mouse_x - rect.x) / rect.width).clamp(0.0, 1.0);
+                let next = min + percent * (max - min);
+                let mut guard = state.lock().unwrap();
+                update(&mut guard, next);
+            }
         }
 
         clay.with(&track, |clay| {
