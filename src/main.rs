@@ -522,7 +522,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 let mut center_btn = Declaration::<Texture2D, ()>::new();
                                 center_btn.id(center_id)
                                     .layout()
-                                        .width(fixed!(40.0 * font_scale))
+                                        .width(fixed!(30.0 * font_scale))
                                         .padding(Padding::all(4))
                                         .direction(LayoutDirection::TopToBottom)
                                         .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
@@ -579,7 +579,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                                     let mut btn = Declaration::<Texture2D, ()>::new();
                                     btn.id(btn_id)
-                                        .layout().width(fixed!(120.0 * font_scale)).padding(Padding::all(6)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                                        .layout().width(fixed!(85.0 * font_scale)).padding(Padding::all(6)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
                                         .background_color(btn_color)
                                         .corner_radius().all(12.0 * font_scale).end();
                                     clay_scope.with(&btn, |clay_scope| {
@@ -637,7 +637,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         let mut burn_btn = Declaration::<Texture2D, ()>::new();
                         burn_btn.id(burn_id)
                             .layout()
-                                .width(fixed!(140.0 * font_scale))
+                                .width(fixed!(100.0 * font_scale))
                                 .padding(Padding::all(4))
                                 .direction(LayoutDirection::TopToBottom)
                                 .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
@@ -664,7 +664,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         let mut fire_btn = Declaration::<Texture2D, ()>::new();
                         fire_btn.id(fire_id)
                             .layout()
-                                .width(fixed!(140.0 * font_scale))
+                                .width(fixed!(100.0 * font_scale))
                                 .padding(Padding::all(4))
                                 .direction(LayoutDirection::TopToBottom)
                                 .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
@@ -773,7 +773,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let full_draw_height = canvas_rect.height - margin * 2.0;
             let side = full_draw_width.min(full_draw_height);
             
-            let offset_y = (full_draw_height - side) / 2.0;
+            let offset_y = 0.0;
 
             let draw_area = raylib::math::Rectangle::new(
                 canvas_rect.x + margin, 
@@ -842,7 +842,7 @@ fn render_jog_btn<'a, 'render>(
     let mut btn = Declaration::<Texture2D, ()>::new();
     btn.id(btn_id)
         .layout()
-            .width(fixed!(40.0 * font_scale))
+            .width(fixed!(30.0 * font_scale))
             .padding(Padding::all(4))
             .direction(LayoutDirection::TopToBottom)
             .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
@@ -874,7 +874,7 @@ fn render_slider<'a, 'render, F>(
 {
     let slider_id = clay.id(id);
     let mut container = Declaration::<Texture2D, ()>::new();
-    container.layout().width(fixed!(260.0 * font_scale)).direction(LayoutDirection::TopToBottom).child_gap(4).end();
+    container.layout().width(fixed!(180.0 * font_scale)).direction(LayoutDirection::TopToBottom).child_gap(4).end();
     
     clay.with(&container, |clay| {
         let mut header = Declaration::<Texture2D, ()>::new();
@@ -905,7 +905,7 @@ fn render_slider<'a, 'render, F>(
         clay.with(&track, |clay| {
             let mut bar = Declaration::<Texture2D, ()>::new();
             let percent = (value - min) / (max - min);
-            bar.layout().width(fixed!(percent * 260.0 * font_scale)).height(grow!()).end()
+            bar.layout().width(fixed!(percent * 180.0 * font_scale)).height(grow!()).end()
                 .background_color(color)
                 .corner_radius().all(3.0 * font_scale).end();
             clay.with(&bar, |_| {});
