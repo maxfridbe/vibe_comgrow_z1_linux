@@ -244,29 +244,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let mut clay_scope = clay.begin::<Texture2D, ()>();
 
-        let screen_width = rl.get_screen_width() as f32;
-        let root_width = if screen_width > 1200.0 { fixed!(1200.0) } else { grow!() };
+        let mut root_decl = Declaration::<Texture2D, ()>::new();
+        root_decl.id(clay_scope.id("root"))
+            .layout()
+                .width(grow!())
+                .height(grow!())
+                .padding(Padding::all(6))
+                .child_gap(16)
+                .direction(LayoutDirection::TopToBottom)
+            .end()
+            .background_color(Color::u_rgb(15, 23, 42)); // slate-950-ish
 
-        let mut outer_decl = Declaration::<Texture2D, ()>::new();
-        outer_decl.layout()
-            .width(grow!())
-            .height(grow!())
-            .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
-            .end();
-
-        clay_scope.with(&outer_decl, |clay_scope| {
-            let mut root_decl = Declaration::<Texture2D, ()>::new();
-            root_decl.id(clay_scope.id("root"))
-                .layout()
-                    .width(root_width)
-                    .height(grow!())
-                    .padding(Padding::all(6))
-                    .child_gap(16)
-                    .direction(LayoutDirection::TopToBottom)
-                .end()
-                .background_color(Color::u_rgb(15, 23, 42)); // slate-950-ish
-
-            clay_scope.with(&root_decl, |clay_scope| {
+        clay_scope.with(&root_decl, |clay_scope| {
             // Header
             let mut header_decl = Declaration::<Texture2D, ()>::new();
             header_decl.layout()
@@ -728,7 +717,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             clay_scope.with(&footer_box, |clay_scope| {
                 clay_scope.text("Comgrow Z1 Engineering Tool", clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
             });
-        }); });
+        });
 
         let render_commands = clay_scope.end();
 
