@@ -210,6 +210,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 Command { label: "inch", cmd: "G20" },
             ],
         },
+        Section {
+            title: "Y-JUMP (Absolute)",
+            icon: ICON_LAYERS,
+            color: Color::u_rgb(236, 72, 153), // pink-500
+            commands: vec![
+                Command { label: "Y 16", cmd: "G90 G0 Y16" },
+                Command { label: "Y 12", cmd: "G90 G0 Y12" },
+                Command { label: "Y 8", cmd: "G90 G0 Y8" },
+                Command { label: "Y 4", cmd: "G90 G0 Y4" },
+                Command { label: "Y 0", cmd: "G90 G0 Y0" },
+            ],
+        },
     ];
 
     while !rl.window_should_close() {
@@ -311,6 +323,27 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         if copied {
                             clay_scope.text("Copied!", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(74, 222, 128)).end());
                         }
+
+                        let custom_cmd_id = clay_scope.id("custom_cmd_btn");
+                        let mut custom_cmd_color = Color::u_rgb(30, 41, 59);
+                        if clay_scope.pointer_over(custom_cmd_id) {
+                            custom_cmd_color = Color::u_rgb(51, 65, 85);
+                            if mouse_pressed {
+                                let mut guard = state.lock().unwrap();
+                                let cmd = format!("echo 'G1 X10 Y10 F1000 S500' > {}", guard.port);
+                                guard.log_command("Template Copied".to_string());
+                                guard.copied_at = Some(std::time::Instant::now());
+                                if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
+                            }
+                        }
+                        let mut custom_cmd_btn = Declaration::<Texture2D, ()>::new();
+                        custom_cmd_btn.id(custom_cmd_id)
+                            .layout().padding(Padding::all(8)).end()
+                            .background_color(custom_cmd_color)
+                            .corner_radius().all(12.0 * font_scale).end();
+                        clay_scope.with(&custom_cmd_btn, |clay_scope| {
+                            clay_scope.text(ICON_COPY, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(Color::u_rgb(251, 191, 36)).end());
+                        });
                     });
 
                     let mut input_box = Declaration::<Texture2D, ()>::new();
@@ -535,6 +568,34 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     clay_scope.text(ICON_CROSSHAIR, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(59, 130, 246)).end());
                                 });
 
+                                let home_zero_id = clay_scope.id("home_zero");
+                                let mut home_zero_color = Color::u_rgb(0, 0, 0);
+                                if clay_scope.pointer_over(home_zero_id) {
+                                    home_zero_color = Color::u_rgb(30, 41, 59);
+                                    if mouse_pressed {
+                                        let mut guard = state.lock().unwrap();
+                                        guard.v_pos = Vector2::new(0.0, 0.0);
+                                        let cmd = format!("echo 'G90 G0 X0 Y0' > {}", guard.port);
+                                        guard.log_command(cmd.clone());
+                                        guard.copied_at = Some(std::time::Instant::now());
+                                        if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
+                                    }
+                                }
+                                let mut home_zero_btn = Declaration::<Texture2D, ()>::new();
+                                home_zero_btn.id(home_zero_id)
+                                    .layout()
+                                        .width(fixed!(30.0 * font_scale))
+                                        .height(fixed!(30.0 * font_scale))
+                                        .padding(Padding::all(4))
+                                        .direction(LayoutDirection::TopToBottom)
+                                        .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+                                    .end()
+                                    .background_color(home_zero_color)
+                                    .corner_radius().all(8.0 * font_scale).end();
+                                clay_scope.with(&home_zero_btn, |clay_scope| {
+                                    clay_scope.text(ICON_HOME, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(52, 211, 153)).end());
+                                });
+
                                 render_jog_btn(clay_scope, "right", ICON_ARROW_RIGHT, &state, "X", 1.0, mouse_pressed, &mut clipboard, font_scale);
                             });
                             // Down
@@ -723,6 +784,35 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             .corner_radius().all(12.0 * font_scale).end();
                         clay_scope.with(&fire_btn, |clay_scope| {
                             clay_scope.text("Focus Mode Fire", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(192, 132, 252)).end());
+                        });
+
+                        let power_test_id = clay_scope.id("power_test_btn");
+                        let mut power_test_color = Color::u_rgb(220, 38, 38); // red-600
+                        if clay_scope.pointer_over(power_test_id) {
+                            power_test_color = Color::u_rgb(239, 68, 68); // red-500
+                            if mouse_pressed {
+                                let mut guard = state.lock().unwrap();
+                                let port = guard.port.clone();
+                                // Power test sequence: jump Y, burn X
+                                let sequence = "G90\\nG0 Y16\\nG1 X50 F1000 S1000\\nG0 X0\\nG0 Y12\\nG1 X50 F1000 S1000\\nG0 X0\\nG0 Y8\\nG1 X50 F1000 S1000\\nG0 X0\\nG0 Y4\\nG1 X50 F1000 S1000\\nG0 X0\\nG0 Y0";
+                                let cmd = format!("echo -e '{}' > {}", sequence, port);
+                                guard.log_command("POWER TEST SEQ".to_string());
+                                guard.copied_at = Some(std::time::Instant::now());
+                                if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
+                            }
+                        }
+                        let mut power_test_btn = Declaration::<Texture2D, ()>::new();
+                        power_test_btn.id(power_test_id)
+                            .layout()
+                                .width(fixed!(140.0 * font_scale))
+                                .padding(Padding::all(6))
+                                .direction(LayoutDirection::TopToBottom)
+                                .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+                            .end()
+                            .background_color(power_test_color)
+                            .corner_radius().all(12.0 * font_scale).end();
+                        clay_scope.with(&power_test_btn, |clay_scope| {
+                            clay_scope.text("POWER TEST (Y-STEP)", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
                         });
                     });
                 });
