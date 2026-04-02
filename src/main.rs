@@ -34,6 +34,7 @@ const ICON_CPU: &str = "\u{f2db}";
 const ICON_TRASH: &str = "\u{f1f8}";
 const ICON_LAYERS: &str = "\u{f0c9}";
 const ICON_COPY: &str = "\u{f0c5}";
+const ICON_SWEEP: &str = "\u{f518}";
 
 struct PathSegment {
     x1: f32,
@@ -130,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ICON_SETTINGS, ICON_CHECK, ICON_ARROW_UP, ICON_ARROW_DOWN, 
         ICON_ARROW_LEFT, ICON_ARROW_RIGHT, ICON_CROSSHAIR, ICON_USB, 
         ICON_FLAME, ICON_GAUGE, ICON_SHIELD, ICON_REFRESH, ICON_CPU, 
-        ICON_TRASH, ICON_LAYERS, ICON_COPY, ICON_LASER
+        ICON_TRASH, ICON_LAYERS, ICON_COPY, ICON_LASER, ICON_SWEEP
     ];
     for icon in icons {
         chars.extend(icon.chars());
@@ -295,57 +296,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     text_box.layout().direction(LayoutDirection::TopToBottom).child_gap(2).end();
                     clay_scope.with(&text_box, |clay_scope| {
                         clay_scope.text("Comgrow Z1 Laser GRBL Runner", clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
-                        clay_scope.text("Full Protocol Implementation", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(100, 116, 139)).end());
                     });
                 });
 
                 let mut settings_group = Declaration::<Texture2D, ()>::new();
                 settings_group.layout().child_gap(12).child_alignment(Alignment::new(LayoutAlignmentX::Right, LayoutAlignmentY::Center)).end();
                 clay_scope.with(&settings_group, |clay_scope| {
-                    let mut cli_box = Declaration::<Texture2D, ()>::new();
-                    cli_box.layout().padding(Padding::all(8)).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end()
-                        .background_color(Color::u_rgb(2, 6, 23))
-                        .corner_radius().all(12.0 * font_scale).end();
-                    
-                    clay_scope.with(&cli_box, |clay_scope| {
-                        clay_scope.text(ICON_TERMINAL, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(Color::u_rgb(59, 130, 246)).end());
-                        
-                        let cmd_text = {
-                            let guard = state.lock().unwrap();
-                            if guard.last_command.is_empty() { "Ready...".to_string() } else { guard.last_command.clone() }
-                        };
-                        clay_scope.text(arena.push(cmd_text), clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(219, 234, 254)).end());
-
-                        let copied = {
-                            let guard = state.lock().unwrap();
-                            guard.copied_at.map(|t| t.elapsed().as_secs_f32() < 2.0).unwrap_or(false)
-                        };
-                        if copied {
-                            clay_scope.text("Copied!", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(74, 222, 128)).end());
-                        }
-
-                        let custom_cmd_id = clay_scope.id("custom_cmd_btn");
-                        let mut custom_cmd_color = Color::u_rgb(30, 41, 59);
-                        if clay_scope.pointer_over(custom_cmd_id) {
-                            custom_cmd_color = Color::u_rgb(51, 65, 85);
-                            if mouse_pressed {
-                                let mut guard = state.lock().unwrap();
-                                let cmd = format!("echo 'G1 X10 Y10 F1000 S500' > {}", guard.port);
-                                guard.log_command("Template Copied".to_string());
-                                guard.copied_at = Some(std::time::Instant::now());
-                                if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
-                            }
-                        }
-                        let mut custom_cmd_btn = Declaration::<Texture2D, ()>::new();
-                        custom_cmd_btn.id(custom_cmd_id)
-                            .layout().padding(Padding::all(8)).end()
-                            .background_color(custom_cmd_color)
-                            .corner_radius().all(12.0 * font_scale).end();
-                        clay_scope.with(&custom_cmd_btn, |clay_scope| {
-                            clay_scope.text(ICON_COPY, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(Color::u_rgb(251, 191, 36)).end());
-                        });
-                    });
-
                     let mut input_box = Declaration::<Texture2D, ()>::new();
                     input_box.layout().padding(Padding::all(6)).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end()
                         .background_color(Color::u_rgb(2, 6, 23)) // slate-950
@@ -468,28 +424,35 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             clay_scope.text(pos_text, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(96, 165, 250)).end());
                         });
 
-                        let mut trash_btn = Declaration::<Texture2D, ()>::new();
-                        trash_btn.id(clay_scope.id("clear_canvas"))
-                            .floating()
-                                .attach_points(clay_layout::elements::FloatingAttachPointType::RightTop, clay_layout::elements::FloatingAttachPointType::RightTop)
-                                .offset(Vector2::new(-16.0 * font_scale, 16.0 * font_scale))
-                            .end()
-                            .layout()
-                                .padding(Padding::all(4))
-                                .direction(LayoutDirection::TopToBottom)
-                                .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
-                            .end()
-                            .background_color(Color::u_rgb(127, 29, 29))
-                            .corner_radius().all(12.0 * font_scale).end();
-                        
-                        if clay_scope.pointer_over(clay_scope.id("clear_canvas")) && mouse_pressed {
-                            let mut guard = state.lock().unwrap();
-                            guard.paths.clear();
-                        }
+                        let paths_empty = {
+                            let guard = state.lock().unwrap();
+                            guard.paths.is_empty()
+                        };
 
-                        clay_scope.with(&trash_btn, |clay_scope| {
-                            clay_scope.text(ICON_TRASH, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(248, 113, 113)).end());
-                        });
+                        if !paths_empty {
+                            let mut sweep_btn = Declaration::<Texture2D, ()>::new();
+                            sweep_btn.id(clay_scope.id("clear_canvas"))
+                                .floating()
+                                    .attach_points(clay_layout::elements::FloatingAttachPointType::RightTop, clay_layout::elements::FloatingAttachPointType::RightTop)
+                                    .offset(Vector2::new(-16.0 * font_scale, 16.0 * font_scale))
+                                .end()
+                                .layout()
+                                    .padding(Padding::all(4))
+                                    .direction(LayoutDirection::TopToBottom)
+                                    .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+                                .end()
+                                .background_color(Color::u_rgb(127, 29, 29))
+                                .corner_radius().all(12.0 * font_scale).end();
+                            
+                            if clay_scope.pointer_over(clay_scope.id("clear_canvas")) && mouse_pressed {
+                                let mut guard = state.lock().unwrap();
+                                guard.paths.clear();
+                            }
+
+                            clay_scope.with(&sweep_btn, |clay_scope| {
+                                clay_scope.text(ICON_SWEEP, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(248, 113, 113)).end());
+                            });
+                        }
                     });
                 });
 
@@ -523,8 +486,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             (guard.distance, guard.feed_rate)
                         };
 
-                        render_slider(clay_scope, "dist_slider", "Step (mm)", dist, 0.1, 100.0, Color::u_rgb(59, 130, 246), &state, |s, v| s.distance = v, mouse_pos, mouse_down, &arena, font_scale);
-                        render_slider(clay_scope, "feed_slider", "Speed (F)", feed, 10.0, 6000.0, Color::u_rgb(16, 185, 129), &state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, &arena, font_scale);
+                        render_slider(clay_scope, "dist_slider", "Step (mm)", dist, 0.1, 100.0, Color::u_rgb(59, 130, 246), &state, |s, v| s.distance = v, mouse_pos, mouse_down, scroll_delta.y, &arena, font_scale);
+                        render_slider(clay_scope, "feed_slider", "Speed (F)", feed, 10.0, 6000.0, Color::u_rgb(16, 185, 129), &state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_delta.y, &arena, font_scale);
 
                         // Jog Controls
                         let mut jog_grid = Declaration::<Texture2D, ()>::new();
@@ -672,7 +635,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             let guard = state.lock().unwrap();
                             guard.power
                         };
-                        render_slider(clay_scope, "power_slider", "Intensity (S)", pwr, 0.0, 1000.0, Color::u_rgb(168, 85, 247), &state, |s, v| s.power = v, mouse_pos, mouse_down, &arena, font_scale);
+                        render_slider(clay_scope, "power_slider", "Intensity (S)", pwr, 0.0, 1000.0, Color::u_rgb(168, 85, 247), &state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_delta.y, &arena, font_scale);
 
                         // Laser ON/OFF row
                         let mut laser_row = Declaration::<Texture2D, ()>::new();
@@ -1012,6 +975,7 @@ fn render_slider<'a, 'render, F>(
     update: F,
     _mouse_pos: raylib::math::Vector2,
     mouse_down: bool,
+    scroll_y: f32,
     arena: &StringArena,
     font_scale: f32,
 ) where
@@ -1019,8 +983,10 @@ fn render_slider<'a, 'render, F>(
     'a: 'render,
 {
     let slider_id = clay.id(id);
+    let container_id = clay.id(arena.push(format!("{}_container", id)));
     let mut container = Declaration::<Texture2D, ()>::new();
-    container.layout().width(fixed!(180.0 * font_scale)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(4).end();
+    container.id(container_id)
+        .layout().width(fixed!(180.0 * font_scale)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(4).end();
     
     clay.with(&container, |clay| {
         let mut header = Declaration::<Texture2D, ()>::new();
@@ -1036,13 +1002,20 @@ fn render_slider<'a, 'render, F>(
             .corner_radius().all(3.0 * font_scale).end();
         
         // Use the actual bounding box if available to follow the mouse
-        if clay.pointer_over(slider_id) && mouse_down {
-            let data = unsafe { clay_layout::bindings::Clay_GetElementData(slider_id.id) };
-            if data.found {
-                let rect = data.boundingBox;
-                let mouse_x = _mouse_pos.x;
-                let percent = ((mouse_x - rect.x) / rect.width).clamp(0.0, 1.0);
-                let next = min + percent * (max - min);
+        if clay.pointer_over(slider_id) || clay.pointer_over(container_id) {
+            if mouse_down {
+                let data = unsafe { clay_layout::bindings::Clay_GetElementData(slider_id.id) };
+                if data.found {
+                    let rect = data.boundingBox;
+                    let mouse_x = _mouse_pos.x;
+                    let percent = ((mouse_x - rect.x) / rect.width).clamp(0.0, 1.0);
+                    let next = min + percent * (max - min);
+                    let mut guard = state.lock().unwrap();
+                    update(&mut guard, next);
+                }
+            } else if scroll_y != 0.0 {
+                let step = (max - min) * 0.05;
+                let next = (value + scroll_y * step).clamp(min, max);
                 let mut guard = state.lock().unwrap();
                 update(&mut guard, next);
             }
