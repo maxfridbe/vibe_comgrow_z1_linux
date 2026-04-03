@@ -5,29 +5,73 @@ use std::io::{Write, Read};
 use crate::state::{AppState, LogEntry};
 use crate::gcode::decode_response;
 
+fn get_timestamp() -> String {
+    let now = std::time::SystemTime::now();
+    let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let secs = duration.as_secs();
+    let hh = (secs / 3600) % 24;
+    let mm = (secs / 60) % 60;
+    let ss = secs % 60;
+    format!("{:02}:{:02}:{:02}", hh, mm, ss)
+}
+
 pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
     std::thread::spawn(move || {
-        let port_name = "/dev/ttyUSB0";
         let baud_rate = 115200;
         let mut queue: VecDeque<String> = VecDeque::new();
         let mut wait_for_ok = false;
 
         loop {
-            if let Ok(mut port) = serialport::new(port_name, baud_rate)
+            let port_name = {
+                let guard = state.lock().unwrap();
+                guard.port.clone()
+            };
+
+            if let Ok(mut port) = serialport::new(&port_name, baud_rate)
                 .timeout(std::time::Duration::from_millis(10))
                 .open()
             {
+                println!("[{}] SERIAL: Connected to {}", get_timestamp(), port_name);
+                {
+                    let mut guard = state.lock().unwrap();
+                    guard.serial_logs.push_back(LogEntry {
+                        text: format!("Connected to {}", port_name),
+                        explanation: format!("Baud rate: {}", baud_rate),
+                        is_response: false,
+                    });
+                }
+
                 let mut serial_buf: Vec<u8> = vec![0; 1024];
+                let mut line_accumulator = String::new();
+                let mut last_status_query = std::time::Instant::now();
+                
                 loop {
+                    // Periodic Status Query (every 500ms)
+                    if last_status_query.elapsed().as_millis() > 500 {
+                        let _ = port.write_all(b"?");
+                        last_status_query = std::time::Instant::now();
+                    }
+
                     // Receive from rx and push to queue
                     while let Ok(cmd) = rx.try_recv() {
-                        queue.push_back(cmd);
+                        if cmd == "!" || cmd == "~" || cmd == "?" || cmd == "\x18" || cmd == "0x18" {
+                            let actual_cmd = if cmd == "0x18" { "\x18" } else { &cmd };
+                            println!("[{}] SEND PRIORITY: {:?}", get_timestamp(), actual_cmd);
+                            let _ = port.write_all(actual_cmd.as_bytes());
+                            if actual_cmd == "\x18" {
+                                wait_for_ok = false;
+                                queue.clear();
+                            }
+                        } else {
+                            queue.push_back(cmd);
+                        }
                     }
 
                     // Send if not waiting
                     if !wait_for_ok {
                         if let Some(cmd) = queue.pop_front() {
                             let full_cmd = format!("{}\n", cmd);
+                            println!("[{}] SEND: {:?}", get_timestamp(), cmd);
                             let _ = port.write_all(full_cmd.as_bytes());
                             wait_for_ok = true;
                         }
@@ -35,36 +79,62 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
 
                     // Read responses
                     match port.read(serial_buf.as_mut_slice()) {
-                        Ok(t) => {
-                            let response = String::from_utf8_lossy(&serial_buf[..t]).to_string();
-                            for line in response.lines() {
-                                let trimmed = line.trim();
-                                if !trimmed.is_empty() {
-                                    if trimmed == "ok" || trimmed.starts_with("error") {
+                        Ok(t) if t > 0 => {
+                            line_accumulator.push_str(&String::from_utf8_lossy(&serial_buf[..t]));
+                            while let Some(pos) = line_accumulator.find('\n') {
+                                let line = line_accumulator[..pos].trim().to_string();
+                                line_accumulator.drain(..=pos);
+                                
+                                if !line.is_empty() {
+                                    println!("[{}] RECV: {:?}", get_timestamp(), line);
+                                    if line == "ok" || line.starts_with("error") || line.starts_with("Grbl") {
                                         wait_for_ok = false;
                                     }
 
-                                    let explanation = decode_response(trimmed);
-
+                                    let explanation = decode_response(&line);
                                     let mut guard = state.lock().unwrap();
-                                    guard.serial_logs.push(LogEntry {
-                                        text: trimmed.to_string(),
-                                        explanation,
-                                        is_response: true,
-                                    });
-                                    if guard.serial_logs.len() > 100 {
-                                        guard.serial_logs.remove(0);
+                                    
+                                    if line.starts_with('<') && line.contains('|') {
+                                        let content = if line.ends_with('>') { &line[1..line.len()-1] } else { &line[1..] };
+                                        let parts: Vec<&str> = content.split('|').collect();
+                                        if let Some(state_name) = parts.get(0) {
+                                            guard.machine_state = state_name.to_string();
+                                        }
+                                        
+                                        for part in &parts[1..] {
+                                            if part.starts_with("MPos:") || part.starts_with("WPos:") {
+                                                let coords: Vec<&str> = part[5..].split(',').collect();
+                                                if coords.len() >= 2 {
+                                                    let x = coords[0].parse::<f32>().unwrap_or(guard.machine_pos.x);
+                                                    let y = coords[1].parse::<f32>().unwrap_or(guard.machine_pos.y);
+                                                    guard.machine_pos = raylib::prelude::Vector2::new(x, y);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    let is_periodic_status = line.starts_with('<') && line.contains('|');
+                                    if !is_periodic_status || line.contains("Alarm") || line.contains("Hold") {
+                                        guard.serial_logs.push_back(LogEntry {
+                                            text: line,
+                                            explanation,
+                                            is_response: true,
+                                        });
+                                        if guard.serial_logs.len() > 500 {
+                                            guard.serial_logs.pop_front();
+                                        }
                                     }
                                 }
                             }
                         }
+                        Ok(_) => (),
                         Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => (),
-                        Err(_) => break, // Reconnect on other errors
+                        Err(_) => break, 
                     }
                     std::thread::sleep(std::time::Duration::from_millis(5));
                 }
             }
-            std::thread::sleep(std::time::Duration::from_secs(1)); // Wait before retry
+            std::thread::sleep(std::time::Duration::from_secs(1)); 
         }
     });
 }
