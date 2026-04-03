@@ -6,8 +6,10 @@ use clay_layout::{Clay, Declaration, Color, grow, fixed, fit};
 use clay_layout::render_commands::{RenderCommandConfig};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{self, Sender};
 use std::cell::RefCell;
 use arboard::Clipboard;
+use std::io::{Write, Read};
 
 const FONT_DATA: &[u8] = include_bytes!("../assets/font.ttf");
 
@@ -36,6 +38,12 @@ const ICON_LAYERS: &str = "\u{f0c9}";
 const ICON_COPY: &str = "\u{f0c5}";
 const ICON_SWEEP: &str = "\u{f518}";
 
+#[derive(Clone)]
+struct LogEntry {
+    text: String,
+    explanation: String,
+}
+
 struct PathSegment {
     x1: f32,
     y1: f32,
@@ -54,16 +62,44 @@ struct AppState {
     paths: Vec<PathSegment>,
     last_command: String,
     copied_at: Option<std::time::Instant>,
-    serial_logs: Vec<String>,
+    serial_logs: Vec<LogEntry>,
+    tx: Sender<String>,
 }
 
 impl AppState {
-    fn log_command(&mut self, cmd: String) {
+    fn send_command(&mut self, cmd: String) {
+        let explanation = match cmd.as_str() {
+            c if c.starts_with("G1") => "Linear Move",
+            c if c.starts_with("G0") => "Rapid Move",
+            "$H" => "Home Machine",
+            c if c.starts_with("M3") => "Laser Constant On",
+            c if c.starts_with("M4") => "Laser Dynamic On",
+            "M5" => "Laser Off",
+            "?" => "Status Report",
+            "!" => "Feed Hold",
+            "~" => "Cycle Start",
+            "$X" => "Kill Alarm",
+            "G90" => "Absolute Distance",
+            "G91" => "Incremental Distance",
+            "G21" => "Millimeter Units",
+            "G20" => "Inch Units",
+            "G92 X0 Y0" => "Set Origin",
+            c if c.starts_with("$J") => "Jog Move",
+            "M8" => "Air Assist On",
+            "M9" => "Air Assist Off",
+            c if c.starts_with("$") => "Settings Change",
+            _ => "G-Code Command",
+        };
+
         self.last_command = cmd.clone();
-        self.serial_logs.push(cmd);
-        if self.serial_logs.len() > 50 {
+        self.serial_logs.push(LogEntry {
+            text: cmd.clone(),
+            explanation: explanation.to_string(),
+        });
+        if self.serial_logs.len() > 100 {
             self.serial_logs.remove(0);
         }
+        let _ = self.tx.send(cmd);
     }
 }
 
@@ -103,6 +139,8 @@ struct Section {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let (tx, rx) = mpsc::channel::<String>();
+    
     let state = Arc::new(Mutex::new(AppState {
         distance: 10.0,
         feed_rate: 1000.0,
@@ -114,7 +152,54 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         last_command: String::new(),
         copied_at: None,
         serial_logs: Vec::new(),
+        tx,
     }));
+
+    let state_for_thread = Arc::clone(&state);
+    std::thread::spawn(move || {
+        let port_name = "/dev/ttyUSB0";
+        let baud_rate = 115200;
+
+        loop {
+            if let Ok(mut port) = serialport::new(port_name, baud_rate)
+                .timeout(std::time::Duration::from_millis(10))
+                .open()
+            {
+                let mut serial_buf: Vec<u8> = vec![0; 1024];
+                loop {
+                    // Send commands
+                    while let Ok(cmd) = rx.try_recv() {
+                        let full_cmd = format!("{}\n", cmd);
+                        let _ = port.write_all(full_cmd.as_bytes());
+                    }
+
+                    // Read responses
+                    match port.read(serial_buf.as_mut_slice()) {
+                        Ok(t) => {
+                            let response = String::from_utf8_lossy(&serial_buf[..t]).to_string();
+                            for line in response.lines() {
+                                let trimmed = line.trim();
+                                if !trimmed.is_empty() {
+                                    let mut guard = state_for_thread.lock().unwrap();
+                                    guard.serial_logs.push(LogEntry {
+                                        text: trimmed.to_string(),
+                                        explanation: "Laser Response".to_string(),
+                                    });
+                                    if guard.serial_logs.len() > 100 {
+                                        guard.serial_logs.remove(0);
+                                    }
+                                }
+                            }
+                        }
+                        Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => (),
+                        Err(_) => break, // Reconnect on other errors
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_secs(1)); // Wait before retry
+        }
+    });
 
     let (mut rl, thread) = raylib::init()
         .size(1280, 800)
@@ -126,7 +211,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     rl.set_target_fps(60);
 
     let mut chars: Vec<char> = (32..127).map(|c| c as u8 as char).collect();
-    let icons = [
+    let icons: &[&str] = &[
         ICON_TERMINAL, ICON_MOVE, ICON_POWER, ICON_HOME, ICON_UNLOCK, 
         ICON_SETTINGS, ICON_CHECK, ICON_ARROW_UP, ICON_ARROW_DOWN, 
         ICON_ARROW_LEFT, ICON_ARROW_RIGHT, ICON_CROSSHAIR, ICON_USB, 
@@ -381,11 +466,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                             btn_color = Color::u_rgb(51, 65, 85);
                                             if mouse_pressed {
                                                 let mut guard = state.lock().unwrap();
-                                                let full_cmd = format!("echo '{}' > {}", cmd.cmd, guard.port);
-                                                guard.log_command(full_cmd.clone());
+                                                let full_cmd = cmd.cmd.to_string();
+                                                guard.send_command(full_cmd.clone());
 
                                                 // Update simulated position for absolute jumps
-                                                if cmd.cmd.contains("G90") && cmd.cmd.contains("G0") {
+                                                if cmd.cmd.contains("G90") && (cmd.cmd.contains("G0") || cmd.cmd.contains("G1")) {
                                                     for part in cmd.cmd.split_whitespace() {
                                                         if part.starts_with('X') {
                                                             if let Ok(val) = part[1..].parse::<f32>() {
@@ -538,8 +623,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     if mouse_pressed {
                                         let mut guard = state.lock().unwrap();
                                         guard.v_pos = Vector2::new(0.0, 0.0);
-                                        let cmd = format!("echo 'G92 X0 Y0' > {}", guard.port);
-                                        guard.log_command(cmd.clone());
+                                        let cmd = "G92 X0 Y0".to_string();
+                                        guard.send_command(cmd.clone());
                                         guard.copied_at = Some(std::time::Instant::now());
                                         if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
                                     }
@@ -566,8 +651,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     if mouse_pressed {
                                         let mut guard = state.lock().unwrap();
                                         guard.v_pos = Vector2::new(0.0, 0.0);
-                                        let cmd = format!("echo 'G90 G0 X0 Y0' > {}", guard.port);
-                                        guard.log_command(cmd.clone());
+                                        let cmd = "G90 G0 X0 Y0".to_string();
+                                        guard.send_command(cmd.clone());
                                         guard.copied_at = Some(std::time::Instant::now());
                                         if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
                                     }
@@ -622,8 +707,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                         btn_color = Color::u_rgb(51, 65, 85);
                                         if mouse_pressed {
                                             let mut guard = state.lock().unwrap();
-                                            let full_cmd = format!("echo '{}' > {}", cmd.cmd, guard.port);
-                                            guard.log_command(full_cmd.clone());
+                                            let full_cmd = cmd.cmd.to_string();
+                                            guard.send_command(full_cmd.clone());
                                             guard.copied_at = Some(std::time::Instant::now());
                                             if let Some(cb) = &mut clipboard {
                                                 let _ = cb.set_text(full_cmd);
@@ -676,8 +761,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 if mouse_pressed {
                                     let mut guard = state.lock().unwrap();
                                     let s = guard.power;
-                                    let cmd = format!("echo 'M3 S{:.0}' > {}", s, guard.port);
-                                    guard.log_command(cmd.clone());
+                                    let cmd = format!("M3 S{:.0}", s);
+                                    guard.send_command(cmd.clone());
                                     guard.copied_at = Some(std::time::Instant::now());
                                     if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
                                 }
@@ -697,8 +782,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 off_color = Color::u_rgb(71, 85, 105); // slate-600
                                 if mouse_pressed {
                                     let mut guard = state.lock().unwrap();
-                                    let cmd = format!("echo 'M5' > {}", guard.port);
-                                    guard.log_command(cmd.clone());
+                                    let cmd = "M5".to_string();
+                                    guard.send_command(cmd.clone());
                                     guard.copied_at = Some(std::time::Instant::now());
                                     if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
                                 }
@@ -737,9 +822,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             fire_color = Color::u_rgb(30, 41, 59);
                             if mouse_pressed {
                                 let mut guard = state.lock().unwrap();
-                                let fire_cmd = if guard.wattage == "10W" { "M3 S5" } else { "M3 S10" };
-                                let cmd = format!("echo '{}' > {}", fire_cmd, guard.port);
-                                guard.log_command(cmd.clone());
+                                let cmd = if guard.wattage == "10W" { "M3 S5" } else { "M3 S10" }.to_string();
+                                guard.send_command(cmd.clone());
                                 guard.copied_at = Some(std::time::Instant::now());
                                 if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
                             }
@@ -764,9 +848,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             power_test_color = Color::u_rgb(239, 68, 68); // red-500
                             if mouse_pressed {
                                 let mut guard = state.lock().unwrap();
-                                let port = guard.port.clone();
                                 // Power test sequence: jump Y, burn X
-                                let sequence = "G90\\nG0 Y16\\nG1 X50 F1000 S1000\\nG0 X0\\nG0 Y12\\nG1 X50 F1000 S1000\\nG0 X0\\nG0 Y8\\nG1 X50 F1000 S1000\\nG0 X0\\nG0 Y4\\nG1 X50 F1000 S1000\\nG0 X0\\nG0 Y0";
+                                let sequence = [
+                                    "G90", "G0 Y16", "G1 X50 F1000 S1000", "G0 X0", 
+                                    "G0 Y12", "G1 X50 F1000 S1000", "G0 X0", 
+                                    "G0 Y8", "G1 X50 F1000 S1000", "G0 X0", 
+                                    "G0 Y4", "G1 X50 F1000 S1000", "G0 X0", "G0 Y0"
+                                ];
 
                                 // Simulate in virtual view
                                 let levels = [16.0, 12.0, 8.0, 4.0];
@@ -775,10 +863,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 }
                                 guard.v_pos = Vector2::new(0.0, 0.0);
 
-                                let cmd = format!("echo -e '{}' > {}", sequence, port);
-                                guard.log_command("POWER TEST SEQ".to_string());
+                                for s in sequence {
+                                    guard.send_command(s.to_string());
+                                }
+                                
                                 guard.copied_at = Some(std::time::Instant::now());
-                                if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
+                                if let Some(cb) = &mut clipboard { let _ = cb.set_text("POWER TEST SEQUENCE SENT".to_string()); }
                             }
                         }
                         let mut power_test_btn = Declaration::<Texture2D, ()>::new();
@@ -820,7 +910,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .corner_radius().all(16.0 * font_scale).end();
             
             clay_scope.with(&serial_box, |clay_scope| {
-                clay_scope.text("SERIAL OUTPUT (RECENT COMMANDS)", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
+                clay_scope.text("SERIAL LOG (COMMAND | EXPLANATION)", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
                 
                 let logs = {
                     let guard = state.lock().unwrap();
@@ -829,7 +919,23 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 
                 for (i, log) in logs.iter().rev().enumerate() {
                     let color = if i == 0 { Color::u_rgb(255, 255, 255) } else { Color::u_rgb(148, 163, 184) };
-                    clay_scope.text(arena.push(log.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(color).end());
+                    
+                    let mut row = Declaration::<Texture2D, ()>::new();
+                    row.layout().width(grow!()).child_gap((20.0 * font_scale) as u16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+                    
+                    clay_scope.with(&row, |clay_scope| {
+                        let mut col1 = Declaration::<Texture2D, ()>::new();
+                        col1.layout().width(fixed!(350.0 * font_scale)).end();
+                        clay_scope.with(&col1, |clay_scope| {
+                            clay_scope.text(arena.push(log.text.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(color).end());
+                        });
+                        
+                        let mut col2 = Declaration::<Texture2D, ()>::new();
+                        col2.layout().width(grow!()).end();
+                        clay_scope.with(&col2, |clay_scope| {
+                            clay_scope.text(arena.push(log.explanation.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(color).end());
+                        });
+                    });
                 }
             });
 
@@ -958,8 +1064,8 @@ fn render_jog_btn<'a, 'render>(
             } else {
                 guard.v_pos.y = (guard.v_pos.y + d * direction).clamp(0.0, 400.0);
             }
-            let cmd = format!("echo '$J=G91 G21 {}{} F{}' > {}", axis, direction * d, guard.feed_rate, guard.port);
-            guard.log_command(cmd.clone());
+            let cmd = format!("$J=G91 G21 {}{} F{}", axis, direction * d, guard.feed_rate);
+            guard.send_command(cmd.clone());
             guard.copied_at = Some(std::time::Instant::now());
             if let Some(cb) = clipboard { let _ = cb.set_text(cmd); }
         }
@@ -1002,7 +1108,6 @@ fn render_burn_btn<'a, 'render>(
             let d = guard.distance;
             let f = guard.feed_rate;
             let s = guard.power;
-            let port = guard.port.clone();
             let v_pos = guard.v_pos;
 
             let new_x = (v_pos.x + dx * d).clamp(0.0, 400.0);
@@ -1012,8 +1117,8 @@ fn render_burn_btn<'a, 'render>(
             guard.v_pos.x = new_x;
             guard.v_pos.y = new_y;
 
-            let cmd = format!("echo 'G90 G1 X{:.2} Y{:.2} F{} S{}' > {}", new_x, new_y, f, s, port);
-            guard.log_command(cmd.clone());
+            let cmd = format!("G90 G1 X{:.2} Y{:.2} F{} S{}", new_x, new_y, f, s);
+            guard.send_command(cmd.clone());
             guard.copied_at = Some(std::time::Instant::now());
             if let Some(cb) = clipboard { let _ = cb.set_text(cmd); }
         }
