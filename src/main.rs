@@ -223,6 +223,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 Command { label: "Y 0", cmd: "G90 G0 Y0" },
             ],
         },
+        Section {
+            title: "X-JUMP (Absolute)",
+            icon: ICON_LAYERS,
+            color: Color::u_rgb(34, 197, 94), // green-500
+            commands: vec![
+                Command { label: "X 0", cmd: "G90 G0 X0" },
+                Command { label: "X 100", cmd: "G90 G0 X100" },
+                Command { label: "X 200", cmd: "G90 G0 X200" },
+                Command { label: "X 300", cmd: "G90 G0 X300" },
+                Command { label: "X 400", cmd: "G90 G0 X400" },
+            ],
+        },
     ];
 
     while !rl.window_should_close() {
@@ -371,6 +383,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                                 let mut guard = state.lock().unwrap();
                                                 let full_cmd = format!("echo '{}' > {}", cmd.cmd, guard.port);
                                                 guard.log_command(full_cmd.clone());
+
+                                                // Update simulated position for absolute jumps
+                                                if cmd.cmd.contains("G90") && cmd.cmd.contains("G0") {
+                                                    for part in cmd.cmd.split_whitespace() {
+                                                        if part.starts_with('X') {
+                                                            if let Ok(val) = part[1..].parse::<f32>() {
+                                                                guard.v_pos.x = val;
+                                                            }
+                                                        } else if part.starts_with('Y') {
+                                                            if let Ok(val) = part[1..].parse::<f32>() {
+                                                                guard.v_pos.y = val;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
                                                 guard.copied_at = Some(std::time::Instant::now());
                                                 if let Some(cb) = &mut clipboard {
                                                     let _ = cb.set_text(full_cmd);
@@ -685,41 +713,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             });
                         });
 
-                        let burn_id = clay_scope.id("burn_btn");
-                        let mut burn_color = Color::u_rgb(147, 51, 234); // purple-600
-                        if clay_scope.pointer_over(burn_id) {
-                            burn_color = Color::u_rgb(168, 85, 247); // purple-500
-                            if mouse_pressed {
-                                let mut guard = state.lock().unwrap();
-                                let d = guard.distance;
-                                let f = guard.feed_rate;
-                                let s = guard.power;
-                                let port = guard.port.clone();
-                                let v_pos = guard.v_pos;
-                                
-                                let new_x = (v_pos.x + d).min(400.0);
-                                guard.paths.push(PathSegment { x1: v_pos.x, y1: v_pos.y, x2: new_x, y2: v_pos.y, s });
-                                guard.v_pos.x = new_x;
-                                
-                                let cmd = format!("echo 'G1 X{:.2} F{} S{}' > {}", new_x, f, s, port);
-                                guard.log_command(cmd.clone());
-                                guard.copied_at = Some(std::time::Instant::now());
-                                if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
-                            }
-                        }
-
-                        let mut burn_btn = Declaration::<Texture2D, ()>::new();
-                        burn_btn.id(burn_id)
-                            .layout()
-                                .width(fixed!(140.0 * font_scale))
-                                .padding(Padding::all(6))
-                                .direction(LayoutDirection::TopToBottom)
-                                .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
-                            .end()
-                            .background_color(burn_color)
-                            .corner_radius().all(12.0 * font_scale).end();
-                        clay_scope.with(&burn_btn, |clay_scope| {
-                            clay_scope.text("Burn Segment", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+                        let mut burn_grid = Declaration::<Texture2D, ()>::new();
+                        burn_grid.layout().width(grow!()).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).direction(LayoutDirection::TopToBottom).end();
+                        clay_scope.with(&burn_grid, |clay_scope| {
+                            let mut row1 = Declaration::<Texture2D, ()>::new(); row1.layout().child_gap(8).end();
+                            clay_scope.with(&row1, |clay_scope| {
+                                render_burn_btn(clay_scope, "burn_up", "BURN UP", &state, 0.0, 1.0, mouse_pressed, &mut clipboard, font_scale);
+                            });
+                            let mut row2 = Declaration::<Texture2D, ()>::new(); row2.layout().child_gap(8).end();
+                            clay_scope.with(&row2, |clay_scope| {
+                                render_burn_btn(clay_scope, "burn_left", "BURN LEFT", &state, -1.0, 0.0, mouse_pressed, &mut clipboard, font_scale);
+                                render_burn_btn(clay_scope, "burn_right", "BURN RIGHT", &state, 1.0, 0.0, mouse_pressed, &mut clipboard, font_scale);
+                            });
+                            let mut row3 = Declaration::<Texture2D, ()>::new(); row3.layout().child_gap(8).end();
+                            clay_scope.with(&row3, |clay_scope| {
+                                render_burn_btn(clay_scope, "burn_down", "BURN DOWN", &state, 0.0, -1.0, mouse_pressed, &mut clipboard, font_scale);
+                            });
                         });
 
                         let fire_id = clay_scope.id("fire_btn");
@@ -758,6 +767,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 let port = guard.port.clone();
                                 // Power test sequence: jump Y, burn X
                                 let sequence = "G90\\nG0 Y16\\nG1 X50 F1000 S1000\\nG0 X0\\nG0 Y12\\nG1 X50 F1000 S1000\\nG0 X0\\nG0 Y8\\nG1 X50 F1000 S1000\\nG0 X0\\nG0 Y4\\nG1 X50 F1000 S1000\\nG0 X0\\nG0 Y0";
+
+                                // Simulate in virtual view
+                                let levels = [16.0, 12.0, 8.0, 4.0];
+                                for &y in &levels {
+                                    guard.paths.push(PathSegment { x1: 0.0, y1: y, x2: 50.0, y2: y, s: 1000.0 });
+                                }
+                                guard.v_pos = Vector2::new(0.0, 0.0);
+
                                 let cmd = format!("echo -e '{}' > {}", sequence, port);
                                 guard.log_command("POWER TEST SEQ".to_string());
                                 guard.copied_at = Some(std::time::Instant::now());
@@ -960,6 +977,59 @@ fn render_jog_btn<'a, 'render>(
         .corner_radius().all(8.0 * font_scale).end();
     clay.with(&btn, |clay| {
         clay.text(icon, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+    });
+}
+
+fn render_burn_btn<'a, 'render>(
+    clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
+    id: &str,
+    label: &str,
+    state: &Arc<Mutex<AppState>>,
+    dx: f32,
+    dy: f32,
+    mouse_pressed: bool,
+    clipboard: &mut Option<Clipboard>,
+    font_scale: f32,
+) where
+    'a: 'render,
+{
+    let btn_id = clay.id(id);
+    let mut color = Color::u_rgb(147, 51, 234); // purple-600
+    if clay.pointer_over(btn_id) {
+        color = Color::u_rgb(168, 85, 247); // purple-500
+        if mouse_pressed {
+            let mut guard = state.lock().unwrap();
+            let d = guard.distance;
+            let f = guard.feed_rate;
+            let s = guard.power;
+            let port = guard.port.clone();
+            let v_pos = guard.v_pos;
+
+            let new_x = (v_pos.x + dx * d).clamp(0.0, 400.0);
+            let new_y = (v_pos.y + dy * d).clamp(0.0, 400.0);
+
+            guard.paths.push(PathSegment { x1: v_pos.x, y1: v_pos.y, x2: new_x, y2: new_y, s });
+            guard.v_pos.x = new_x;
+            guard.v_pos.y = new_y;
+
+            let cmd = format!("echo 'G90 G1 X{:.2} Y{:.2} F{} S{}' > {}", new_x, new_y, f, s, port);
+            guard.log_command(cmd.clone());
+            guard.copied_at = Some(std::time::Instant::now());
+            if let Some(cb) = clipboard { let _ = cb.set_text(cmd); }
+        }
+    }
+    let mut btn = Declaration::<Texture2D, ()>::new();
+    btn.id(btn_id)
+        .layout()
+            .width(fixed!(65.0 * font_scale))
+            .padding(Padding::all(4))
+            .direction(LayoutDirection::TopToBottom)
+            .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+        .end()
+        .background_color(color)
+        .corner_radius().all(8.0 * font_scale).end();
+    clay.with(&btn, |clay| {
+        clay.text(label, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
     });
 }
 
