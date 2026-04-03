@@ -85,7 +85,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 Command { label: "Hold", cmd: "!" },
                 Command { label: "Resume", cmd: "~" },
                 Command { label: "Unlock", cmd: "$X" },
-                Command { label: "Home", cmd: "$H" },
                 Command { label: "Reset", cmd: "0x18" },
             ],
         },
@@ -95,8 +94,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             color: Color::u_rgb(251, 146, 60), // orange-400
             commands: vec![
                 Command { label: "Dynamic", cmd: "M4" },
-                Command { label: "Constant", cmd: "M3" },
-                Command { label: "Off", cmd: "M5" },
                 Command { label: "Air On", cmd: "M8" },
                 Command { label: "Air Off", cmd: "M9" },
             ],
@@ -145,7 +142,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 Command { label: "Y 12", cmd: "G90 G0 Y12" },
                 Command { label: "Y 8", cmd: "G90 G0 Y8" },
                 Command { label: "Y 4", cmd: "G90 G0 Y4" },
-                Command { label: "Y 0", cmd: "G90 G0 Y0" },
             ],
         },
         Section {
@@ -153,7 +149,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             icon: ICON_LAYERS,
             color: Color::u_rgb(34, 197, 94), // green-500
             commands: vec![
-                Command { label: "X 0", cmd: "G90 G0 X0" },
                 Command { label: "X 100", cmd: "G90 G0 X100" },
                 Command { label: "X 200", cmd: "G90 G0 X200" },
                 Command { label: "X 300", cmd: "G90 G0 X300" },
