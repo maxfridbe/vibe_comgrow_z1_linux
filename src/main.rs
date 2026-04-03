@@ -7,6 +7,7 @@ use clay_layout::render_commands::{RenderCommandConfig};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Sender};
+use std::collections::VecDeque;
 use std::cell::RefCell;
 use arboard::Clipboard;
 use std::io::{Write, Read};
@@ -69,101 +70,174 @@ struct AppState {
 impl AppState {
     fn send_command(&mut self, cmd: String) {
         let cmd = cmd.trim().to_string();
+        if cmd.is_empty() { return; }
+
+        let explanation = decode_gcode(&cmd);
+
+        // State Update Logic for virtual view
         let parts: Vec<&str> = cmd.split_whitespace().collect();
-        
-        let explanation = if cmd.starts_with("$J=") {
-            let mut x = None;
-            let mut y = None;
-            for part in &parts {
-                let p = if part.starts_with("$J=") { &part[3..] } else { *part };
-                if p.starts_with('X') { x = Some(&p[1..]); }
-                else if p.starts_with('Y') { y = Some(&p[1..]); }
+        let mut has_g90 = false;
+        let mut has_g91 = false;
+        let mut has_g0 = false;
+        let mut has_g1 = false;
+        let is_jog = cmd.starts_with("$J=");
+
+        let mut x_val = None;
+        let mut y_val = None;
+        let mut s_val = None;
+
+        for part in &parts {
+            let p = if part.starts_with("$J=") { &part[3..] } else { *part };
+            if p == "G90" { has_g90 = true; }
+            else if p == "G91" { has_g91 = true; }
+            else if p == "G0" { has_g0 = true; }
+            else if p == "G1" { has_g1 = true; }
+            else if p.starts_with('X') { x_val = p[1..].parse::<f32>().ok(); }
+            else if p.starts_with('Y') { y_val = p[1..].parse::<f32>().ok(); }
+            else if p.starts_with('S') { s_val = p[1..].parse::<f32>().ok(); }
+        }
+
+        if is_jog {
+            if has_g91 {
+                if let Some(x) = x_val { self.v_pos.x = (self.v_pos.x + x).clamp(0.0, 400.0); }
+                if let Some(y) = y_val { self.v_pos.y = (self.v_pos.y + y).clamp(0.0, 400.0); }
+            } else if has_g90 {
+                if let Some(x) = x_val { self.v_pos.x = x.clamp(0.0, 400.0); }
+                if let Some(y) = y_val { self.v_pos.y = y.clamp(0.0, 400.0); }
             }
-            if let Some(val) = x {
-                let sign = if val.starts_with('-') { "" } else { "+" };
-                format!("Command: Jog X {}{}mm", sign, val)
-            } else if let Some(val) = y {
-                let sign = if val.starts_with('-') { "" } else { "+" };
-                format!("Command: Jog Y {}{}mm", sign, val)
-            } else {
-                "Command: Jog Move".to_string()
+        } else if has_g0 || has_g1 {
+            let old_pos = self.v_pos;
+            if has_g91 {
+                if let Some(x) = x_val { self.v_pos.x = (self.v_pos.x + x).clamp(0.0, 400.0); }
+                if let Some(y) = y_val { self.v_pos.y = (self.v_pos.y + y).clamp(0.0, 400.0); }
+            } else if has_g90 {
+                if let Some(x) = x_val { self.v_pos.x = x.clamp(0.0, 400.0); }
+                if let Some(y) = y_val { self.v_pos.y = y.clamp(0.0, 400.0); }
             }
-        } else if parts.iter().any(|p| p.starts_with("G1")) {
-            let mut x = None;
-            let mut y = None;
-            let mut f = None;
-            let mut s = None;
-            for part in &parts {
-                if part.starts_with('X') { x = Some(&part[1..]); }
-                else if part.starts_with('Y') { y = Some(&part[1..]); }
-                else if part.starts_with('F') { f = Some(&part[1..]); }
-                else if part.starts_with('S') { s = Some(&part[1..]); }
+
+            if has_g1 {
+                self.paths.push(PathSegment {
+                    x1: old_pos.x,
+                    y1: old_pos.y,
+                    x2: self.v_pos.x,
+                    y2: self.v_pos.y,
+                    s: s_val.unwrap_or(self.power),
+                });
             }
-            let mut pos = Vec::new();
-            if let Some(xv) = x { pos.push(format!("X{}", xv)); }
-            if let Some(yv) = y { pos.push(format!("Y{}", yv)); }
-            let pos_str = if pos.is_empty() { "".to_string() } else { format!("to {}", pos.join(" ")) };
-            
-            let mut params = Vec::new();
-            if let Some(fv) = f { params.push(format!("F{}", fv)); }
-            if let Some(sv) = s { params.push(format!("S{}", sv)); }
-            let params_str = if params.is_empty() { "".to_string() } else { format!(" ({})", params.join(", ")) };
-            
-            format!("Command: Burn Linear {} {}", pos_str, params_str).split_whitespace().collect::<Vec<_>>().join(" ")
-        } else if parts.iter().any(|p| p.starts_with("G0")) {
-            let mut x = None;
-            let mut y = None;
-            for part in &parts {
-                if part.starts_with('X') { x = Some(&part[1..]); }
-                else if part.starts_with('Y') { y = Some(&part[1..]); }
-            }
-            let mut pos = Vec::new();
-            if let Some(xv) = x { pos.push(format!("X{}", xv)); }
-            if let Some(yv) = y { pos.push(format!("Y{}", yv)); }
-            let pos_str = if pos.is_empty() { "".to_string() } else { format!("to {}", pos.join(" ")) };
-            
-            format!("Command: Jump {}", pos_str).split_whitespace().collect::<Vec<_>>().join(" ")
-        } else if parts.iter().any(|p| p.starts_with("M3")) || parts.iter().any(|p| p.starts_with("M4")) {
-            let is_m3 = parts.iter().any(|p| p.starts_with("M3"));
-            let label = if is_m3 { "Laser Constant On" } else { "Laser Dynamic On" };
-            let mut s = None;
-            for part in &parts {
-                if part.starts_with('S') { s = Some(&part[1..]); }
-            }
-            if let Some(sv) = s {
-                format!("Command: {} (Power: {})", label, sv)
-            } else {
-                format!("Command: {}", label)
-            }
-        } else {
-            match cmd.as_str() {
-                "$H" => "Command: Home Machine",
-                "M5" => "Command: Laser Off",
-                "?" => "Command: Status Report",
-                "!" => "Command: Feed Hold",
-                "~" => "Command: Cycle Start",
-                "$X" => "Command: Kill Alarm",
-                "G90" => "Command: Absolute Distance",
-                "G91" => "Command: Incremental Distance",
-                "G21" => "Command: Millimeter Units",
-                "G20" => "Command: Inch Units",
-                "G92 X0 Y0" => "Command: Set Origin",
-                "M8" => "Command: Air Assist On",
-                "M9" => "Command: Air Assist Off",
-                c if c.starts_with("$") => "Command: Settings Change",
-                _ => "Command: G-Code Command",
-            }.to_string()
-        };
+        } else if cmd == "G92 X0 Y0" {
+            self.v_pos = Vector2::new(0.0, 0.0);
+        }
 
         self.last_command = cmd.clone();
         self.serial_logs.push(LogEntry {
             text: cmd.clone(),
-            explanation: explanation.to_string(),
+            explanation,
         });
         if self.serial_logs.len() > 100 {
             self.serial_logs.remove(0);
         }
         let _ = self.tx.send(cmd);
+    }
+}
+
+fn decode_gcode(cmd: &str) -> String {
+    let cmd = cmd.trim();
+    let parts: Vec<&str> = cmd.split_whitespace().collect();
+    
+    if cmd.starts_with("$J=") {
+        let mut x = None;
+        let mut y = None;
+        for part in &parts {
+            let p = if part.starts_with("$J=") { &part[3..] } else { *part };
+            if p.starts_with('X') { x = Some(&p[1..]); }
+            else if p.starts_with('Y') { y = Some(&p[1..]); }
+        }
+        if let Some(val) = x {
+            let sign = if val.starts_with('-') { "" } else { "+" };
+            format!("Command: Jog X {}{}mm", sign, val)
+        } else if let Some(val) = y {
+            let sign = if val.starts_with('-') { "" } else { "+" };
+            format!("Command: Jog Y {}{}mm", sign, val)
+        } else {
+            "Command: Jog Move".to_string()
+        }
+    } else if parts.iter().any(|p| p.starts_with("G1")) {
+        let mut x = None;
+        let mut y = None;
+        let mut f = None;
+        let mut s = None;
+        for part in &parts {
+            if part.starts_with('X') { x = Some(&part[1..]); }
+            else if part.starts_with('Y') { y = Some(&part[1..]); }
+            else if part.starts_with('F') { f = Some(&part[1..]); }
+            else if part.starts_with('S') { s = Some(&part[1..]); }
+        }
+        let mut pos = Vec::new();
+        if let Some(xv) = x { pos.push(format!("X{}", xv)); }
+        if let Some(yv) = y { pos.push(format!("Y{}", yv)); }
+        let pos_str = if pos.is_empty() { "".to_string() } else { format!("to {}", pos.join(" ")) };
+        
+        let mut params = Vec::new();
+        if let Some(fv) = f { params.push(format!("F{}", fv)); }
+        if let Some(sv) = s { params.push(format!("S{}", sv)); }
+        let params_str = if params.is_empty() { "".to_string() } else { format!(" ({})", params.join(", ")) };
+        
+        format!("Command: Linear Burn {} {}", pos_str, params_str).split_whitespace().collect::<Vec<_>>().join(" ")
+    } else if parts.iter().any(|p| p.starts_with("G0")) {
+        let mut x = None;
+        let mut y = None;
+        for part in &parts {
+            if part.starts_with('X') { x = Some(&part[1..]); }
+            else if part.starts_with('Y') { y = Some(&part[1..]); }
+        }
+        let mut pos = Vec::new();
+        if let Some(xv) = x { pos.push(format!("X{}", xv)); }
+        if let Some(yv) = y { pos.push(format!("Y{}", yv)); }
+        let pos_str = if pos.is_empty() { "".to_string() } else { format!("to {}", pos.join(" ")) };
+        
+        format!("Command: Jump {}", pos_str).split_whitespace().collect::<Vec<_>>().join(" ")
+    } else if parts.iter().any(|p| p.starts_with("M3")) || parts.iter().any(|p| p.starts_with("M4")) {
+        let is_m3 = parts.iter().any(|p| p.starts_with("M3"));
+        let label = if is_m3 { "Laser Constant On" } else { "Laser Dynamic On" };
+        let mut s = None;
+        for part in &parts {
+            if part.starts_with('S') { s = Some(&part[1..]); }
+        }
+        if let Some(sv) = s {
+            format!("Command: {} (Power: {})", label, sv)
+        } else {
+            format!("Command: {}", label)
+        }
+    } else {
+        match cmd {
+            "$H" => "Command: Home Machine",
+            "M5" => "Command: Laser Off",
+            "?" => "Command: Status Report",
+            "!" => "Command: Feed Hold",
+            "~" => "Command: Cycle Start",
+            "$X" => "Command: Kill Alarm",
+            "G90" => "Command: Absolute Distance",
+            "G91" => "Command: Incremental Distance",
+            "G21" => "Command: Millimeter Units",
+            "G20" => "Command: Inch Units",
+            "G92 X0 Y0" => "Command: Set Origin",
+            "M8" => "Command: Air Assist On",
+            "M9" => "Command: Air Assist Off",
+            "0x18" => "Command: Soft Reset",
+            c if c.starts_with("$") => "Command: Settings Change",
+            _ => "Command: G-Code Command",
+        }.to_string()
+    }
+}
+
+fn decode_response(resp: &str) -> String {
+    let trimmed = resp.trim();
+    match trimmed {
+        "ok" => "Response: Success / OK".to_string(),
+        l if l.starts_with("error:") => format!("Response: Machine Error [{}]", &l[6..]),
+        l if l.starts_with("ALARM:") => format!("Response: Safety Alarm [{}]", &l[6..]),
+        l if l.starts_with("Grbl") => "Response: Firmware Greeting".to_string(),
+        _ => format!("Response: {}", trimmed),
     }
 }
 
@@ -223,6 +297,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     std::thread::spawn(move || {
         let port_name = "/dev/ttyUSB0";
         let baud_rate = 115200;
+        let mut queue: VecDeque<String> = VecDeque::new();
+        let mut wait_for_ok = false;
 
         loop {
             if let Ok(mut port) = serialport::new(port_name, baud_rate)
@@ -231,10 +307,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             {
                 let mut serial_buf: Vec<u8> = vec![0; 1024];
                 loop {
-                    // Send commands
+                    // Receive from rx and push to queue
                     while let Ok(cmd) = rx.try_recv() {
-                        let full_cmd = format!("{}\n", cmd);
-                        let _ = port.write_all(full_cmd.as_bytes());
+                        queue.push_back(cmd);
+                    }
+
+                    // Send if not waiting
+                    if !wait_for_ok {
+                        if let Some(cmd) = queue.pop_front() {
+                            let full_cmd = format!("{}\n", cmd);
+                            let _ = port.write_all(full_cmd.as_bytes());
+                            wait_for_ok = true;
+                        }
                     }
 
                     // Read responses
@@ -244,17 +328,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             for line in response.lines() {
                                 let trimmed = line.trim();
                                 if !trimmed.is_empty() {
-                                    let explanation = match trimmed {
-                                        "ok" => "Response: Success / OK".to_string(),
-                                        l if l.starts_with("error:") => format!("Response: Machine Error [{}]", &l[6..]),
-                                        l if l.starts_with("ALARM:") => format!("Response: Safety Alarm [{}]", &l[6..]),
-                                        l if l.starts_with("Grbl") => "Response: Firmware Greeting".to_string(),
-                                        _ => "Response: Status/Info".to_string(),
-                                    };
+                                    if trimmed == "ok" || trimmed.starts_with("error") {
+                                        wait_for_ok = false;
+                                    }
+
+                                    let explanation = decode_response(trimmed);
 
                                     let mut guard = state_for_thread.lock().unwrap();
                                     guard.serial_logs.push(LogEntry {
-                                        text: format!("Response: {}", trimmed),
+                                        text: trimmed.to_string(),
                                         explanation,
                                     });
                                     if guard.serial_logs.len() > 100 {
@@ -544,21 +626,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                                 let mut guard = state.lock().unwrap();
                                                 let full_cmd = cmd.cmd.to_string();
                                                 guard.send_command(full_cmd.clone());
-
-                                                // Update simulated position for absolute jumps
-                                                if cmd.cmd.contains("G90") && (cmd.cmd.contains("G0") || cmd.cmd.contains("G1")) {
-                                                    for part in cmd.cmd.split_whitespace() {
-                                                        if part.starts_with('X') {
-                                                            if let Ok(val) = part[1..].parse::<f32>() {
-                                                                guard.v_pos.x = val;
-                                                            }
-                                                        } else if part.starts_with('Y') {
-                                                            if let Ok(val) = part[1..].parse::<f32>() {
-                                                                guard.v_pos.y = val;
-                                                            }
-                                                        }
-                                                    }
-                                                }
 
                                                 guard.copied_at = Some(std::time::Instant::now());
                                                 if let Some(cb) = &mut clipboard {
@@ -1141,11 +1208,6 @@ fn render_jog_btn<'a, 'render>(
         if mouse_pressed {
             let mut guard = state.lock().unwrap();
             let d = guard.distance;
-            if axis == "X" {
-                guard.v_pos.x = (guard.v_pos.x + d * direction).clamp(0.0, 400.0);
-            } else {
-                guard.v_pos.y = (guard.v_pos.y + d * direction).clamp(0.0, 400.0);
-            }
             let cmd = format!("$J=G91 G21 {}{} F{}", axis, direction * d, guard.feed_rate);
             guard.send_command(cmd.clone());
             guard.copied_at = Some(std::time::Instant::now());
@@ -1190,16 +1252,8 @@ fn render_burn_btn<'a, 'render>(
             let d = guard.distance;
             let f = guard.feed_rate;
             let s = guard.power;
-            let v_pos = guard.v_pos;
 
-            let new_x = (v_pos.x + dx * d).clamp(0.0, 400.0);
-            let new_y = (v_pos.y + dy * d).clamp(0.0, 400.0);
-
-            guard.paths.push(PathSegment { x1: v_pos.x, y1: v_pos.y, x2: new_x, y2: new_y, s });
-            guard.v_pos.x = new_x;
-            guard.v_pos.y = new_y;
-
-            let cmd = format!("G90 G1 X{:.2} Y{:.2} F{} S{}", new_x, new_y, f, s);
+            let cmd = format!("G91 G1 X{:.2} Y{:.2} F{} S{}", dx * d, dy * d, f, s);
             guard.send_command(cmd.clone());
             guard.copied_at = Some(std::time::Instant::now());
             if let Some(cb) = clipboard { let _ = cb.set_text(cmd); }
