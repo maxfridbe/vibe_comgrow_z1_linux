@@ -56,7 +56,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ICON_SETTINGS, ICON_CHECK, ICON_ARROW_UP, ICON_ARROW_DOWN, 
         ICON_ARROW_LEFT, ICON_ARROW_RIGHT, ICON_CROSSHAIR, ICON_USB, 
         ICON_FLAME, ICON_GAUGE, ICON_SHIELD, ICON_REFRESH, ICON_CPU, 
-        ICON_TRASH, ICON_LAYERS, ICON_COPY, ICON_LASER, ICON_SWEEP
+        ICON_TRASH, ICON_LAYERS, ICON_COPY, ICON_LASER, ICON_SWEEP,
+        ICON_SERIAL
     ];
     for icon in icons_list {
         chars.extend(icon.chars());
@@ -654,7 +655,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .corner_radius().all(16.0 * font_scale).end();
             
             clay_scope.with(&serial_box, |clay_scope| {
-                clay_scope.text("SERIAL LOG (COMMAND | EXPLANATION)", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
+                let mut title_line = Declaration::<Texture2D, ()>::new();
+                title_line.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+                clay_scope.with(&title_line, |clay_scope| {
+                    clay_scope.text(ICON_SERIAL, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
+                    clay_scope.text("SERIAL LOG (COMMAND | EXPLANATION)", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
+                });
                 
                 let logs = {
                     let guard = state.lock().unwrap();
@@ -662,22 +668,31 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 };
                 
                 for (i, log) in logs.iter().rev().enumerate() {
-                    let color = if i == 0 { Color::u_rgb(255, 255, 255) } else { Color::u_rgb(148, 163, 184) };
-                    
+                    let mut text_color = if i == 0 { Color::u_rgb(255, 255, 255) } else { Color::u_rgb(148, 163, 184) };
+
+                    if log.is_response {
+                        text_color = Color::u_rgb(0, 0, 0);
+                    }
+
                     let mut row = Declaration::<Texture2D, ()>::new();
-                    row.layout().width(grow!()).child_gap((20.0 * font_scale) as u16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+                    row.layout().width(grow!()).padding(Padding::new((8.0 * font_scale) as u16, (8.0 * font_scale) as u16, (2.0 * font_scale) as u16, (2.0 * font_scale) as u16)).child_gap((20.0 * font_scale) as u16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+                    
+                    if log.is_response {
+                        row.background_color(Color::u_rgb(255, 255, 255))
+                           .corner_radius().all(4.0 * font_scale).end();
+                    }
                     
                     clay_scope.with(&row, |clay_scope| {
                         let mut col1 = Declaration::<Texture2D, ()>::new();
                         col1.layout().width(fixed!(350.0 * font_scale)).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
                         clay_scope.with(&col1, |clay_scope| {
-                            clay_scope.text(arena.push(log.text.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(color).end());
+                            clay_scope.text(arena.push(log.text.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(text_color).end());
                         });
                         
                         let mut col2 = Declaration::<Texture2D, ()>::new();
                         col2.layout().width(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
                         clay_scope.with(&col2, |clay_scope| {
-                            clay_scope.text(arena.push(log.explanation.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(color).end());
+                            clay_scope.text(arena.push(log.explanation.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(text_color).end());
                         });
                     });
                 }

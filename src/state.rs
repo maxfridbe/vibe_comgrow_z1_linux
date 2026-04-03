@@ -7,6 +7,7 @@ use crate::gcode::decode_gcode;
 pub struct LogEntry {
     pub text: String,
     pub explanation: String,
+    pub is_response: bool,
 }
 
 pub struct PathSegment {
@@ -94,6 +95,7 @@ impl AppState {
         self.serial_logs.push(LogEntry {
             text: cmd.clone(),
             explanation,
+            is_response: false,
         });
         if self.serial_logs.len() > 100 {
             self.serial_logs.remove(0);

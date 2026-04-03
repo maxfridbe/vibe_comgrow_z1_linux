@@ -50,6 +50,7 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                                     guard.serial_logs.push(LogEntry {
                                         text: trimmed.to_string(),
                                         explanation,
+                                        is_response: true,
                                     });
                                     if guard.serial_logs.len() > 100 {
                                         guard.serial_logs.remove(0);

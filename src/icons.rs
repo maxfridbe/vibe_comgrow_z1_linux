@@ -21,3 +21,4 @@ pub const ICON_TRASH: &str = "\u{f1f8}";
 pub const ICON_LAYERS: &str = "\u{f0c9}";
 pub const ICON_COPY: &str = "\u{f0c5}";
 pub const ICON_SWEEP: &str = "\u{f518}";
+pub const ICON_SERIAL: &str = "\u{f8d9}";
