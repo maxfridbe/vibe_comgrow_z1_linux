@@ -68,6 +68,7 @@ struct AppState {
 
 impl AppState {
     fn send_command(&mut self, cmd: String) {
+        let cmd = cmd.trim().to_string();
         let explanation = match cmd.as_str() {
             c if c.starts_with("G1") => "Linear Move",
             c if c.starts_with("G0") => "Rapid Move",
@@ -929,13 +930,19 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     
                     clay_scope.with(&row, |clay_scope| {
                         let mut col1 = Declaration::<Texture2D, ()>::new();
-                        col1.layout().width(fixed!(350.0 * font_scale)).end();
+                        col1.layout()
+                            .width(fixed!(350.0 * font_scale))
+                            .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
+                            .end();
                         clay_scope.with(&col1, |clay_scope| {
                             clay_scope.text(arena.push(log.text.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(color).end());
                         });
                         
                         let mut col2 = Declaration::<Texture2D, ()>::new();
-                        col2.layout().width(grow!()).end();
+                        col2.layout()
+                            .width(grow!())
+                            .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
+                            .end();
                         clay_scope.with(&col2, |clay_scope| {
                             clay_scope.text(arena.push(log.explanation.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(color).end());
                         });
