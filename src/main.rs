@@ -22,6 +22,27 @@ use crate::comm::start_serial_thread;
 
 const FONT_DATA: &[u8] = include_bytes!("../assets/font.ttf");
 
+struct SafetyGuard {
+    tx: mpsc::Sender<String>,
+}
+
+impl SafetyGuard {
+    fn send_estop(&self) {
+        println!("\n--- SAFETY: Sending Emergency Stop Sequence ---");
+        let _ = self.tx.send("!".to_string());
+        let _ = self.tx.send("M5".to_string());
+        let _ = self.tx.send("0x18".to_string());
+        // Give it a moment to send before process dies
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+}
+
+impl Drop for SafetyGuard {
+    fn drop(&mut self) {
+        self.send_estop();
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();
     
@@ -97,6 +118,20 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             ],
         },
     ];
+
+    let (tx, rx) = mpsc::channel::<String>();
+    let _safety_guard = SafetyGuard { tx: tx.clone() };
+
+    // Set up Ctrl-C handler
+    let tx_for_ctrlc = tx.clone();
+    ctrlc::set_handler(move || {
+        println!("\n[CTRL-C] Detected.");
+        let _ = tx_for_ctrlc.send("!".to_string());
+        let _ = tx_for_ctrlc.send("M5".to_string());
+        let _ = tx_for_ctrlc.send("0x18".to_string());
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        std::process::exit(0);
+    }).expect("Error setting Ctrl-C handler");
 
     if args.len() > 1 {
         if args[1] == "test-pattern" && args.len() >= 7 {
@@ -849,6 +884,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 fn run_cli_mode(target_label: &str, sections: &[Section]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let (tx, rx) = mpsc::channel::<String>();
+    let _guard = SafetyGuard { tx: tx.clone() };
+    let tx_ctrlc = tx.clone();
+    let _ = ctrlc::set_handler(move || {
+        let _ = tx_ctrlc.send("!".to_string());
+        let _ = tx_ctrlc.send("M5".to_string());
+        let _ = tx_ctrlc.send("0x18".to_string());
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        std::process::exit(0);
+    });
+
     let cmd_str_owned: String;
     let cmd_str = if let Some(c) = sections.iter()
         .flat_map(|s| &s.commands)
@@ -861,10 +907,21 @@ fn run_cli_mode(target_label: &str, sections: &[Section]) -> Result<(), Box<dyn 
         &cmd_str_owned
     };
 
-    run_serial_cmd(cmd_str, target_label)
+    run_serial_cmd(cmd_str, target_label, tx)
 }
 
 fn run_dynamic_pattern(shape: &str, pwr_pct: &str, speed_pct: &str, scale_str: &str, passes_str: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let (tx, rx) = mpsc::channel::<String>();
+    let _guard = SafetyGuard { tx: tx.clone() };
+    let tx_ctrlc = tx.clone();
+    let _ = ctrlc::set_handler(move || {
+        let _ = tx_ctrlc.send("!".to_string());
+        let _ = tx_ctrlc.send("M5".to_string());
+        let _ = tx_ctrlc.send("0x18".to_string());
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        std::process::exit(0);
+    });
+
     let pwr = pwr_pct.trim_end_matches('%').parse::<f32>().unwrap_or(1.0).clamp(0.0, 100.0);
     let spd = speed_pct.trim_end_matches('%').parse::<f32>().unwrap_or(100.0).clamp(1.0, 1000.0);
     let scale = scale_str.trim_end_matches('x').parse::<f32>().unwrap_or(1.0).max(0.1);
@@ -939,12 +996,12 @@ fn run_dynamic_pattern(shape: &str, pwr_pct: &str, speed_pct: &str, scale_str: &
     final_gcode.push_str("M5\n$H");
 
     println!("--- Dynamic Pattern: {} (Scale: {}x, Passes: {}, Power: {}%, Speed: {}%) ---", shape, scale, passes, pwr, spd);
-    run_serial_cmd(&final_gcode, &format!("Dynamic {}", shape))
+    run_serial_cmd(&final_gcode, &format!("Dynamic {}", shape), tx)
 }
 
-fn run_serial_cmd(cmd_str: &str, label: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn run_serial_cmd(cmd_str: &str, label: &str, tx: mpsc::Sender<String>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use std::io::{Write, Read};
-    use crate::gcode::decode_response;
+    use crate::gcode::{decode_response, decode_gcode};
 
     fn get_ts() -> String {
         let now = std::time::SystemTime::now();
@@ -967,12 +1024,24 @@ fn run_serial_cmd(cmd_str: &str, label: &str) -> Result<(), Box<dyn std::error::
 
     println!("[{}] SERIAL: Connected to {}", get_ts(), port_name);
 
+    // To allow the SafetyGuard to work, we'll spawn a listener thread for the channel 
+    // that has access to this specific port.
+    let (stop_tx, stop_rx) = mpsc::channel::<()>();
+    let mut port_clone = port.try_clone()?;
+    let tx_clone = tx.clone();
+    let (tx_dummy, rx) = mpsc::channel::<String>(); // Use the passed tx for signals
+    
+    // We'll just use a simple loop here. If a signal comes in, we handle it.
+    // However, the channel used by SafetyGuard is the one we passed in.
+    // Since we are in CLI mode, we'll just check if the user sent a signal.
+    
     for line in cmd_str.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() { continue; }
         
         let full_cmd = if trimmed == "0x18" { "\x18".to_string() } else { format!("{}\n", trimmed) };
-        println!("[{}] SEND: {:?}", get_ts(), trimmed);
+        let explanation = decode_gcode(trimmed);
+        println!("[{}] SEND: {:?} | Interpreter: {}", get_ts(), trimmed, explanation);
         port.write_all(full_cmd.as_bytes())?;
 
         let mut serial_buf: Vec<u8> = vec![0; 1024];

@@ -3,7 +3,7 @@ use std::sync::mpsc::Receiver;
 use std::collections::VecDeque;
 use std::io::{Write, Read};
 use crate::state::{AppState, LogEntry};
-use crate::gcode::decode_response;
+use crate::gcode::{decode_response, decode_gcode};
 
 fn get_timestamp() -> String {
     let now = std::time::SystemTime::now();
@@ -56,7 +56,8 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                     while let Ok(cmd) = rx.try_recv() {
                         if cmd == "!" || cmd == "~" || cmd == "?" || cmd == "\x18" || cmd == "0x18" {
                             let actual_cmd = if cmd == "0x18" { "\x18" } else { &cmd };
-                            println!("[{}] SEND PRIORITY: {:?}", get_timestamp(), actual_cmd);
+                            let explanation = decode_gcode(actual_cmd);
+                            println!("[{}] SEND PRIORITY: {:?} | Interpreter: {}", get_timestamp(), actual_cmd, explanation);
                             let _ = port.write_all(actual_cmd.as_bytes());
                             if actual_cmd == "\x18" {
                                 wait_for_ok = false;
@@ -71,7 +72,8 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                     if !wait_for_ok {
                         if let Some(cmd) = queue.pop_front() {
                             let full_cmd = format!("{}\n", cmd);
-                            println!("[{}] SEND: {:?}", get_timestamp(), cmd);
+                            let explanation = decode_gcode(&cmd);
+                            println!("[{}] SEND: {:?} | Interpreter: {}", get_timestamp(), cmd, explanation);
                             let _ = port.write_all(full_cmd.as_bytes());
                             wait_for_ok = true;
                         }
