@@ -70,26 +70,26 @@ impl AppState {
     fn send_command(&mut self, cmd: String) {
         let cmd = cmd.trim().to_string();
         let explanation = match cmd.as_str() {
-            c if c.starts_with("G1") => "Linear Move",
-            c if c.starts_with("G0") => "Rapid Move",
-            "$H" => "Home Machine",
-            c if c.starts_with("M3") => "Laser Constant On",
-            c if c.starts_with("M4") => "Laser Dynamic On",
-            "M5" => "Laser Off",
-            "?" => "Status Report",
-            "!" => "Feed Hold",
-            "~" => "Cycle Start",
-            "$X" => "Kill Alarm",
-            "G90" => "Absolute Distance",
-            "G91" => "Incremental Distance",
-            "G21" => "Millimeter Units",
-            "G20" => "Inch Units",
-            "G92 X0 Y0" => "Set Origin",
-            c if c.starts_with("$J") => "Jog Move",
-            "M8" => "Air Assist On",
-            "M9" => "Air Assist Off",
-            c if c.starts_with("$") => "Settings Change",
-            _ => "G-Code Command",
+            c if c.starts_with("G1") => "Command: Linear Move",
+            c if c.starts_with("G0") => "Command: Rapid Move",
+            "$H" => "Command: Home Machine",
+            c if c.starts_with("M3") => "Command: Laser Constant On",
+            c if c.starts_with("M4") => "Command: Laser Dynamic On",
+            "M5" => "Command: Laser Off",
+            "?" => "Command: Status Report",
+            "!" => "Command: Feed Hold",
+            "~" => "Command: Cycle Start",
+            "$X" => "Command: Kill Alarm",
+            "G90" => "Command: Absolute Distance",
+            "G91" => "Command: Incremental Distance",
+            "G21" => "Command: Millimeter Units",
+            "G20" => "Command: Inch Units",
+            "G92 X0 Y0" => "Command: Set Origin",
+            c if c.starts_with("$J") => "Command: Jog Move",
+            "M8" => "Command: Air Assist On",
+            "M9" => "Command: Air Assist Off",
+            c if c.starts_with("$") => "Command: Settings Change",
+            _ => "Command: G-Code Command",
         };
 
         self.last_command = cmd.clone();
@@ -181,10 +181,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             for line in response.lines() {
                                 let trimmed = line.trim();
                                 if !trimmed.is_empty() {
+                                    let explanation = match trimmed {
+                                        "ok" => "Response: Success / OK".to_string(),
+                                        l if l.starts_with("error:") => format!("Response: Machine Error [{}]", &l[6..]),
+                                        l if l.starts_with("ALARM:") => format!("Response: Safety Alarm [{}]", &l[6..]),
+                                        l if l.starts_with("Grbl") => "Response: Firmware Greeting".to_string(),
+                                        _ => "Response: Status/Info".to_string(),
+                                    };
+
                                     let mut guard = state_for_thread.lock().unwrap();
                                     guard.serial_logs.push(LogEntry {
-                                        text: trimmed.to_string(),
-                                        explanation: "Laser Response".to_string(),
+                                        text: format!("Response: {}", trimmed),
+                                        explanation,
                                     });
                                     if guard.serial_logs.len() > 100 {
                                         guard.serial_logs.remove(0);
