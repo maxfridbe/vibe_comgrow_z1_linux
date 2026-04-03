@@ -207,7 +207,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             header_decl.layout()
                     .width(grow!())
                     .height(fixed!(80.0 * font_scale))
-                    .padding(Padding::all(16))
+                    .padding(Padding::all(12))
                     .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
                 .end()
                 .background_color(Color::u_rgb(30, 41, 59)) // slate-900
@@ -333,7 +333,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let mut mid_col = Declaration::<Texture2D, ()>::new();
                 mid_col.layout()
                     .width(grow!())
-                    .height(grow!())
+                    .height(fixed!(425.0 * font_scale))
                     .direction(LayoutDirection::TopToBottom)
                     .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
                     .child_gap(24)
@@ -341,7 +341,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 clay_scope.with(&mid_col, |clay_scope| {
                     let mut canvas_box = Declaration::<Texture2D, ()>::new();
                     canvas_box.id(clay_scope.id("canvas"))
-                        .layout().width(grow!()).height(grow!()).end()
+                        .layout().width(grow!()).height(fixed!(425.0 * font_scale)).end()
                         .background_color(Color::u_rgb(30, 41, 59))
                         .corner_radius().all(16.0 * font_scale).end();
                     
@@ -691,7 +691,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .end()
                 .clip(false, true, scroll_pos)
                 .background_color(Color::u_rgb(2, 6, 23))
-                .corner_radius().all(16.0 * font_scale).end();
+                .corner_radius().all(16.0 * font_scale).end()
+                .border().top((2.0 * font_scale) as u16).color(Color::u_rgb(168, 85, 247)).end();
             
             clay_scope.with(&serial_box, |clay_scope| {
                 let mut title_line = Declaration::<Texture2D, ()>::new();
@@ -774,6 +775,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
                 RenderCommandConfig::ScissorStart() => { unsafe { raylib::ffi::BeginScissorMode(command.bounding_box.x as i32, command.bounding_box.y as i32, command.bounding_box.width as i32, command.bounding_box.height as i32); } }
                 RenderCommandConfig::ScissorEnd() => { unsafe { raylib::ffi::EndScissorMode(); } }
+                RenderCommandConfig::Border(border) => {
+                    let color = raylib::color::Color::new(border.color.r as u8, border.color.g as u8, border.color.b as u8, border.color.a as u8);
+                    if border.width.top > 0 {
+                        d.draw_rectangle(command.bounding_box.x as i32, command.bounding_box.y as i32, command.bounding_box.width as i32, border.width.top as i32, color);
+                    }
+                }
                 _ => {}
             }
         }
