@@ -188,6 +188,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             scroll_pos = unsafe { (*scroll_data.scrollPosition).into() };
         }
 
+        let canvas_id = unsafe { clay_layout::bindings::Clay_GetElementId(clay_layout::bindings::Clay_String::from("canvas")) };
+        let mut canvas_side = 400.0 * font_scale;
+        let canvas_data = unsafe { clay_layout::bindings::Clay_GetElementData(canvas_id) };
+        if canvas_data.found {
+            canvas_side = canvas_data.boundingBox.width;
+        }
+
         let mut clay_scope = clay.begin::<Texture2D, ()>();
 
         let mut root_decl = Declaration::<Texture2D, ()>::new();
@@ -333,30 +340,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let mut mid_col = Declaration::<Texture2D, ()>::new();
                 mid_col.layout()
                     .width(grow!())
-                    .height(fixed!(425.0 * font_scale))
                     .direction(LayoutDirection::TopToBottom)
                     .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
-                    .child_gap(24)
+                    .child_gap(12)
                     .end();
                 clay_scope.with(&mid_col, |clay_scope| {
                     let mut canvas_box = Declaration::<Texture2D, ()>::new();
                     canvas_box.id(clay_scope.id("canvas"))
-                        .layout().width(grow!()).height(fixed!(425.0 * font_scale)).end()
+                        .layout().width(grow!()).height(fixed!(canvas_side)).end()
                         .background_color(Color::u_rgb(30, 41, 59))
                         .corner_radius().all(16.0 * font_scale).end();
                     
                     clay_scope.with(&canvas_box, |clay_scope| {
-                        let mut label_box = Declaration::<Texture2D, ()>::new();
-                        label_box.layout().padding(Padding::all(10)).direction(LayoutDirection::TopToBottom).end();
-                        clay_scope.with(&label_box, |clay_scope| {
-                            let (x, y) = {
-                                let guard = state.lock().unwrap();
-                                (guard.v_pos.x, guard.v_pos.y)
-                            };
-                            let pos_text = arena.push(format!("X: {:.1}  Y: {:.1}", x, y));
-                            clay_scope.text(pos_text, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(96, 165, 250)).end());
-                        });
-
                         let paths_empty = {
                             let guard = state.lock().unwrap();
                             guard.paths.is_empty()
@@ -386,6 +381,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 clay_scope.text(ICON_SWEEP, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(248, 113, 113)).end());
                             });
                         }
+                    });
+
+                    let mut label_box = Declaration::<Texture2D, ()>::new();
+                    label_box.layout().padding(Padding::all(6)).direction(LayoutDirection::TopToBottom).end();
+                    clay_scope.with(&label_box, |clay_scope| {
+                        let (x, y) = {
+                            let guard = state.lock().unwrap();
+                            (guard.v_pos.x, guard.v_pos.y)
+                        };
+                        let pos_text = arena.push(format!("X: {:.1}  Y: {:.1}", x, y));
+                        clay_scope.text(pos_text, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(96, 165, 250)).end());
                     });
                 });
 
