@@ -92,7 +92,7 @@ impl AppState {
 
         self.last_command = cmd.clone();
         self.serial_logs.push(LogEntry {
-            text: cmd.clone(),
+            text: format!("Command: {}", cmd),
             explanation,
         });
         if self.serial_logs.len() > 100 {
