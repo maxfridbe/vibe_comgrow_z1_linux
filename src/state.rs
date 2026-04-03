@@ -19,7 +19,16 @@ pub struct PathSegment {
     pub s: f32,
 }
 
+#[derive(Clone, PartialEq)]
+pub enum UITab {
+    Test,
+    Manual,
+    SVG,
+    Image,
+}
+
 pub struct AppState {
+    pub current_tab: UITab,
     pub distance: f32,
     pub feed_rate: f32,
     pub power: f32,

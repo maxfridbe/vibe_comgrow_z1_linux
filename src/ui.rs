@@ -3,8 +3,34 @@ use clay_layout::{Declaration, Color, grow, fixed};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
 use arboard::Clipboard;
-use crate::state::{AppState, StringArena, PathSegment};
+use crate::state::{AppState, StringArena, UITab};
 use crate::icons::*;
+
+pub fn render_tab_btn<'a, 'render>(
+    clay: &mut clay_layout::ClayScope<'a, 'render, Texture2D, ()>,
+    id: &str,
+    label: &str,
+    active: bool,
+    font_scale: f32,
+) -> bool {
+    let color = if active { Color::u_rgb(59, 130, 246) } else { Color::u_rgb(30, 41, 59) };
+    let text_color = if active { Color::u_rgb(255, 255, 255) } else { Color::u_rgb(148, 163, 184) };
+    
+    let mut btn = Declaration::<Texture2D, ()>::new();
+    btn.id(id).layout().padding(Padding::symmetric(16, 10)).end()
+        .background_color(color)
+        .corner_radius().top_left(8.0 * font_scale).top_right(8.0 * font_scale).end();
+    
+    let mut clicked = false;
+    clay.with(&btn, |clay_scope| {
+        clay_scope.text(label, clay_layout::text::TextConfig::new().font_size((16.0 * font_scale) as u16).color(text_color).end());
+        // Since we are in clay scope, we useIsMouseButtonPressed from raylib
+        if unsafe { raylib::ffi::IsMouseButtonPressed(raylib::ffi::MouseButton::MOUSE_BUTTON_LEFT as i32) } && clay_scope.pointer_over(clay_scope.id(id)) {
+            clicked = true;
+        }
+    });
+    clicked
+}
 
 pub struct Command {
     pub label: &'static str,

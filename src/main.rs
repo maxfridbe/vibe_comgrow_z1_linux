@@ -17,8 +17,8 @@ use std::sync::mpsc;
 use arboard::Clipboard;
 
 use crate::icons::*;
-use crate::state::{AppState, StringArena};
-use crate::ui::{Command, Section};
+use crate::state::{AppState, StringArena, UITab};
+use crate::ui::{Command, Section, render_jog_btn, render_burn_btn, render_slider, render_tab_btn};
 use crate::comm::start_serial_thread;
 use crate::gcode::decode_gcode;
 
@@ -140,6 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }).expect("Error setting Ctrl-C handler");
 
     let state = Arc::new(Mutex::new(AppState {
+        current_tab: UITab::Manual,
         distance: 10.0,
         feed_rate: 1000.0,
         power: 100.0,
@@ -187,42 +188,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Dimensions::new(width, size)
     });
     let arena = StringArena::new();
-    let mut clipboard = Clipboard::new().ok();
     let mut font_scale: f32 = 1.0;
-
-    let mut sections = sections;
-    sections.push(Section {
-        title: "Y-JUMP (Absolute)",
-        icon: ICON_LAYERS,
-        color: Color::u_rgb(236, 72, 153),
-        commands: vec![
-            Command { label: "Y 16", cmd: "G90 G0 Y16" },
-            Command { label: "Y 12", cmd: "G90 G0 Y12" },
-            Command { label: "Y 8", cmd: "G90 G0 Y8" },
-            Command { label: "Y 4", cmd: "G90 G0 Y4" },
-        ],
-    });
-    sections.push(Section {
-        title: "X-JUMP (Absolute)",
-        icon: ICON_LAYERS,
-        color: Color::u_rgb(34, 197, 94),
-        commands: vec![
-            Command { label: "X 100", cmd: "G90 G0 X100" },
-            Command { label: "X 200", cmd: "G90 G0 X200" },
-            Command { label: "X 300", cmd: "G90 G0 X300" },
-            Command { label: "X 400", cmd: "G90 G0 X400" },
-        ],
-    });
 
     while !rl.window_should_close() {
         arena.clear();
-        if rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL) {
-            let wheel = rl.get_mouse_wheel_move();
-            if wheel > 0.0 { font_scale += 0.1; }
-            if wheel < 0.0 { font_scale -= 0.1; }
-            font_scale = font_scale.clamp(0.5, 3.0);
-        }
-
         let mouse_pos = rl.get_mouse_position();
         let mouse_down = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
         
@@ -233,40 +202,158 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut canvas_rect = raylib::math::Rectangle::new(0.0, 0.0, 0.0, 0.0);
 
         let mut main_container = Declaration::<Texture2D, ()>::new();
-        main_container.layout().width(grow!()).height(grow!()).direction(LayoutDirection::LeftToRight).end()
+        main_container.layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).end()
             .background_color(Color::u_rgb(15, 23, 42));
 
         clay_scope.with(&main_container, |clay_scope| {
-            let mut left_col = Declaration::<Texture2D, ()>::new();
-            left_col.layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).padding(Padding::all(20)).child_gap(20).end();
+            // Top Tab Bar
+            let mut tab_bar = Declaration::<Texture2D, ()>::new();
+            tab_bar.layout().width(grow!()).direction(LayoutDirection::LeftToRight).padding(Padding::all(10)).child_gap(10).end()
+                .background_color(Color::u_rgb(30, 41, 59));
             
-            clay_scope.with(&left_col, |clay_scope| {
-                let mut canvas_box = Declaration::<Texture2D, ()>::new();
-                canvas_box.layout().width(grow!()).height(grow!()).end()
-                    .background_color(Color::u_rgb(30, 41, 59))
-                    .corner_radius().all(16.0 * font_scale).end();
+            clay_scope.with(&tab_bar, |clay_scope| {
+                let current_tab = state.lock().unwrap().current_tab.clone();
+                if render_tab_btn(clay_scope, "tab_manual", "Manual Controls", current_tab == UITab::Manual, font_scale) {
+                    state.lock().unwrap().current_tab = UITab::Manual;
+                }
+                if render_tab_btn(clay_scope, "tab_test", "Test Patterns", current_tab == UITab::Test, font_scale) {
+                    state.lock().unwrap().current_tab = UITab::Test;
+                }
+                if render_tab_btn(clay_scope, "tab_svg", "SVG Mode", current_tab == UITab::SVG, font_scale) {
+                    state.lock().unwrap().current_tab = UITab::SVG;
+                }
+                if render_tab_btn(clay_scope, "tab_image", "Image Mode", current_tab == UITab::Image, font_scale) {
+                    state.lock().unwrap().current_tab = UITab::Image;
+                }
+            });
+
+            // Main Content Area
+            let mut content_area = Declaration::<Texture2D, ()>::new();
+            content_area.layout().width(grow!()).height(grow!()).direction(LayoutDirection::LeftToRight).padding(Padding::all(20)).child_gap(20).end();
+            
+            clay_scope.with(&content_area, |clay_scope| {
+                // Left Column: Grid/Canvas
+                let mut left_col = Declaration::<Texture2D, ()>::new();
+                left_col.layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(20).end();
                 
-                clay_scope.with(&canvas_box, |clay_scope| {
-                    let canvas_id = clay_scope.id("canvas");
-                    let data = unsafe { clay_layout::bindings::Clay_GetElementData(canvas_id.id) };
-                    canvas_rect = raylib::math::Rectangle::new(data.boundingBox.x, data.boundingBox.y, data.boundingBox.width, data.boundingBox.height);
+                clay_scope.with(&left_col, |clay_scope| {
+                    let mut canvas_box = Declaration::<Texture2D, ()>::new();
+                    canvas_box.layout().width(grow!()).height(grow!()).end()
+                        .background_color(Color::u_rgb(30, 41, 59))
+                        .corner_radius().all(16.0 * font_scale).end();
+                    
+                    clay_scope.with(&canvas_box, |clay_scope| {
+                        let canvas_id = clay_scope.id("canvas");
+                        let data = unsafe { clay_layout::bindings::Clay_GetElementData(canvas_id.id) };
+                        canvas_rect = raylib::math::Rectangle::new(data.boundingBox.x, data.boundingBox.y, data.boundingBox.width, data.boundingBox.height);
 
-                    let mut label_box = Declaration::<Texture2D, ()>::new();
-                    label_box.layout().padding(Padding::all(6)).direction(LayoutDirection::TopToBottom).child_gap(2).end();
-                    clay_scope.with(&label_box, |clay_scope| {
-                        let (vx, vy, mx, my, mstate) = {
-                            let guard = state.lock().unwrap();
-                            (guard.v_pos.x, guard.v_pos.y, guard.machine_pos.x, guard.machine_pos.y, guard.machine_state.clone())
-                        };
-                        let v_pos_text = arena.push(format!("Virtual: X: {:.1}  Y: {:.1}", vx, vy));
-                        clay_scope.text(v_pos_text, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(96, 165, 250)).end());
-
-                        let m_pos_text = arena.push(format!("Machine: X: {:.1}  Y: {:.1}", mx, my));
-                        clay_scope.text(m_pos_text, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
-
-                        let state_text = arena.push(format!("Status: {}", mstate));
-                        clay_scope.text(state_text, clay_layout::text::TextConfig::new().font_size((16.0 * font_scale) as u16).color(Color::u_rgb(34, 197, 94)).end());
+                        let mut label_box = Declaration::<Texture2D, ()>::new();
+                        label_box.layout().padding(Padding::all(10)).direction(LayoutDirection::TopToBottom).child_gap(4).end();
+                        clay_scope.with(&label_box, |clay_scope| {
+                            let (vx, vy, mx, my, mstate) = {
+                                let guard = state.lock().unwrap();
+                                (guard.v_pos.x, guard.v_pos.y, guard.machine_pos.x, guard.machine_pos.y, guard.machine_state.clone())
+                            };
+                            clay_scope.text(arena.push(format!("Virtual: X: {:.1}  Y: {:.1}", vx, vy)), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(96, 165, 250)).end());
+                            clay_scope.text(arena.push(format!("Machine: X: {:.1}  Y: {:.1}", mx, my)), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
+                            clay_scope.text(arena.push(format!("Status: {}", mstate)), clay_layout::text::TextConfig::new().font_size((16.0 * font_scale) as u16).color(Color::u_rgb(34, 197, 94)).end());
+                        });
                     });
+
+                    // Log Pane with E-STOP
+                    let mut log_estop_row = Declaration::<Texture2D, ()>::new();
+                    log_estop_row.layout().width(grow!()).height(fixed!(200.0 * font_scale)).direction(LayoutDirection::LeftToRight).child_gap(10).end();
+                    clay_scope.with(&log_estop_row, |clay_scope| {
+                        // Log
+                        let mut log_box = Declaration::<Texture2D, ()>::new();
+                        log_box.layout().width(grow!()).height(grow!()).padding(Padding::all(10)).end()
+                            .background_color(Color::u_rgb(15, 23, 42))
+                            .corner_radius().all(8.0 * font_scale).end();
+                        clay_scope.with(&log_box, |_| {});
+
+                        // E-STOP Button
+                        let mut estop = Declaration::<Texture2D, ()>::new();
+                        estop.id("estop_main").layout().width(fixed!(120.0 * font_scale)).height(grow!()).padding(Padding::all(10)).end()
+                            .background_color(Color::u_rgb(220, 38, 38))
+                            .corner_radius().all(8.0 * font_scale).end();
+                        clay_scope.with(&estop, |clay_scope| {
+                            clay_scope.text("E-STOP", clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+                            if clay_scope.pointer_over(clay_scope.id("estop_main")) && IsMouseButtonPressed(MouseButton::MOUSE_BUTTON_LEFT as i32) {
+                                let mut guard = state.lock().unwrap();
+                                guard.send_command("!".to_string());
+                                guard.send_command("M5".to_string());
+                                guard.send_command("0x18".to_string());
+                            }
+                        });
+                    });
+                });
+
+                // Right Column: Tab Content
+                let mut right_col = Declaration::<Texture2D, ()>::new();
+                right_col.layout().width(fixed!(400.0 * font_scale)).height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(20).end();
+                
+                clay_scope.with(&right_col, |clay_scope| {
+                    let current_tab = state.lock().unwrap().current_tab.clone();
+                    match current_tab {
+                        UITab::Manual => {
+                            // Show Manual Controls
+                            for section in &sections {
+                                if section.title != "Test Patterns" {
+                                    let mut section_box = Declaration::<Texture2D, ()>::new();
+                                    section_box.layout().width(grow!()).direction(LayoutDirection::TopToBottom).padding(Padding::all(10)).child_gap(8).end()
+                                        .background_color(Color::u_rgb(30, 41, 59))
+                                        .corner_radius().all(12.0 * font_scale).end();
+                                    clay_scope.with(&section_box, |clay_scope| {
+                                        clay_scope.text(section.title, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(section.color).end());
+                                        let mut btn_row = Declaration::<Texture2D, ()>::new();
+                                        btn_row.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(8).end();
+                                        clay_scope.with(&btn_row, |clay_scope| {
+                                            for cmd in &section.commands {
+                                                if render_jog_btn(clay_scope, arena.push(format!("btn_{}", cmd.label)), cmd.label, font_scale) {
+                                                    state.lock().unwrap().send_command(cmd.cmd.to_string());
+                                                }
+                                            }
+                                        });
+                                    });
+                                }
+                            }
+                        }
+                        UITab::Test => {
+                            // Show Test Patterns
+                            for section in &sections {
+                                if section.title == "Test Patterns" {
+                                    let mut section_box = Declaration::<Texture2D, ()>::new();
+                                    section_box.layout().width(grow!()).direction(LayoutDirection::TopToBottom).padding(Padding::all(10)).child_gap(8).end()
+                                        .background_color(Color::u_rgb(30, 41, 59))
+                                        .corner_radius().all(12.0 * font_scale).end();
+                                    clay_scope.with(&section_box, |clay_scope| {
+                                        clay_scope.text(section.title, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(section.color).end());
+                                        for cmd in &section.commands {
+                                            if render_burn_btn(clay_scope, arena.push(format!("test_{}", cmd.label)), cmd.label, font_scale) {
+                                                state.lock().unwrap().send_command(cmd.cmd.to_string());
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        UITab::SVG => {
+                            // SVG Loading UI
+                            let mut svg_box = Declaration::<Texture2D, ()>::new();
+                            svg_box.layout().width(grow!()).direction(LayoutDirection::TopToBottom).padding(Padding::all(10)).child_gap(10).end()
+                                .background_color(Color::u_rgb(30, 41, 59))
+                                .corner_radius().all(12.0 * font_scale).end();
+                            clay_scope.with(&svg_box, |clay_scope| {
+                                clay_scope.text("SVG Path Mode", clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(Color::u_rgb(192, 132, 252)).end());
+                                if render_burn_btn(clay_scope, "btn_load_svg", "Load SVG File", font_scale) {
+                                    println!("Load SVG Dialog (Not implemented yet - would use tinyfiledialogs or similar)");
+                                }
+                            });
+                        }
+                        UITab::Image => {
+                            clay_scope.text("Image Raster Mode (Coming Soon)", clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
+                        }
+                    }
                 });
             });
         });
