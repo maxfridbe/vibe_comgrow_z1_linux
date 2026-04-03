@@ -1,5 +1,13 @@
 pub fn decode_gcode(cmd: &str) -> String {
     let cmd = cmd.trim();
+
+    if cmd == "\x18" || cmd == "0x18" {
+        return "Emergency Soft Reset (Ctrl-X)".to_string();
+    }
+    if cmd == "?" {
+        return "Request Real-Time Status Report".to_string();
+    }
+
     let parts: Vec<&str> = cmd.split_whitespace().collect();
     
     let decoded = if cmd.starts_with("$J=") {
@@ -18,6 +26,25 @@ pub fn decode_gcode(cmd: &str) -> String {
             format!("Jog Y {}{}mm", sign, val)
         } else {
             "Jog Move".to_string()
+        }
+    } else if cmd.starts_with('$') && cmd.contains('=') {
+        let clean_cmd = cmd.strip_prefix('$').unwrap_or(cmd);
+        let mut parts = clean_cmd.split('=');
+        if let (Some(setting), Some(value)) = (parts.next(), parts.next()) {
+            match setting {
+                "100" => format!("Update X Steps/mm to {}", value),
+                "101" => format!("Update Y Steps/mm to {}", value),
+                "102" => format!("Update Z Steps/mm to {}", value),
+                "130" => format!("Set X Max Travel to {}mm", value),
+                "131" => format!("Set Y Max Travel to {}mm", value),
+                "30" => format!("Set Max Spindle/Laser Speed (S) to {}", value),
+                "32" => format!("Set Laser Mode to {} (0=Off, 1=On)", value),
+                "20" => format!("Set Soft Limits to {} (0=Off, 1=On)", value),
+                "21" => format!("Set Hard Limits to {} (0=Off, 1=On)", value),
+                _ => "Update GRBL Setting".to_string(),
+            }
+        } else {
+            "Update GRBL Setting".to_string()
         }
     } else if parts.iter().any(|p| p.starts_with("G1")) {
         let mut x = None;
@@ -70,7 +97,6 @@ pub fn decode_gcode(cmd: &str) -> String {
         match cmd {
             "$H" => "Home Machine",
             "M5" => "Laser Off",
-            "?" => "Status Report",
             "!" => "Feed Hold",
             "~" => "Cycle Start",
             "$X" => "Kill Alarm",
@@ -81,7 +107,6 @@ pub fn decode_gcode(cmd: &str) -> String {
             "G92 X0 Y0" => "Set Origin",
             "M8" => "Air Assist On",
             "M9" => "Air Assist Off",
-            "0x18" => "Soft Reset",
             c if c.starts_with("$") => "Settings Change",
             _ => "G-Code Command",
         }.to_string()
@@ -98,5 +123,40 @@ pub fn decode_response(resp: &str) -> String {
         l if l.starts_with("ALARM:") => format!("Safety Alarm [{}]", &l[6..]),
         l if l.starts_with("Grbl") => "Firmware Greeting".to_string(),
         _ => trimmed.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decode_gcode_settings() {
+        assert_eq!(decode_gcode("$100=80.0"), "Update X Steps/mm to 80.0");
+        assert_eq!(decode_gcode("$101=80.0"), "Update Y Steps/mm to 80.0");
+        assert_eq!(decode_gcode("$102=250.0"), "Update Z Steps/mm to 250.0");
+        assert_eq!(decode_gcode("$130=400"), "Set X Max Travel to 400mm");
+        assert_eq!(decode_gcode("$131=400"), "Set Y Max Travel to 400mm");
+        assert_eq!(decode_gcode("$30=1000"), "Set Max Spindle/Laser Speed (S) to 1000");
+        assert_eq!(decode_gcode("$32=1"), "Set Laser Mode to 1 (0=Off, 1=On)");
+        assert_eq!(decode_gcode("$20=0"), "Set Soft Limits to 0 (0=Off, 1=On)");
+        assert_eq!(decode_gcode("$21=0"), "Set Hard Limits to 0 (0=Off, 1=On)");
+        assert_eq!(decode_gcode("$1=25"), "Update GRBL Setting");
+    }
+
+    #[test]
+    fn test_decode_gcode_status() {
+        assert_eq!(decode_gcode("?"), "Request Real-Time Status Report");
+    }
+
+    #[test]
+    fn test_decode_gcode_reset() {
+        assert_eq!(decode_gcode("\x18"), "Emergency Soft Reset (Ctrl-X)");
+        assert_eq!(decode_gcode("0x18"), "Emergency Soft Reset (Ctrl-X)");
+    }
+
+    #[test]
+    fn test_decode_gcode_linear() {
+        assert_eq!(decode_gcode("G1 X10 Y20 F1000 S500"), "Burn Linear to X10 Y20 (F1000, S500)");
     }
 }
