@@ -1,280 +1,26 @@
 #![windows_subsystem = "windows"]
 
+mod icons;
+mod state;
+mod gcode;
+mod comm;
+mod ui;
+
 use clay_layout::layout::{Padding, LayoutAlignmentX, LayoutAlignmentY, Alignment, LayoutDirection};
-use clay_layout::math::{Vector2, Dimensions};
+use clay_layout::math::{Dimensions};
 use clay_layout::{Clay, Declaration, Color, grow, fixed, fit};
 use clay_layout::render_commands::{RenderCommandConfig};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{self, Sender};
-use std::collections::VecDeque;
-use std::cell::RefCell;
+use std::sync::mpsc;
 use arboard::Clipboard;
-use std::io::{Write, Read};
+
+use crate::icons::*;
+use crate::state::{AppState, StringArena, PathSegment};
+use crate::ui::{Command, Section, render_jog_btn, render_burn_btn, render_slider};
+use crate::comm::start_serial_thread;
 
 const FONT_DATA: &[u8] = include_bytes!("../assets/font.ttf");
-
-// Nerd Font Icon Constants
-const ICON_TERMINAL: &str = "\u{f489}";
-const ICON_LASER: &str = "\u{eb62}";
-const ICON_MOVE: &str = "\u{f047}";
-const ICON_POWER: &str = "\u{f0e7}";
-const ICON_HOME: &str = "\u{f015}";
-const ICON_UNLOCK: &str = "\u{f09c}";
-const ICON_SETTINGS: &str = "\u{f013}";
-const ICON_CHECK: &str = "\u{f058}";
-const ICON_ARROW_UP: &str = "\u{f062}";
-const ICON_ARROW_DOWN: &str = "\u{f063}";
-const ICON_ARROW_LEFT: &str = "\u{f060}";
-const ICON_ARROW_RIGHT: &str = "\u{f061}";
-const ICON_CROSSHAIR: &str = "\u{f05b}";
-const ICON_USB: &str = "\u{f287}";
-const ICON_FLAME: &str = "\u{f06d}";
-const ICON_GAUGE: &str = "\u{f0e4}";
-const ICON_SHIELD: &str = "\u{f132}";
-const ICON_REFRESH: &str = "\u{f021}";
-const ICON_CPU: &str = "\u{f2db}";
-const ICON_TRASH: &str = "\u{f1f8}";
-const ICON_LAYERS: &str = "\u{f0c9}";
-const ICON_COPY: &str = "\u{f0c5}";
-const ICON_SWEEP: &str = "\u{f518}";
-
-#[derive(Clone)]
-struct LogEntry {
-    text: String,
-    explanation: String,
-}
-
-struct PathSegment {
-    x1: f32,
-    y1: f32,
-    x2: f32,
-    y2: f32,
-    s: f32,
-}
-
-struct AppState {
-    distance: f32,
-    feed_rate: f32,
-    power: f32,
-    port: String,
-    wattage: String,
-    v_pos: Vector2,
-    paths: Vec<PathSegment>,
-    last_command: String,
-    copied_at: Option<std::time::Instant>,
-    serial_logs: Vec<LogEntry>,
-    tx: Sender<String>,
-}
-
-impl AppState {
-    fn send_command(&mut self, cmd: String) {
-        let cmd = cmd.trim().to_string();
-        if cmd.is_empty() { return; }
-
-        let explanation = decode_gcode(&cmd);
-
-        // State Update Logic for virtual view
-        let parts: Vec<&str> = cmd.split_whitespace().collect();
-        let mut has_g90 = false;
-        let mut has_g91 = false;
-        let mut has_g0 = false;
-        let mut has_g1 = false;
-        let is_jog = cmd.starts_with("$J=");
-
-        let mut x_val = None;
-        let mut y_val = None;
-        let mut s_val = None;
-
-        for part in &parts {
-            let p = if part.starts_with("$J=") { &part[3..] } else { *part };
-            if p == "G90" { has_g90 = true; }
-            else if p == "G91" { has_g91 = true; }
-            else if p == "G0" { has_g0 = true; }
-            else if p == "G1" { has_g1 = true; }
-            else if p.starts_with('X') { x_val = p[1..].parse::<f32>().ok(); }
-            else if p.starts_with('Y') { y_val = p[1..].parse::<f32>().ok(); }
-            else if p.starts_with('S') { s_val = p[1..].parse::<f32>().ok(); }
-        }
-
-        if is_jog {
-            if has_g91 {
-                if let Some(x) = x_val { self.v_pos.x = (self.v_pos.x + x).clamp(0.0, 400.0); }
-                if let Some(y) = y_val { self.v_pos.y = (self.v_pos.y + y).clamp(0.0, 400.0); }
-            } else if has_g90 {
-                if let Some(x) = x_val { self.v_pos.x = x.clamp(0.0, 400.0); }
-                if let Some(y) = y_val { self.v_pos.y = y.clamp(0.0, 400.0); }
-            }
-        } else if has_g0 || has_g1 {
-            let old_pos = self.v_pos;
-            if has_g91 {
-                if let Some(x) = x_val { self.v_pos.x = (self.v_pos.x + x).clamp(0.0, 400.0); }
-                if let Some(y) = y_val { self.v_pos.y = (self.v_pos.y + y).clamp(0.0, 400.0); }
-            } else if has_g90 {
-                if let Some(x) = x_val { self.v_pos.x = x.clamp(0.0, 400.0); }
-                if let Some(y) = y_val { self.v_pos.y = y.clamp(0.0, 400.0); }
-            }
-
-            if has_g1 {
-                self.paths.push(PathSegment {
-                    x1: old_pos.x,
-                    y1: old_pos.y,
-                    x2: self.v_pos.x,
-                    y2: self.v_pos.y,
-                    s: s_val.unwrap_or(self.power),
-                });
-            }
-        } else if cmd == "G92 X0 Y0" {
-            self.v_pos = Vector2::new(0.0, 0.0);
-        }
-
-        self.last_command = cmd.clone();
-        self.serial_logs.push(LogEntry {
-            text: cmd.clone(),
-            explanation,
-        });
-        if self.serial_logs.len() > 100 {
-            self.serial_logs.remove(0);
-        }
-        let _ = self.tx.send(cmd);
-    }
-}
-
-fn decode_gcode(cmd: &str) -> String {
-    let cmd = cmd.trim();
-    let parts: Vec<&str> = cmd.split_whitespace().collect();
-    
-    if cmd.starts_with("$J=") {
-        let mut x = None;
-        let mut y = None;
-        for part in &parts {
-            let p = if part.starts_with("$J=") { &part[3..] } else { *part };
-            if p.starts_with('X') { x = Some(&p[1..]); }
-            else if p.starts_with('Y') { y = Some(&p[1..]); }
-        }
-        if let Some(val) = x {
-            let sign = if val.starts_with('-') { "" } else { "+" };
-            format!("Command: Jog X {}{}mm", sign, val)
-        } else if let Some(val) = y {
-            let sign = if val.starts_with('-') { "" } else { "+" };
-            format!("Command: Jog Y {}{}mm", sign, val)
-        } else {
-            "Command: Jog Move".to_string()
-        }
-    } else if parts.iter().any(|p| p.starts_with("G1")) {
-        let mut x = None;
-        let mut y = None;
-        let mut f = None;
-        let mut s = None;
-        for part in &parts {
-            if part.starts_with('X') { x = Some(&part[1..]); }
-            else if part.starts_with('Y') { y = Some(&part[1..]); }
-            else if part.starts_with('F') { f = Some(&part[1..]); }
-            else if part.starts_with('S') { s = Some(&part[1..]); }
-        }
-        let mut pos = Vec::new();
-        if let Some(xv) = x { pos.push(format!("X{}", xv)); }
-        if let Some(yv) = y { pos.push(format!("Y{}", yv)); }
-        let pos_str = if pos.is_empty() { "".to_string() } else { format!("to {}", pos.join(" ")) };
-        
-        let mut params = Vec::new();
-        if let Some(fv) = f { params.push(format!("F{}", fv)); }
-        if let Some(sv) = s { params.push(format!("S{}", sv)); }
-        let params_str = if params.is_empty() { "".to_string() } else { format!(" ({})", params.join(", ")) };
-        
-        format!("Command: Linear Burn {} {}", pos_str, params_str).split_whitespace().collect::<Vec<_>>().join(" ")
-    } else if parts.iter().any(|p| p.starts_with("G0")) {
-        let mut x = None;
-        let mut y = None;
-        for part in &parts {
-            if part.starts_with('X') { x = Some(&part[1..]); }
-            else if part.starts_with('Y') { y = Some(&part[1..]); }
-        }
-        let mut pos = Vec::new();
-        if let Some(xv) = x { pos.push(format!("X{}", xv)); }
-        if let Some(yv) = y { pos.push(format!("Y{}", yv)); }
-        let pos_str = if pos.is_empty() { "".to_string() } else { format!("to {}", pos.join(" ")) };
-        
-        format!("Command: Jump {}", pos_str).split_whitespace().collect::<Vec<_>>().join(" ")
-    } else if parts.iter().any(|p| p.starts_with("M3")) || parts.iter().any(|p| p.starts_with("M4")) {
-        let is_m3 = parts.iter().any(|p| p.starts_with("M3"));
-        let label = if is_m3 { "Laser Constant On" } else { "Laser Dynamic On" };
-        let mut s = None;
-        for part in &parts {
-            if part.starts_with('S') { s = Some(&part[1..]); }
-        }
-        if let Some(sv) = s {
-            format!("Command: {} (Power: {})", label, sv)
-        } else {
-            format!("Command: {}", label)
-        }
-    } else {
-        match cmd {
-            "$H" => "Command: Home Machine",
-            "M5" => "Command: Laser Off",
-            "?" => "Command: Status Report",
-            "!" => "Command: Feed Hold",
-            "~" => "Command: Cycle Start",
-            "$X" => "Command: Kill Alarm",
-            "G90" => "Command: Absolute Distance",
-            "G91" => "Command: Incremental Distance",
-            "G21" => "Command: Millimeter Units",
-            "G20" => "Command: Inch Units",
-            "G92 X0 Y0" => "Command: Set Origin",
-            "M8" => "Command: Air Assist On",
-            "M9" => "Command: Air Assist Off",
-            "0x18" => "Command: Soft Reset",
-            c if c.starts_with("$") => "Command: Settings Change",
-            _ => "Command: G-Code Command",
-        }.to_string()
-    }
-}
-
-fn decode_response(resp: &str) -> String {
-    let trimmed = resp.trim();
-    match trimmed {
-        "ok" => "Response: Success / OK".to_string(),
-        l if l.starts_with("error:") => format!("Response: Machine Error [{}]", &l[6..]),
-        l if l.starts_with("ALARM:") => format!("Response: Safety Alarm [{}]", &l[6..]),
-        l if l.starts_with("Grbl") => "Response: Firmware Greeting".to_string(),
-        _ => format!("Response: {}", trimmed),
-    }
-}
-
-struct StringArena {
-    strings: RefCell<Vec<Box<str>>>,
-}
-
-impl StringArena {
-    fn new() -> Self {
-        Self { strings: RefCell::new(Vec::with_capacity(100)) }
-    }
-
-    fn push(&self, s: String) -> &str {
-        let mut strings = self.strings.borrow_mut();
-        let sanitized = s.replace('\0', "").into_boxed_str();
-        let ptr = sanitized.as_ptr();
-        let len = sanitized.len();
-        strings.push(sanitized);
-        unsafe { std::str::from_utf8_unchecked(std::slice::from_raw_parts(ptr, len)) }
-    }
-
-    fn clear(&self) {
-        self.strings.borrow_mut().clear();
-    }
-}
-
-struct Command {
-    label: &'static str,
-    cmd: &'static str,
-}
-
-struct Section {
-    title: &'static str,
-    icon: &'static str,
-    color: Color,
-    commands: Vec<Command>,
-}
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (tx, rx) = mpsc::channel::<String>();
@@ -293,67 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tx,
     }));
 
-    let state_for_thread = Arc::clone(&state);
-    std::thread::spawn(move || {
-        let port_name = "/dev/ttyUSB0";
-        let baud_rate = 115200;
-        let mut queue: VecDeque<String> = VecDeque::new();
-        let mut wait_for_ok = false;
-
-        loop {
-            if let Ok(mut port) = serialport::new(port_name, baud_rate)
-                .timeout(std::time::Duration::from_millis(10))
-                .open()
-            {
-                let mut serial_buf: Vec<u8> = vec![0; 1024];
-                loop {
-                    // Receive from rx and push to queue
-                    while let Ok(cmd) = rx.try_recv() {
-                        queue.push_back(cmd);
-                    }
-
-                    // Send if not waiting
-                    if !wait_for_ok {
-                        if let Some(cmd) = queue.pop_front() {
-                            let full_cmd = format!("{}\n", cmd);
-                            let _ = port.write_all(full_cmd.as_bytes());
-                            wait_for_ok = true;
-                        }
-                    }
-
-                    // Read responses
-                    match port.read(serial_buf.as_mut_slice()) {
-                        Ok(t) => {
-                            let response = String::from_utf8_lossy(&serial_buf[..t]).to_string();
-                            for line in response.lines() {
-                                let trimmed = line.trim();
-                                if !trimmed.is_empty() {
-                                    if trimmed == "ok" || trimmed.starts_with("error") {
-                                        wait_for_ok = false;
-                                    }
-
-                                    let explanation = decode_response(trimmed);
-
-                                    let mut guard = state_for_thread.lock().unwrap();
-                                    guard.serial_logs.push(LogEntry {
-                                        text: trimmed.to_string(),
-                                        explanation,
-                                    });
-                                    if guard.serial_logs.len() > 100 {
-                                        guard.serial_logs.remove(0);
-                                    }
-                                }
-                            }
-                        }
-                        Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => (),
-                        Err(_) => break, // Reconnect on other errors
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(5));
-                }
-            }
-            std::thread::sleep(std::time::Duration::from_secs(1)); // Wait before retry
-        }
-    });
+    start_serial_thread(Arc::clone(&state), rx);
 
     let (mut rl, thread) = raylib::init()
         .size(1280, 800)
@@ -365,14 +51,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     rl.set_target_fps(60);
 
     let mut chars: Vec<char> = (32..127).map(|c| c as u8 as char).collect();
-    let icons: &[&str] = &[
+    let icons_list: &[&str] = &[
         ICON_TERMINAL, ICON_MOVE, ICON_POWER, ICON_HOME, ICON_UNLOCK, 
         ICON_SETTINGS, ICON_CHECK, ICON_ARROW_UP, ICON_ARROW_DOWN, 
         ICON_ARROW_LEFT, ICON_ARROW_RIGHT, ICON_CROSSHAIR, ICON_USB, 
         ICON_FLAME, ICON_GAUGE, ICON_SHIELD, ICON_REFRESH, ICON_CPU, 
         ICON_TRASH, ICON_LAYERS, ICON_COPY, ICON_LASER, ICON_SWEEP
     ];
-    for icon in icons {
+    for icon in icons_list {
         chars.extend(icon.chars());
     }
 
@@ -494,14 +180,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mouse_pressed = rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
         let scroll_delta = rl.get_mouse_wheel_move_v();
         
-        clay.pointer_state(Vector2::new(mouse_pos.x, mouse_pos.y), mouse_down);
-        clay.update_scroll_containers(true, Vector2::new(scroll_delta.x * 50.0, scroll_delta.y * 50.0), rl.get_frame_time());
+        clay.pointer_state(clay_layout::math::Vector2::new(mouse_pos.x, mouse_pos.y), mouse_down);
+        clay.update_scroll_containers(true, clay_layout::math::Vector2::new(scroll_delta.x * 50.0, scroll_delta.y * 50.0), rl.get_frame_time());
         clay.set_layout_dimensions(Dimensions::new(rl.get_screen_width() as f32, rl.get_screen_height() as f32));
 
         let serial_id = unsafe { 
             clay_layout::id::Id { id: clay_layout::bindings::Clay__HashString(clay_layout::bindings::Clay_String::from("serial_box"), 0, 0) }
         };
-        let mut scroll_pos = Vector2::new(0.0, 0.0);
+        let mut scroll_pos = clay_layout::math::Vector2::new(0.0, 0.0);
         if let Some(scroll_data) = clay.scroll_container_data(serial_id) {
             scroll_pos = unsafe { (*scroll_data.scrollPosition).into() };
         }
@@ -611,8 +297,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                             let mut cmd_grid = Declaration::<Texture2D, ()>::new();
                             cmd_grid.layout().width(grow!()).child_gap(8).end();
-                            // Clay doesn't have a built-in grid, we'll just wrap or use fixed columns
-                            // For simplicity, let's do rows of 2
                             for chunk in section.commands.chunks(2) {
                                 let mut row = Declaration::<Texture2D, ()>::new();
                                 row.layout().width(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).child_gap(8).end();
@@ -626,7 +310,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                                 let mut guard = state.lock().unwrap();
                                                 let full_cmd = cmd.cmd.to_string();
                                                 guard.send_command(full_cmd.clone());
-
                                                 guard.copied_at = Some(std::time::Instant::now());
                                                 if let Some(cb) = &mut clipboard {
                                                     let _ = cb.set_text(full_cmd);
@@ -667,8 +350,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .corner_radius().all(16.0 * font_scale).end();
                     
                     clay_scope.with(&canvas_box, |clay_scope| {
-                        // We'll handle custom drawing for the canvas in the raylib render loop
-                        // Just reserve the space here
                         let mut label_box = Declaration::<Texture2D, ()>::new();
                         label_box.layout().padding(Padding::all(10)).direction(LayoutDirection::TopToBottom).end();
                         clay_scope.with(&label_box, |clay_scope| {
@@ -690,7 +371,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             sweep_btn.id(clay_scope.id("clear_canvas"))
                                 .floating()
                                     .attach_points(clay_layout::elements::FloatingAttachPointType::RightTop, clay_layout::elements::FloatingAttachPointType::RightTop)
-                                    .offset(Vector2::new(-16.0 * font_scale, 16.0 * font_scale))
+                                    .offset(clay_layout::math::Vector2::new(-16.0 * font_scale, 16.0 * font_scale))
                                 .end()
                                 .layout()
                                     .padding(Padding::all(4))
@@ -762,27 +443,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 let center_id = clay_scope.id("center");
                                 let mut center_color = Color::u_rgb(0, 0, 0);
                                 if clay_scope.pointer_over(center_id) {
-                                    center_color = Color::u_rgb(30, 41, 59);
+                                    center_color = Color::u_rgb(51, 65, 85);
                                     if mouse_pressed {
                                         let mut guard = state.lock().unwrap();
                                         guard.v_pos = Vector2::new(0.0, 0.0);
-                                        let cmd = "G92 X0 Y0".to_string();
-                                        guard.send_command(cmd.clone());
+                                        guard.send_command("G92 X0 Y0".to_string());
                                         guard.copied_at = Some(std::time::Instant::now());
-                                        if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
+                                        if let Some(cb) = &mut clipboard { let _ = cb.set_text("G92 X0 Y0".to_string()); }
                                     }
                                 }
                                 let mut center_btn = Declaration::<Texture2D, ()>::new();
-                                center_btn.id(center_id)
-                                    .layout()
-                                        .width(fixed!(30.0 * font_scale))
-                                        .height(fixed!(30.0 * font_scale))
-                                        .padding(Padding::all(4))
-                                        .direction(LayoutDirection::TopToBottom)
-                                        .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
-                                    .end()
-                                    .background_color(center_color)
-                                    .corner_radius().all(8.0 * font_scale).end();
+                                center_btn.id(center_id).layout().width(fixed!(30.0 * font_scale)).height(fixed!(30.0 * font_scale)).padding(Padding::all(4)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                                    .background_color(center_color).corner_radius().all(8.0 * font_scale).end();
                                 clay_scope.with(&center_btn, |clay_scope| {
                                     clay_scope.text(ICON_CROSSHAIR, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(59, 130, 246)).end());
                                 });
@@ -790,27 +462,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 let home_zero_id = clay_scope.id("home_zero");
                                 let mut home_zero_color = Color::u_rgb(0, 0, 0);
                                 if clay_scope.pointer_over(home_zero_id) {
-                                    home_zero_color = Color::u_rgb(30, 41, 59);
+                                    home_zero_color = Color::u_rgb(51, 65, 85);
                                     if mouse_pressed {
                                         let mut guard = state.lock().unwrap();
                                         guard.v_pos = Vector2::new(0.0, 0.0);
-                                        let cmd = "G90 G0 X0 Y0".to_string();
-                                        guard.send_command(cmd.clone());
+                                        guard.send_command("G90 G0 X0 Y0".to_string());
                                         guard.copied_at = Some(std::time::Instant::now());
-                                        if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
+                                        if let Some(cb) = &mut clipboard { let _ = cb.set_text("G90 G0 X0 Y0".to_string()); }
                                     }
                                 }
                                 let mut home_zero_btn = Declaration::<Texture2D, ()>::new();
-                                home_zero_btn.id(home_zero_id)
-                                    .layout()
-                                        .width(fixed!(30.0 * font_scale))
-                                        .height(fixed!(30.0 * font_scale))
-                                        .padding(Padding::all(4))
-                                        .direction(LayoutDirection::TopToBottom)
-                                        .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
-                                    .end()
-                                    .background_color(home_zero_color)
-                                    .corner_radius().all(8.0 * font_scale).end();
+                                home_zero_btn.id(home_zero_id).layout().width(fixed!(30.0 * font_scale)).height(fixed!(30.0 * font_scale)).padding(Padding::all(4)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                                    .background_color(home_zero_color).corner_radius().all(8.0 * font_scale).end();
                                 clay_scope.with(&home_zero_btn, |clay_scope| {
                                     clay_scope.text(ICON_HOME, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(52, 211, 153)).end());
                                 });
@@ -850,12 +513,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                         btn_color = Color::u_rgb(51, 65, 85);
                                         if mouse_pressed {
                                             let mut guard = state.lock().unwrap();
-                                            let full_cmd = cmd.cmd.to_string();
-                                            guard.send_command(full_cmd.clone());
+                                            guard.send_command(cmd.cmd.to_string());
                                             guard.copied_at = Some(std::time::Instant::now());
-                                            if let Some(cb) = &mut clipboard {
-                                                let _ = cb.set_text(full_cmd);
-                                            }
+                                            if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd.cmd.to_string()); }
                                         }
                                     }
 
@@ -893,70 +553,53 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         };
                         render_slider(clay_scope, "power_slider", "Intensity (S)", pwr, 0.0, 1000.0, Color::u_rgb(168, 85, 247), &state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_delta.y, &arena, font_scale);
 
-                        // Laser ON/OFF row
                         let mut laser_row = Declaration::<Texture2D, ()>::new();
                         laser_row.layout().width(grow!()).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
                         clay_scope.with(&laser_row, |clay_scope| {
                             let on_id = clay_scope.id("laser_on_btn");
-                            let mut on_color = Color::u_rgb(153, 27, 27); // red-800
+                            let mut on_color = Color::u_rgb(153, 27, 27);
                             if clay_scope.pointer_over(on_id) {
-                                on_color = Color::u_rgb(185, 28, 28); // red-700
+                                on_color = Color::u_rgb(185, 28, 28);
                                 if mouse_pressed {
                                     let mut guard = state.lock().unwrap();
                                     let s = guard.power;
-                                    let cmd = format!("M3 S{:.0}", s);
-                                    guard.send_command(cmd.clone());
+                                    guard.send_command(format!("M3 S{:.0}", s));
                                     guard.copied_at = Some(std::time::Instant::now());
-                                    if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
                                 }
                             }
                             let mut on_btn = Declaration::<Texture2D, ()>::new();
-                            on_btn.id(on_id)
-                                .layout().width(fixed!(85.0 * font_scale)).padding(Padding::all(6)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
-                                .background_color(on_color)
-                                .corner_radius().all(12.0 * font_scale).end();
-                            clay_scope.with(&on_btn, |clay_scope| {
-                                clay_scope.text("LASER ON", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
-                            });
+                            on_btn.id(on_id).layout().width(fixed!(85.0 * font_scale)).padding(Padding::all(6)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                                .background_color(on_color).corner_radius().all(12.0 * font_scale).end();
+                            clay_scope.with(&on_btn, |clay_scope| { clay_scope.text("LASER ON", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end()); });
 
                             let off_id = clay_scope.id("laser_off_btn");
-                            let mut off_color = Color::u_rgb(51, 65, 85); // slate-700
+                            let mut off_color = Color::u_rgb(51, 65, 85);
                             if clay_scope.pointer_over(off_id) {
-                                off_color = Color::u_rgb(71, 85, 105); // slate-600
+                                off_color = Color::u_rgb(71, 85, 105);
                                 if mouse_pressed {
                                     let mut guard = state.lock().unwrap();
-                                    let cmd = "M5".to_string();
-                                    guard.send_command(cmd.clone());
+                                    guard.send_command("M5".to_string());
                                     guard.copied_at = Some(std::time::Instant::now());
-                                    if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
                                 }
                             }
                             let mut off_btn = Declaration::<Texture2D, ()>::new();
-                            off_btn.id(off_id)
-                                .layout().width(fixed!(85.0 * font_scale)).padding(Padding::all(6)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
-                                .background_color(off_color)
-                                .corner_radius().all(12.0 * font_scale).end();
-                            clay_scope.with(&off_btn, |clay_scope| {
-                                clay_scope.text("LASER OFF", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
-                            });
+                            off_btn.id(off_id).layout().width(fixed!(85.0 * font_scale)).padding(Padding::all(6)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                                .background_color(off_color).corner_radius().all(12.0 * font_scale).end();
+                            clay_scope.with(&off_btn, |clay_scope| { clay_scope.text("LASER OFF", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end()); });
                         });
 
                         let mut burn_grid = Declaration::<Texture2D, ()>::new();
                         burn_grid.layout().width(grow!()).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).direction(LayoutDirection::TopToBottom).end();
                         clay_scope.with(&burn_grid, |clay_scope| {
                             let mut row1 = Declaration::<Texture2D, ()>::new(); row1.layout().child_gap(8).end();
-                            clay_scope.with(&row1, |clay_scope| {
-                                render_burn_btn(clay_scope, "burn_up", "BURN UP", &state, 0.0, 1.0, mouse_pressed, &mut clipboard, font_scale);
-                            });
+                            clay_scope.with(&row1, |clay_scope| { render_burn_btn(clay_scope, "burn_up", "BURN UP", &state, 0.0, 1.0, mouse_pressed, &mut clipboard, font_scale); });
                             let mut row2 = Declaration::<Texture2D, ()>::new(); row2.layout().child_gap(8).end();
                             clay_scope.with(&row2, |clay_scope| {
                                 render_burn_btn(clay_scope, "burn_left", "BURN LEFT", &state, -1.0, 0.0, mouse_pressed, &mut clipboard, font_scale);
                                 render_burn_btn(clay_scope, "burn_right", "BURN RIGHT", &state, 1.0, 0.0, mouse_pressed, &mut clipboard, font_scale);
                             });
                             let mut row3 = Declaration::<Texture2D, ()>::new(); row3.layout().child_gap(8).end();
-                            clay_scope.with(&row3, |clay_scope| {
-                                render_burn_btn(clay_scope, "burn_down", "BURN DOWN", &state, 0.0, -1.0, mouse_pressed, &mut clipboard, font_scale);
-                            });
+                            clay_scope.with(&row3, |clay_scope| { render_burn_btn(clay_scope, "burn_down", "BURN DOWN", &state, 0.0, -1.0, mouse_pressed, &mut clipboard, font_scale); });
                         });
 
                         let fire_id = clay_scope.id("fire_btn");
@@ -966,67 +609,30 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             if mouse_pressed {
                                 let mut guard = state.lock().unwrap();
                                 let cmd = if guard.wattage == "10W" { "M3 S5" } else { "M3 S10" }.to_string();
-                                guard.send_command(cmd.clone());
+                                guard.send_command(cmd);
                                 guard.copied_at = Some(std::time::Instant::now());
-                                if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd); }
                             }
                         }
                         let mut fire_btn = Declaration::<Texture2D, ()>::new();
-                        fire_btn.id(fire_id)
-                            .layout()
-                                .width(fixed!(140.0 * font_scale))
-                                .padding(Padding::all(6))
-                                .direction(LayoutDirection::TopToBottom)
-                                .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
-                            .end()
-                            .background_color(fire_color)
-                            .corner_radius().all(12.0 * font_scale).end();
-                        clay_scope.with(&fire_btn, |clay_scope| {
-                            clay_scope.text("Focus Mode Fire", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(192, 132, 252)).end());
-                        });
+                        fire_btn.id(fire_id).layout().width(fixed!(140.0 * font_scale)).padding(Padding::all(6)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                            .background_color(fire_color).corner_radius().all(12.0 * font_scale).end();
+                        clay_scope.with(&fire_btn, |clay_scope| { clay_scope.text("Focus Mode Fire", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(192, 132, 252)).end()); });
 
                         let power_test_id = clay_scope.id("power_test_btn");
-                        let mut power_test_color = Color::u_rgb(220, 38, 38); // red-600
+                        let mut power_test_color = Color::u_rgb(220, 38, 38);
                         if clay_scope.pointer_over(power_test_id) {
-                            power_test_color = Color::u_rgb(239, 68, 68); // red-500
+                            power_test_color = Color::u_rgb(239, 68, 68);
                             if mouse_pressed {
                                 let mut guard = state.lock().unwrap();
-                                // Power test sequence: jump Y, burn X
-                                let sequence = [
-                                    "G90", "G0 Y16", "G1 X50 F1000 S1000", "G0 X0", 
-                                    "G0 Y12", "G1 X50 F1000 S1000", "G0 X0", 
-                                    "G0 Y8", "G1 X50 F1000 S1000", "G0 X0", 
-                                    "G0 Y4", "G1 X50 F1000 S1000", "G0 X0", "G0 Y0"
-                                ];
-
-                                // Simulate in virtual view
-                                let levels = [16.0, 12.0, 8.0, 4.0];
-                                for &y in &levels {
-                                    guard.paths.push(PathSegment { x1: 0.0, y1: y, x2: 50.0, y2: y, s: 1000.0 });
-                                }
-                                guard.v_pos = Vector2::new(0.0, 0.0);
-
-                                for s in sequence {
-                                    guard.send_command(s.to_string());
-                                }
-                                
+                                let sequence = ["G90", "G0 Y16", "G1 X50 F1000 S1000", "G0 X0", "G0 Y12", "G1 X50 F1000 S1000", "G0 X0", "G0 Y8", "G1 X50 F1000 S1000", "G0 X0", "G0 Y4", "G1 X50 F1000 S1000", "G0 X0", "G0 Y0"];
+                                for s in sequence { guard.send_command(s.to_string()); }
                                 guard.copied_at = Some(std::time::Instant::now());
-                                if let Some(cb) = &mut clipboard { let _ = cb.set_text("POWER TEST SEQUENCE SENT".to_string()); }
                             }
                         }
                         let mut power_test_btn = Declaration::<Texture2D, ()>::new();
-                        power_test_btn.id(power_test_id)
-                            .layout()
-                                .width(fixed!(140.0 * font_scale))
-                                .padding(Padding::all(6))
-                                .direction(LayoutDirection::TopToBottom)
-                                .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
-                            .end()
-                            .background_color(power_test_color)
-                            .corner_radius().all(12.0 * font_scale).end();
-                        clay_scope.with(&power_test_btn, |clay_scope| {
-                            clay_scope.text("POWER TEST (Y-STEP)", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
-                        });
+                        power_test_btn.id(power_test_id).layout().width(fixed!(140.0 * font_scale)).padding(Padding::all(6)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                            .background_color(power_test_color).corner_radius().all(12.0 * font_scale).end();
+                        clay_scope.with(&power_test_btn, |clay_scope| { clay_scope.text("POWER TEST (Y-STEP)", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end()); });
                     });
                 });
             });
@@ -1068,19 +674,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     
                     clay_scope.with(&row, |clay_scope| {
                         let mut col1 = Declaration::<Texture2D, ()>::new();
-                        col1.layout()
-                            .width(fixed!(350.0 * font_scale))
-                            .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
-                            .end();
+                        col1.layout().width(fixed!(350.0 * font_scale)).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
                         clay_scope.with(&col1, |clay_scope| {
                             clay_scope.text(arena.push(log.text.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(color).end());
                         });
                         
                         let mut col2 = Declaration::<Texture2D, ()>::new();
-                        col2.layout()
-                            .width(grow!())
-                            .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
-                            .end();
+                        col2.layout().width(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
                         clay_scope.with(&col2, |clay_scope| {
                             clay_scope.text(arena.push(log.explanation.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(color).end());
                         });
@@ -1112,36 +712,19 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             match command.config {
                 RenderCommandConfig::Rectangle(rect) => {
                     let r = raylib::math::Rectangle::new(command.bounding_box.x, command.bounding_box.y, command.bounding_box.width, command.bounding_box.height);
-                    
                     let color = raylib::color::Color::new(rect.color.r as u8, rect.color.g as u8, rect.color.b as u8, rect.color.a as u8);
-                    if rect.corner_radii.top_left > 0.0 {
-                        d.draw_rectangle_rounded(r, rect.corner_radii.top_left / (command.bounding_box.height / 2.0), 10, color);
-                    } else {
-                        d.draw_rectangle(r.x as i32, r.y as i32, r.width as i32, r.height as i32, color);
-                    }
+                    if rect.corner_radii.top_left > 0.0 { d.draw_rectangle_rounded(r, rect.corner_radii.top_left / (command.bounding_box.height / 2.0), 10, color); }
+                    else { d.draw_rectangle(r.x as i32, r.y as i32, r.width as i32, r.height as i32, color); }
                 }
                 RenderCommandConfig::Text(text) => {
                     let sanitized = text.text.replace('\0', "");
                     let color = raylib::color::Color::new(text.color.r as u8, text.color.g as u8, text.color.b as u8, text.color.a as u8);
-                    
                     let text_size = font.measure_text(&sanitized, command.bounding_box.height, 0.0);
-                    let pos = raylib::math::Vector2::new(
-                        command.bounding_box.x + (command.bounding_box.width - text_size.x) / 2.0,
-                        command.bounding_box.y + (command.bounding_box.height - text_size.y) / 2.0
-                    );
-                    
+                    let pos = raylib::math::Vector2::new(command.bounding_box.x + (command.bounding_box.width - text_size.x) / 2.0, command.bounding_box.y + (command.bounding_box.height - text_size.y) / 2.0);
                     d.draw_text_ex(&font, &sanitized, pos, command.bounding_box.height, 0.0, color);
                 }
-                RenderCommandConfig::ScissorStart() => {
-                    unsafe {
-                        raylib::ffi::BeginScissorMode(command.bounding_box.x as i32, command.bounding_box.y as i32, command.bounding_box.width as i32, command.bounding_box.height as i32);
-                    }
-                }
-                RenderCommandConfig::ScissorEnd() => {
-                    unsafe {
-                        raylib::ffi::EndScissorMode();
-                    }
-                }
+                RenderCommandConfig::ScissorStart() => { unsafe { raylib::ffi::BeginScissorMode(command.bounding_box.x as i32, command.bounding_box.y as i32, command.bounding_box.width as i32, command.bounding_box.height as i32); } }
+                RenderCommandConfig::ScissorEnd() => { unsafe { raylib::ffi::EndScissorMode(); } }
                 _ => {}
             }
         }
@@ -1149,197 +732,24 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Draw Canvas Content
         if canvas_rect.width > 0.0 {
             let margin = 20.0;
-            let full_draw_width = canvas_rect.width - margin * 2.0;
-            let full_draw_height = canvas_rect.height - margin * 2.0;
-            let side = full_draw_width.min(full_draw_height);
-            
-            let offset_y = 0.0;
-
-            let draw_area = raylib::math::Rectangle::new(
-                canvas_rect.x + margin, 
-                canvas_rect.y + margin + offset_y, 
-                side, 
-                side
-            );
-            
-            // Grid
+            let side = (canvas_rect.width - margin * 2.0).min(canvas_rect.height - margin * 2.0);
+            let draw_area = raylib::math::Rectangle::new(canvas_rect.x + margin, canvas_rect.y + margin, side, side);
             for i in 0..=10 {
                 let x = draw_area.x + (i as f32 / 10.0) * side;
                 let y = draw_area.y + (i as f32 / 10.0) * side;
                 d.draw_line_v(raylib::math::Vector2::new(x, draw_area.y), raylib::math::Vector2::new(x, draw_area.y + draw_area.height), raylib::color::Color::new(255, 255, 255, 40));
                 d.draw_line_v(raylib::math::Vector2::new(draw_area.x, y), raylib::math::Vector2::new(draw_area.x + draw_area.width, y), raylib::color::Color::new(255, 255, 255, 40));
             }
-
-            // Paths
             let guard = state.lock().unwrap();
             for p in &guard.paths {
                 let start = raylib::math::Vector2::new(draw_area.x + (p.x1 / 400.0) * side, draw_area.y + draw_area.height - (p.y1 / 400.0) * side);
                 let end = raylib::math::Vector2::new(draw_area.x + (p.x2 / 400.0) * side, draw_area.y + draw_area.height - (p.y2 / 400.0) * side);
                 d.draw_line_ex(start, end, 2.0, raylib::color::Color::new(255, 71, 87, (p.s / 1000.0 * 255.0) as u8));
             }
-
-            // Laser Head
             let head_pos = raylib::math::Vector2::new(draw_area.x + (guard.v_pos.x / 400.0) * side, draw_area.y + draw_area.height - (guard.v_pos.y / 400.0) * side);
             d.draw_circle_v(head_pos, 5.0 * font_scale, raylib::color::Color::new(59, 130, 246, 100));
             d.draw_circle_v(head_pos, 2.0 * font_scale, raylib::color::Color::RED);
         }
     }
-
     Ok(())
 }
-
-fn render_jog_btn<'a, 'render>(
-    clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
-    id: &str,
-    icon: &str,
-    state: &Arc<Mutex<AppState>>,
-    axis: &str,
-    direction: f32,
-    mouse_pressed: bool,
-    clipboard: &mut Option<Clipboard>,
-    font_scale: f32,
-) where
-    'a: 'render,
-{
-    let btn_id = clay.id(id);
-    let mut color = Color::u_rgb(30, 41, 59);
-    if clay.pointer_over(btn_id) {
-        color = Color::u_rgb(59, 130, 246);
-        if mouse_pressed {
-            let mut guard = state.lock().unwrap();
-            let d = guard.distance;
-            let cmd = format!("$J=G91 G21 {}{} F{}", axis, direction * d, guard.feed_rate);
-            guard.send_command(cmd.clone());
-            guard.copied_at = Some(std::time::Instant::now());
-            if let Some(cb) = clipboard { let _ = cb.set_text(cmd); }
-        }
-    }
-    let mut btn = Declaration::<Texture2D, ()>::new();
-    btn.id(btn_id)
-        .layout()
-            .width(fixed!(30.0 * font_scale))
-            .height(fixed!(30.0 * font_scale))
-            .padding(Padding::all(4))
-            .direction(LayoutDirection::TopToBottom)
-            .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
-        .end()
-        .background_color(color)
-        .corner_radius().all(8.0 * font_scale).end();
-    clay.with(&btn, |clay| {
-        clay.text(icon, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
-    });
-}
-
-fn render_burn_btn<'a, 'render>(
-    clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
-    id: &str,
-    label: &str,
-    state: &Arc<Mutex<AppState>>,
-    dx: f32,
-    dy: f32,
-    mouse_pressed: bool,
-    clipboard: &mut Option<Clipboard>,
-    font_scale: f32,
-) where
-    'a: 'render,
-{
-    let btn_id = clay.id(id);
-    let mut color = Color::u_rgb(147, 51, 234); // purple-600
-    if clay.pointer_over(btn_id) {
-        color = Color::u_rgb(168, 85, 247); // purple-500
-        if mouse_pressed {
-            let mut guard = state.lock().unwrap();
-            let d = guard.distance;
-            let f = guard.feed_rate;
-            let s = guard.power;
-
-            let cmd = format!("G91 G1 X{:.2} Y{:.2} F{} S{}", dx * d, dy * d, f, s);
-            guard.send_command(cmd.clone());
-            guard.copied_at = Some(std::time::Instant::now());
-            if let Some(cb) = clipboard { let _ = cb.set_text(cmd); }
-        }
-    }
-    let mut btn = Declaration::<Texture2D, ()>::new();
-    btn.id(btn_id)
-        .layout()
-            .width(fixed!(65.0 * font_scale))
-            .padding(Padding::all(4))
-            .direction(LayoutDirection::TopToBottom)
-            .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
-        .end()
-        .background_color(color)
-        .corner_radius().all(8.0 * font_scale).end();
-    clay.with(&btn, |clay| {
-        clay.text(label, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
-    });
-}
-
-fn render_slider<'a, 'render, F>(
-    clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
-    id: &str,
-    label: &str,
-    value: f32,
-    min: f32,
-    max: f32,
-    color: Color,
-    state: &Arc<Mutex<AppState>>,
-    update: F,
-    _mouse_pos: raylib::math::Vector2,
-    mouse_down: bool,
-    scroll_y: f32,
-    arena: &StringArena,
-    font_scale: f32,
-) where
-    F: FnOnce(&mut AppState, f32),
-    'a: 'render,
-{
-    let slider_id = clay.id(id);
-    let container_id = clay.id(arena.push(format!("{}_container", id)));
-    let mut container = Declaration::<Texture2D, ()>::new();
-    container.id(container_id)
-        .layout().width(fixed!(180.0 * font_scale)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(4).end();
-    
-    clay.with(&container, |clay| {
-        let mut header = Declaration::<Texture2D, ()>::new();
-        header.layout().width(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
-        clay.with(&header, |clay| {
-            clay.text(label, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(100, 116, 139)).end());
-            clay.text(arena.push(format!("{:.1}", value)), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(color).end());
-        });
-
-        let mut track = Declaration::<Texture2D, ()>::new();
-        track.id(slider_id).layout().width(grow!()).height(fixed!(6.0 * font_scale)).end()
-            .background_color(Color::u_rgb(2, 6, 23))
-            .corner_radius().all(3.0 * font_scale).end();
-        
-        // Use the actual bounding box if available to follow the mouse
-        if clay.pointer_over(slider_id) || clay.pointer_over(container_id) {
-            if mouse_down {
-                let data = unsafe { clay_layout::bindings::Clay_GetElementData(slider_id.id) };
-                if data.found {
-                    let rect = data.boundingBox;
-                    let mouse_x = _mouse_pos.x;
-                    let percent = ((mouse_x - rect.x) / rect.width).clamp(0.0, 1.0);
-                    let next = min + percent * (max - min);
-                    let mut guard = state.lock().unwrap();
-                    update(&mut guard, next);
-                }
-            } else if scroll_y != 0.0 {
-                let step = (max - min) * 0.05;
-                let next = (value + scroll_y * step).clamp(min, max);
-                let mut guard = state.lock().unwrap();
-                update(&mut guard, next);
-            }
-        }
-
-        clay.with(&track, |clay| {
-            let mut bar = Declaration::<Texture2D, ()>::new();
-            let percent = (value - min) / (max - min);
-            bar.layout().width(fixed!(percent * 180.0 * font_scale)).height(grow!()).end()
-                .background_color(color)
-                .corner_radius().all(3.0 * font_scale).end();
-            clay.with(&bar, |_| {});
-        });
-    });
-}
-
