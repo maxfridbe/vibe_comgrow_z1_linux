@@ -48,7 +48,7 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
 
                                     let mut guard = state.lock().unwrap();
                                     guard.serial_logs.push(LogEntry {
-                                        text: format!("Response: {}", trimmed),
+                                        text: trimmed.to_string(),
                                         explanation,
                                     });
                                     if guard.serial_logs.len() > 100 {

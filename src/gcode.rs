@@ -2,7 +2,7 @@ pub fn decode_gcode(cmd: &str) -> String {
     let cmd = cmd.trim();
     let parts: Vec<&str> = cmd.split_whitespace().collect();
     
-    if cmd.starts_with("$J=") {
+    let decoded = if cmd.starts_with("$J=") {
         let mut x = None;
         let mut y = None;
         for part in &parts {
@@ -12,12 +12,12 @@ pub fn decode_gcode(cmd: &str) -> String {
         }
         if let Some(val) = x {
             let sign = if val.starts_with('-') { "" } else { "+" };
-            format!("Command: Jog X {}{}mm", sign, val)
+            format!("Jog X {}{}mm", sign, val)
         } else if let Some(val) = y {
             let sign = if val.starts_with('-') { "" } else { "+" };
-            format!("Command: Jog Y {}{}mm", sign, val)
+            format!("Jog Y {}{}mm", sign, val)
         } else {
-            "Command: Jog Move".to_string()
+            "Jog Move".to_string()
         }
     } else if parts.iter().any(|p| p.starts_with("G1")) {
         let mut x = None;
@@ -38,9 +38,9 @@ pub fn decode_gcode(cmd: &str) -> String {
         let mut params = Vec::new();
         if let Some(fv) = f { params.push(format!("F{}", fv)); }
         if let Some(sv) = s { params.push(format!("S{}", sv)); }
-        let params_str = if params.is_empty() { "".to_string() } else { format!(" ({})", params.join(", ")) };
+        let params_str = if params.is_empty() { "".to_string() } else { format!("({})", params.join(", ")) };
         
-        format!("Command: Burn Linear {} {}", pos_str, params_str).split_whitespace().collect::<Vec<_>>().join(" ")
+        format!("Burn Linear {} {}", pos_str, params_str)
     } else if parts.iter().any(|p| p.starts_with("G0")) {
         let mut x = None;
         let mut y = None;
@@ -53,7 +53,7 @@ pub fn decode_gcode(cmd: &str) -> String {
         if let Some(yv) = y { pos.push(format!("Y{}", yv)); }
         let pos_str = if pos.is_empty() { "".to_string() } else { format!("to {}", pos.join(" ")) };
         
-        format!("Command: Jump {}", pos_str).split_whitespace().collect::<Vec<_>>().join(" ")
+        format!("Jump {}", pos_str)
     } else if parts.iter().any(|p| p.starts_with("M3")) || parts.iter().any(|p| p.starts_with("M4")) {
         let is_m3 = parts.iter().any(|p| p.starts_with("M3"));
         let label = if is_m3 { "Laser Constant On" } else { "Laser Dynamic On" };
@@ -62,39 +62,41 @@ pub fn decode_gcode(cmd: &str) -> String {
             if part.starts_with('S') { s = Some(&part[1..]); }
         }
         if let Some(sv) = s {
-            format!("Command: {} (Power: {})", label, sv)
+            format!("{} (Power: {})", label, sv)
         } else {
-            format!("Command: {}", label)
+            label.to_string()
         }
     } else {
         match cmd {
-            "$H" => "Command: Home Machine",
-            "M5" => "Command: Laser Off",
-            "?" => "Command: Status Report",
-            "!" => "Command: Feed Hold",
-            "~" => "Command: Cycle Start",
-            "$X" => "Command: Kill Alarm",
-            "G90" => "Command: Absolute Distance",
-            "G91" => "Command: Incremental Distance",
-            "G21" => "Command: Millimeter Units",
-            "G20" => "Command: Inch Units",
-            "G92 X0 Y0" => "Command: Set Origin",
-            "M8" => "Command: Air Assist On",
-            "M9" => "Command: Air Assist Off",
-            "0x18" => "Command: Soft Reset",
-            c if c.starts_with("$") => "Command: Settings Change",
-            _ => "Command: G-Code Command",
+            "$H" => "Home Machine",
+            "M5" => "Laser Off",
+            "?" => "Status Report",
+            "!" => "Feed Hold",
+            "~" => "Cycle Start",
+            "$X" => "Kill Alarm",
+            "G90" => "Absolute Distance",
+            "G91" => "Incremental Distance",
+            "G21" => "Millimeter Units",
+            "G20" => "Inch Units",
+            "G92 X0 Y0" => "Set Origin",
+            "M8" => "Air Assist On",
+            "M9" => "Air Assist Off",
+            "0x18" => "Soft Reset",
+            c if c.starts_with("$") => "Settings Change",
+            _ => "G-Code Command",
         }.to_string()
-    }
+    };
+
+    decoded.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 pub fn decode_response(resp: &str) -> String {
     let trimmed = resp.trim();
     match trimmed {
-        "ok" => "Response: Success / OK".to_string(),
-        l if l.starts_with("error:") => format!("Response: Machine Error [{}]", &l[6..]),
-        l if l.starts_with("ALARM:") => format!("Response: Safety Alarm [{}]", &l[6..]),
-        l if l.starts_with("Grbl") => "Response: Firmware Greeting".to_string(),
-        _ => format!("Response: {}", trimmed),
+        "ok" => "Success / OK".to_string(),
+        l if l.starts_with("error:") => format!("Machine Error [{}]", &l[6..]),
+        l if l.starts_with("ALARM:") => format!("Safety Alarm [{}]", &l[6..]),
+        l if l.starts_with("Grbl") => "Firmware Greeting".to_string(),
+        _ => trimmed.to_string(),
     }
 }
