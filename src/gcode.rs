@@ -32,16 +32,22 @@ pub fn decode_gcode(cmd: &str) -> String {
         let mut parts = clean_cmd.split('=');
         if let (Some(setting), Some(value)) = (parts.next(), parts.next()) {
             match setting {
+                "33" => format!("Set Dynamic Power Mode to {}", value),
                 "100" => format!("Update X Steps/mm to {}", value),
                 "101" => format!("Update Y Steps/mm to {}", value),
                 "102" => format!("Update Z Steps/mm to {}", value),
+                "110" => format!("Set X Max Rate to {} mm/min", value),
+                "111" => format!("Set Y Max Rate to {} mm/min", value),
+                "120" => format!("Set X Acceleration to {} mm/sec^2", value),
+                "121" => format!("Set Y Acceleration to {} mm/sec^2", value),
                 "130" => format!("Set X Max Travel to {}mm", value),
                 "131" => format!("Set Y Max Travel to {}mm", value),
                 "30" => format!("Set Max Spindle/Laser Speed (S) to {}", value),
                 "32" => format!("Set Laser Mode to {} (0=Off, 1=On)", value),
                 "20" => format!("Set Soft Limits to {} (0=Off, 1=On)", value),
                 "21" => format!("Set Hard Limits to {} (0=Off, 1=On)", value),
-                _ => "Update GRBL Setting".to_string(),
+                "22" => format!("Set Homing Cycle to {} (0=Off, 1=On)", value),
+                _ => format!("Update GRBL Setting ${}={}", setting, value),
             }
         } else {
             "Update GRBL Setting".to_string()
@@ -119,8 +125,39 @@ pub fn decode_response(resp: &str) -> String {
     let trimmed = resp.trim();
     match trimmed {
         "ok" => "Success / OK".to_string(),
+        l if l.starts_with("error:15") => "Jog target exceeds machine travel. (Check limits or Home machine)".to_string(),
         l if l.starts_with("error:") => format!("Machine Error [{}]", &l[6..]),
-        l if l.starts_with("ALARM:") => format!("Safety Alarm [{}]", &l[6..]),
+        l if l.starts_with("ALARM:") => format!("Safety Alarm [{}]. You must Reset or Unlock.", &l[6..]),
+        l if l.starts_with('<') && l.ends_with('>') => {
+            let content = &l[1..l.len() - 1];
+            let parts: Vec<&str> = content.split('|').collect();
+            let state = parts.get(0).cloned().unwrap_or("Unknown");
+            
+            let mut info = match state {
+                "Idle" => "Machine is IDLE and ready for commands.".to_string(),
+                "Run" => "Machine is MOVING / EXECUTING commands.".to_string(),
+                "Alarm" => "Machine in ALARM state (Unlock Required).".to_string(),
+                "Hold" => "Machine is in HOLD (Resume Required).".to_string(),
+                _ => format!("Machine State: {}", state),
+            };
+            
+            for part in &parts[1..] {
+                if part.starts_with("MPos:") {
+                    let coords: Vec<&str> = part[5..].split(',').collect();
+                    if coords.len() >= 2 {
+                        info.push_str(&format!(" | Pos: X{} Y{}", coords[0], coords[1]));
+                    }
+                } else if part.starts_with("FS:") {
+                    let speeds: Vec<&str> = part[3..].split(',').collect();
+                    if speeds.len() >= 2 {
+                        info.push_str(&format!(" | Feed: {} Spindle: {}", speeds[0], speeds[1]));
+                    }
+                }
+            }
+            info
+        },
+        l if l.contains("Caution: Unlocked") => "Machine has been safely UNLOCKED.".to_string(),
+        l if l.contains("Homing cycle") => "Machine is performing a HOMING cycle...".to_string(),
         l if l.starts_with("Grbl") => "Firmware Greeting".to_string(),
         _ => trimmed.to_string(),
     }

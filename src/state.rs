@@ -1,6 +1,7 @@
 use raylib::prelude::Vector2;
 use std::sync::mpsc::Sender;
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use crate::gcode::decode_gcode;
 
 #[derive(Clone)]
@@ -25,10 +26,12 @@ pub struct AppState {
     pub port: String,
     pub wattage: String,
     pub v_pos: Vector2,
+    pub machine_pos: Vector2,
+    pub machine_state: String,
     pub paths: Vec<PathSegment>,
     pub last_command: String,
     pub copied_at: Option<std::time::Instant>,
-    pub serial_logs: Vec<LogEntry>,
+    pub serial_logs: VecDeque<LogEntry>,
     pub tx: Sender<String>,
 }
 
@@ -92,17 +95,18 @@ impl AppState {
         }
 
         self.last_command = cmd.clone();
-        self.serial_logs.push(LogEntry {
+        self.serial_logs.push_back(LogEntry {
             text: cmd.clone(),
             explanation,
             is_response: false,
         });
-        if self.serial_logs.len() > 100 {
-            self.serial_logs.remove(0);
+        if self.serial_logs.len() > 500 {
+            self.serial_logs.pop_front();
         }
         let _ = self.tx.send(cmd);
     }
 }
+
 
 pub struct StringArena {
     pub strings: RefCell<Vec<Box<str>>>,
