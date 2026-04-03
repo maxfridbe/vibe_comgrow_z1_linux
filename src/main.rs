@@ -499,33 +499,72 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 clay_scope.text(section.title, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
                             });
 
-                            for cmd in &section.commands {
-                                let mut row = Declaration::<Texture2D, ()>::new();
-                                row.layout().width(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
-                                clay_scope.with(&row, |clay_scope| {
-                                    let btn_id = clay_scope.id(cmd.label);
-                                    let mut btn_color = Color::u_rgb(2, 6, 23);
-                                    if clay_scope.pointer_over(btn_id) {
-                                        btn_color = Color::u_rgb(51, 65, 85);
-                                        if mouse_pressed {
-                                            let mut guard = state.lock().unwrap();
-                                            guard.send_command(cmd.cmd.to_string());
-                                            guard.copied_at = Some(std::time::Instant::now());
-                                            if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd.cmd.to_string()); }
+                            let mut content_row = Declaration::<Texture2D, ()>::new();
+                            content_row.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(16).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
+                            
+                            clay_scope.with(&content_row, |clay_scope| {
+                                // Left Column: Existing Commands
+                                let mut commands_col = Declaration::<Texture2D, ()>::new();
+                                commands_col.layout().direction(LayoutDirection::TopToBottom).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
+                                clay_scope.with(&commands_col, |clay_scope| {
+                                    for cmd in &section.commands {
+                                        let btn_id = clay_scope.id(cmd.label);
+                                        let mut btn_color = Color::u_rgb(2, 6, 23);
+                                        if clay_scope.pointer_over(btn_id) {
+                                            btn_color = Color::u_rgb(51, 65, 85);
+                                            if mouse_pressed {
+                                                let mut guard = state.lock().unwrap();
+                                                guard.send_command(cmd.cmd.to_string());
+                                                guard.copied_at = Some(std::time::Instant::now());
+                                                if let Some(cb) = &mut clipboard { let _ = cb.set_text(cmd.cmd.to_string()); }
+                                            }
                                         }
-                                    }
 
-                                    let mut btn = Declaration::<Texture2D, ()>::new();
-                                    btn.id(btn_id)
-                                        .layout().width(fixed!(85.0 * font_scale)).padding(Padding::all(6)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
-                                        .background_color(btn_color)
-                                        .corner_radius().all(12.0 * font_scale).end();
-                                    clay_scope.with(&btn, |clay_scope| {
-                                        clay_scope.text(cmd.label, clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
-                                        clay_scope.text(cmd.cmd, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
-                                    });
+                                        let mut btn = Declaration::<Texture2D, ()>::new();
+                                        btn.id(btn_id)
+                                            .layout().width(fixed!(85.0 * font_scale)).padding(Padding::all(6)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                                            .background_color(btn_color)
+                                            .corner_radius().all(12.0 * font_scale).end();
+                                        clay_scope.with(&btn, |clay_scope| {
+                                            clay_scope.text(cmd.label, clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
+                                            clay_scope.text(cmd.cmd, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
+                                        });
+                                    }
                                 });
-                            }
+
+                                // Right Column: Large ESTOP Button
+                                let estop_id = clay_scope.id("estop_btn");
+                                let mut estop_color = Color::u_rgb(185, 28, 28); // red-700
+                                if clay_scope.pointer_over(estop_id) {
+                                    estop_color = Color::u_rgb(220, 38, 38); // red-600
+                                    if mouse_pressed {
+                                        let mut guard = state.lock().unwrap();
+                                        // Emergency Sequence
+                                        guard.send_command("!".to_string());
+                                        guard.send_command("M5".to_string());
+                                        guard.send_command("\x18".to_string()); // 0x18 Soft Reset
+                                        guard.paths.clear();
+                                        guard.copied_at = Some(std::time::Instant::now());
+                                    }
+                                }
+
+                                let mut estop_btn = Declaration::<Texture2D, ()>::new();
+                                estop_btn.id(estop_id)
+                                    .layout()
+                                        .width(fixed!(100.0 * font_scale))
+                                        .height(fixed!(100.0 * font_scale))
+                                        .padding(Padding::all(12))
+                                        .direction(LayoutDirection::TopToBottom)
+                                        .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+                                    .end()
+                                    .background_color(estop_color)
+                                    .corner_radius().all(16.0 * font_scale).end();
+                                
+                                clay_scope.with(&estop_btn, |clay_scope| {
+                                    clay_scope.text("E-STOP", clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+                                    clay_scope.text("(!, M5, ^X)", clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(Color::u_rgb(254, 202, 202)).end());
+                                });
+                            });
                         });
                     }
 
