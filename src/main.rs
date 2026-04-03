@@ -371,8 +371,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             header_decl.layout()
                     .width(grow!())
                     .height(fixed!(80.0 * font_scale))
-                    .padding(Padding::all(3))
-                    .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+                    .padding(Padding::all(16))
+                    .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
                 .end()
                 .background_color(Color::u_rgb(30, 41, 59)) // slate-900
                 .corner_radius().all(16.0 * font_scale).end();
@@ -395,6 +395,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         clay_scope.text("Comgrow Z1 Laser GRBL Runner", clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
                     });
                 });
+
+                let mut spacer = Declaration::<Texture2D, ()>::new();
+                spacer.layout().width(grow!()).end();
+                clay_scope.with(&spacer, |_| {});
 
                 let mut settings_group = Declaration::<Texture2D, ()>::new();
                 settings_group.layout().child_gap(12).child_alignment(Alignment::new(LayoutAlignmentX::Right, LayoutAlignmentY::Center)).end();
