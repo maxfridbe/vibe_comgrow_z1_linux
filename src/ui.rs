@@ -3,8 +3,34 @@ use clay_layout::{Declaration, Color, grow, fixed};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
 use arboard::Clipboard;
-use crate::state::{AppState, StringArena, PathSegment};
+use crate::state::{AppState, StringArena, UITab};
 use crate::icons::*;
+
+pub fn render_tab_btn<'a, 'render>(
+    clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
+    id: &str,
+    label: &str,
+    active: bool,
+    font_scale: f32,
+) -> bool where 'a: 'render {
+    let color = if active { Color::u_rgb(59, 130, 246) } else { Color::u_rgb(30, 41, 59) };
+    let text_color = if active { Color::u_rgb(255, 255, 255) } else { Color::u_rgb(148, 163, 184) };
+    
+    let btn_id = clay.id(id);
+    let mut btn = Declaration::<Texture2D, ()>::new();
+    btn.id(btn_id).layout().padding(Padding::new(16, 16, 10, 10)).end()
+        .background_color(color)
+        .corner_radius().top_left(8.0 * font_scale).top_right(8.0 * font_scale).end();
+    
+    let mut clicked = false;
+    clay.with(&btn, |clay_scope| {
+        clay_scope.text(label, clay_layout::text::TextConfig::new().font_size((16.0 * font_scale) as u16).color(text_color).end());
+        if unsafe { raylib::ffi::IsMouseButtonPressed(raylib::ffi::MouseButton::MOUSE_BUTTON_LEFT as i32) } && clay_scope.pointer_over(btn_id) {
+            clicked = true;
+        }
+    });
+    clicked
+}
 
 pub struct Command {
     pub label: &'static str,
@@ -28,19 +54,18 @@ pub fn render_jog_btn<'a, 'render>(
     mouse_pressed: bool,
     clipboard: &mut Option<Clipboard>,
     font_scale: f32,
-) where
-    'a: 'render,
-{
+) -> bool where 'a: 'render {
     let btn_id = clay.id(id);
     let mut color = Color::u_rgb(30, 41, 59);
+    let mut clicked = false;
     if clay.pointer_over(btn_id) {
         color = Color::u_rgb(59, 130, 246);
         if mouse_pressed {
+            clicked = true;
             let mut guard = state.lock().unwrap();
             let d = guard.distance;
             let cmd = format!("$J=G91 G21 {}{} F{}", axis, direction * d, guard.feed_rate);
             guard.send_command(cmd.clone());
-            guard.copied_at = Some(std::time::Instant::now());
             if let Some(cb) = clipboard { let _ = cb.set_text(cmd); }
         }
     }
@@ -58,6 +83,7 @@ pub fn render_jog_btn<'a, 'render>(
     clay.with(&btn, |clay| {
         clay.text(icon, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
     });
+    clicked
 }
 
 pub fn render_burn_btn<'a, 'render>(
@@ -70,24 +96,22 @@ pub fn render_burn_btn<'a, 'render>(
     mouse_pressed: bool,
     clipboard: &mut Option<Clipboard>,
     font_scale: f32,
-) where
-    'a: 'render,
-{
+) -> bool where 'a: 'render {
     let btn_id = clay.id(id);
-    let mut color = Color::u_rgb(147, 51, 234); // purple-600
+    let mut color = Color::u_rgb(147, 51, 234); 
+    let mut clicked = false;
     if clay.pointer_over(btn_id) {
-        color = Color::u_rgb(168, 85, 247); // purple-500
+        color = Color::u_rgb(168, 85, 247); 
         if mouse_pressed {
+            clicked = true;
             let mut guard = state.lock().unwrap();
             let d = guard.distance;
             let f = guard.feed_rate;
             let s = guard.power;
             let dx_scaled = dx * d;
             let dy_scaled = dy * d;
-
             let cmd = format!("G91 G1 X{:.2} Y{:.2} F{} S{}", dx_scaled, dy_scaled, f, s);
             guard.send_command(cmd.clone());
-            guard.copied_at = Some(std::time::Instant::now());
             if let Some(cb) = clipboard { let _ = cb.set_text(cmd); }
         }
     }
@@ -104,6 +128,7 @@ pub fn render_burn_btn<'a, 'render>(
     clay.with(&btn, |clay| {
         clay.text(label, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
     });
+    clicked
 }
 
 pub fn render_slider<'a, 'render, F>(
@@ -121,10 +146,7 @@ pub fn render_slider<'a, 'render, F>(
     scroll_y: f32,
     arena: &StringArena,
     font_scale: f32,
-) where
-    F: FnOnce(&mut AppState, f32),
-    'a: 'render,
-{
+) where F: FnOnce(&mut AppState, f32), 'a: 'render {
     let slider_id = clay.id(id);
     let container_id = clay.id(arena.push(format!("{}_container", id)));
     let mut container = Declaration::<Texture2D, ()>::new();

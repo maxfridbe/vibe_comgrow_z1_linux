@@ -1,13 +1,17 @@
 # Comgrow Z1 Laser GRBL Runner
 
-A custom engineering tool for the Comgrow Z1 Laser engraver, featuring a modern UI and a powerful CLI mode.
+A custom engineering tool for the Comgrow Z1 Laser engraver, featuring a high-fidelity tabbed UI and a safety-first CLI.
 
 ## Features
-- **Modern UI**: Built with `raylib` and `clay-layout`.
-- **Live Status**: Real-time position and machine state decoding (Idle, Run, Alarm, etc.).
-- **Smart Serial**: Handles buffered responses and priority real-time commands (`!`, `~`, `?`, `0x18`).
-- **Test Patterns**: Built-in shapes with configurable power and speed.
-- **CLI Mode**: Full control from the terminal with timestamped logs.
+- **Tabbed Interface**: 
+    - **Manual**: Full 3-column layout with 40+ Quick Commands and Jog controls.
+    - **Test**: Direct access to built-in burn patterns and shape testing.
+    - **SVG**: Vector path preview and SVG file loading.
+- **Docked Engineering Console**: Persistent Serial Log and massive E-STOP button fixed to the bottom of the screen.
+- **Virtual Grid**: Real-time persistent visualizer showing machine and virtual head positions.
+- **UI Scaling**: Full interface zooming via `Ctrl` + `+/-` that respects layout boundaries.
+- **Advanced CLI**: Named parameters, machine boundary checking, and interpreted G-code logs.
+- **Safety**: Robust `SafetyGuard` ensures the laser is powered down and machine reset on any exit or crash.
 
 ## Setup
 
@@ -51,18 +55,19 @@ Send raw G-Code directly to the machine:
 ./target/debug/comgrow-z1-app "G91 G0 X20 Y20"
 ```
 
-### Test Patterns
-Execute predefined shapes with custom power, speed percentages, scale, and number of passes:
+### Test Patterns (CLI)
+Execute predefined shapes or assets using named parameters:
 ```bash
-./target/debug/comgrow-z1-app test-pattern [Square|Heart|Star] [power%] [speed%] [scale] [passes]
+./target/debug/comgrow-z1-app test-pattern [shape] --power [pct]% --speed [pct]% --scale [scale]x --passes [count]
 ```
 Example (Low power, full speed, 4x size, 2 passes):
 ```bash
-./target/debug/comgrow-z1-app test-pattern Square 1% 100% 4x 2
+./target/debug/comgrow-z1-app test-pattern Square --power 1% --speed 100% --scale 4x --passes 2
 ```
-*Note: The tool will automatically check if the scaled shape exceeds the 400mm bed limits.*
+*Note: Supports assets! Try `test-pattern car` if `assets/car.svg` exists.*
 
 ## Safety
 - **Soft Reset**: Always available in the UI or via `Reset` in CLI.
-- **E-STOP**: Priority commands bypass the queue for immediate response.
+- **E-STOP on Exit**: Automatically sends `!`, `M5`, `0x18` on normal exit or `Ctrl-C`.
+- **Dual E-STOP**: Global E-STOP buttons located in both Header and Footer.
 - **Dynamic Power**: Uses `M4` mode to prevent over-burn during speed changes.
