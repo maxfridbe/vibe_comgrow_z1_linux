@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- 3 rows, 3 columns, each star roughly 48x48, spaced by 55 -->
+  <!-- Row 1 -->
+  <path d="M 30 6 L 37 23 L 54 23 L 42 35 L 47 52 L 30 42 L 13 52 L 18 35 L 6 23 L 23 23 Z" fill="none" stroke="black" />
+  <path d="M 85 6 L 92 23 L 109 23 L 97 35 L 102 52 L 85 42 L 68 52 L 73 35 L 61 23 L 78 23 Z" fill="none" stroke="black" />
+  <path d="M 140 6 L 147 23 L 164 23 L 152 35 L 157 52 L 140 42 L 123 52 L 128 35 L 116 23 L 133 23 Z" fill="none" stroke="black" />
+  
+  <!-- Row 2 -->
+  <path d="M 30 61 L 37 78 L 54 78 L 42 90 L 47 107 L 30 97 L 13 107 L 18 90 L 6 78 L 23 78 Z" fill="none" stroke="black" />
+  <path d="M 85 61 L 92 78 L 109 78 L 97 90 L 102 107 L 85 97 L 68 107 L 73 90 L 61 78 L 78 78 Z" fill="none" stroke="black" />
+  <path d="M 140 61 L 147 78 L 164 78 L 152 90 L 157 107 L 140 97 L 123 107 L 128 90 L 116 78 L 133 78 Z" fill="none" stroke="black" />
+  
+  <!-- Row 3 -->
+  <path d="M 30 116 L 37 133 L 54 133 L 42 145 L 47 162 L 30 152 L 13 162 L 18 145 L 6 133 L 23 133 Z" fill="none" stroke="black" />
+  <path d="M 85 116 L 92 133 L 109 133 L 97 145 L 102 162 L 85 152 L 68 162 L 73 145 L 61 133 L 78 133 Z" fill="none" stroke="black" />
+  <path d="M 140 116 L 147 133 L 164 133 L 152 145 L 157 162 L 140 152 L 123 162 L 128 145 L 116 133 L 133 133 Z" fill="none" stroke="black" />
+</svg>

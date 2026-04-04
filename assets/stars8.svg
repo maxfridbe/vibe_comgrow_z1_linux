@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+  <!-- 2 rows, 4 columns, each star roughly 40x40, spaced by 45 -->
+  <!-- Star 1 (0,0) -->
+  <path d="M 20 0 L 25 15 L 40 15 L 30 25 L 35 40 L 20 30 L 5 40 L 10 25 L 0 15 L 15 15 Z" fill="none" stroke="black" />
+  <!-- Star 2 (45,0) -->
+  <path d="M 65 0 L 70 15 L 85 15 L 75 25 L 80 40 L 65 30 L 50 40 L 55 25 L 45 15 L 60 15 Z" fill="none" stroke="black" />
+  <!-- Star 3 (90,0) -->
+  <path d="M 110 0 L 115 15 L 130 15 L 120 25 L 125 40 L 110 30 L 95 40 L 100 25 L 90 15 L 105 15 Z" fill="none" stroke="black" />
+  <!-- Star 4 (135,0) -->
+  <path d="M 155 0 L 160 15 L 175 15 L 165 25 L 170 40 L 155 30 L 140 40 L 145 25 L 135 15 L 150 15 Z" fill="none" stroke="black" />
+  
+  <!-- Star 5 (0,45) -->
+  <path d="M 20 45 L 25 60 L 40 60 L 30 70 L 35 85 L 20 75 L 5 85 L 10 70 L 0 60 L 15 60 Z" fill="none" stroke="black" />
+  <!-- Star 6 (45,45) -->
+  <path d="M 65 45 L 70 60 L 85 60 L 75 70 L 80 85 L 65 75 L 50 85 L 55 70 L 45 60 L 60 60 Z" fill="none" stroke="black" />
+  <!-- Star 7 (90,45) -->
+  <path d="M 110 45 L 115 60 L 130 60 L 120 70 L 125 85 L 110 75 L 95 85 L 100 70 L 90 60 L 105 60 Z" fill="none" stroke="black" />
+  <!-- Star 8 (135,45) -->
+  <path d="M 155 45 L 160 60 L 175 60 L 165 70 L 170 85 L 155 75 L 140 85 L 145 70 L 135 60 L 150 60 Z" fill="none" stroke="black" />
+</svg>

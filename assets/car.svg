@@ -1,0 +1,19 @@
+<svg id="car-svg" viewBox="0 0 200 100" class="w-full max-w-2xl drop-shadow-sm" xmlns="http://www.w3.org/2000/svg">
+                <!-- Main Body -->
+                <path d="M20,70 
+                       L15,70 C10,70 10,65 10,60 
+                       L15,45 C18,35 25,30 35,28 
+                       L70,20 C85,15 115,15 130,20 
+                       L165,28 C175,30 182,35 185,45 
+                       L190,60 C190,65 190,70 185,70 
+                       L180,70 
+                       M180,70 A15,15 0 1,0 150,70
+                       L50,70 
+                       M50,70 A15,15 0 1,0 20,70" fill="none" stroke="#ff0000" stroke-width="0.5" vector-effect="non-scaling-stroke"></path>
+                <!-- Windows -->
+                <path d="M72,24 L100,22 L100,45 L40,45 C40,35 55,27 72,24 Z" fill="none" stroke="#ff0000" stroke-width="0.5" vector-effect="non-scaling-stroke"></path>
+                <path d="M105,22 L128,24 C145,27 160,35 160,45 L105,45 Z" fill="none" stroke="#ff0000" stroke-width="0.5" vector-effect="non-scaling-stroke"></path>
+                <!-- Wheel Circles -->
+                <circle cx="35" cy="70" r="12" fill="none" stroke="#ff0000" stroke-width="0.5" vector-effect="non-scaling-stroke"></circle>
+                <circle cx="165" cy="70" r="12" fill="none" stroke="#ff0000" stroke-width="0.5" vector-effect="non-scaling-stroke"></circle>
+            </svg>
