@@ -32,9 +32,9 @@ pub fn render_manual_left_col<'a, 'render>(
                     clay_scope.text(section.title, clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(100, 116, 139)).end());
                 });
 
-                for chunk in section.commands.chunks(2) {
+                for chunk in section.commands.chunks(3) {
                     let mut row = Declaration::<Texture2D, ()>::new();
-                    row.layout().width(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).child_gap(8).end();
+                    row.layout().width(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).child_gap(8).end();
                     clay_scope.with(&row, |clay_scope| {
                         for cmd in chunk {
                             let btn_id = clay_scope.id(cmd.label);
@@ -47,10 +47,10 @@ pub fn render_manual_left_col<'a, 'render>(
                                 }
                             }
                             let mut btn = Declaration::<Texture2D, ()>::new();
-                            btn.id(btn_id).layout().width(fixed!(140.0 * font_scale)).padding(Padding::all(6)).direction(LayoutDirection::LeftToRight).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
+                            btn.id(btn_id).layout().width(fixed!(110.0 * font_scale)).padding(Padding::all(6)).direction(LayoutDirection::TopToBottom).child_gap(4).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
                             clay_scope.with(&btn, |clay_scope| {
                                 clay_scope.text(cmd.label, clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
-                                clay_scope.text(arena.push(format!("({})", cmd.cmd)), clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
+                                clay_scope.text(arena.push(format!("({})", cmd.cmd)), clay_layout::text::TextConfig::new().font_size((9.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
                             });
                         }
                     });
@@ -63,7 +63,7 @@ pub fn render_manual_left_col<'a, 'render>(
 pub fn render_manual_right_col<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
     state: &Arc<Mutex<AppState>>,
-    sections: &[Section],
+    _sections: &[Section],
     mouse_pos: raylib::math::Vector2,
     mouse_down: bool,
     mouse_pressed: bool,
@@ -76,33 +76,87 @@ pub fn render_manual_right_col<'a, 'render>(
     right_col.layout().height(grow!()).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(16).width(fit!()).end();
     
     clay.with(&right_col, |clay_scope| {
-        // Movement Box
-        let mut move_box = Declaration::<Texture2D, ()>::new();
-        move_box.layout().padding(Padding::all(12)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(16).end().background_color(Color::u_rgb(30, 41, 59)).corner_radius().all(16.0 * font_scale).end();
-        clay_scope.with(&move_box, |clay_scope| {
-            let (dist, feed, pwr) = { let g = state.lock().unwrap(); (g.distance, g.feed_rate, g.power) };
-            render_slider(clay_scope, "dist_slider", "Step", dist, 0.1, 100.0, Color::u_rgb(59, 130, 246), state, |s, v| s.distance = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
-            render_slider(clay_scope, "feed_slider", "Speed", feed, 10.0, 6000.0, Color::u_rgb(16, 185, 129), state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
-            render_slider(clay_scope, "power_slider", "Power", pwr, 0.0, 1000.0, Color::u_rgb(248, 113, 113), state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+        // 1. Burn Controls (at the very top)
+        let mut burn_box = Declaration::<Texture2D, ()>::new();
+        burn_box.layout().padding(Padding::all(12)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(12).end()
+            .background_color(Color::u_rgb(30, 41, 59)).corner_radius().all(16.0 * font_scale).end();
+        
+        clay_scope.with(&burn_box, |clay_scope| {
+            clay_scope.text("BURN JOG", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(100, 116, 139)).end());
+            
+            let mut r1 = Declaration::<Texture2D, ()>::new(); r1.layout().child_gap(8).end();
+            clay_scope.with(&r1, |clay_scope| {
+                crate::ui::render_burn_btn(clay_scope, "b_ul", "NW", state, -1.0, 1.0, mouse_pressed, clipboard, font_scale);
+                crate::ui::render_burn_btn(clay_scope, "b_up", "NORTH", state, 0.0, 1.0, mouse_pressed, clipboard, font_scale);
+                crate::ui::render_burn_btn(clay_scope, "b_ur", "NE", state, 1.0, 1.0, mouse_pressed, clipboard, font_scale);
+            });
+            let mut r2 = Declaration::<Texture2D, ()>::new(); r2.layout().child_gap(8).end();
+            clay_scope.with(&r2, |clay_scope| {
+                crate::ui::render_burn_btn(clay_scope, "b_l", "WEST", state, -1.0, 0.0, mouse_pressed, clipboard, font_scale);
+                
+                let mut fire_box = Declaration::<Texture2D, ()>::new();
+                fire_box.layout().child_gap(4).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
+                clay_scope.with(&fire_box, |clay_scope| {
+                    let btn_id = clay_scope.id("fire_btn");
+                    let mut btn_color = Color::u_rgb(220, 38, 38);
+                    if clay_scope.pointer_over(btn_id) {
+                        btn_color = Color::u_rgb(239, 68, 68);
+                        if mouse_pressed {
+                            let mut guard = state.lock().unwrap();
+                            let s = guard.power;
+                            guard.send_command(format!("M3 S{}", s));
+                        }
+                    }
+                    let mut fire_btn = Declaration::<Texture2D, ()>::new();
+                    fire_btn.id(btn_id).layout().width(fixed!(35.0 * font_scale)).padding(Padding::all(4)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
+                    clay_scope.with(&fire_btn, |clay| { clay.text("FIRE", clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end()); });
 
+                    let off_id = clay_scope.id("burn_off_btn");
+                    let mut off_color = Color::u_rgb(2, 6, 23);
+                    if clay_scope.pointer_over(off_id) {
+                        off_color = Color::u_rgb(51, 65, 85);
+                        if mouse_pressed { state.lock().unwrap().send_command("M5".to_string()); }
+                    }
+                    let mut off_btn = Declaration::<Texture2D, ()>::new();
+                    off_btn.id(off_id).layout().width(fixed!(35.0 * font_scale)).padding(Padding::all(4)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(off_color).corner_radius().all(8.0 * font_scale).end();
+                    clay_scope.with(&off_btn, |clay| { clay.text("OFF", clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end()); });
+                });
+
+                crate::ui::render_burn_btn(clay_scope, "b_r", "EAST", state, 1.0, 0.0, mouse_pressed, clipboard, font_scale);
+            });
+            let mut r3 = Declaration::<Texture2D, ()>::new(); r3.layout().child_gap(8).end();
+            clay_scope.with(&r3, |clay_scope| {
+                crate::ui::render_burn_btn(clay_scope, "b_dl", "SW", state, -1.0, -1.0, mouse_pressed, clipboard, font_scale);
+                crate::ui::render_burn_btn(clay_scope, "b_dn", "SOUTH", state, 0.0, -1.0, mouse_pressed, clipboard, font_scale);
+                crate::ui::render_burn_btn(clay_scope, "b_dr", "SE", state, 1.0, -1.0, mouse_pressed, clipboard, font_scale);
+            });
+
+            // Descriptive Laser Mode Buttons
             let mut mode_row = Declaration::<Texture2D, ()>::new();
-            mode_row.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
+            mode_row.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).padding(Padding::vertical(8)).end();
             clay_scope.with(&mode_row, |clay| {
-                for mode in ["M3", "M4", "M5"] {
-                    let btn_id = clay.id(mode);
+                let modes = [("LASER CONST", "M3"), ("LASER DYN", "M4"), ("LASER OFF", "M5")];
+                for (label, cmd) in modes {
+                    let btn_id = clay.id(label);
                     let mut btn_color = Color::u_rgb(2, 6, 23);
                     if clay.pointer_over(btn_id) {
                         btn_color = Color::u_rgb(51, 65, 85);
-                        if mouse_pressed { state.lock().unwrap().send_command(mode.to_string()); }
+                        if mouse_pressed { state.lock().unwrap().send_command(cmd.to_string()); }
                     }
                     let mut btn = Declaration::<Texture2D, ()>::new();
-                    btn.id(btn_id).layout().width(fixed!(55.0 * font_scale)).padding(Padding::all(6)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
+                    btn.id(btn_id).layout().width(fixed!(80.0 * font_scale)).padding(Padding::all(6)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
                     clay.with(&btn, |clay| {
-                        clay.text(mode, clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
+                        clay.text(label, clay_layout::text::TextConfig::new().font_size((9.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
                     });
                 }
             });
+        });
 
+        // 2. Jog Grid
+        let mut jog_box = Declaration::<Texture2D, ()>::new();
+        jog_box.layout().padding(Padding::all(12)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(16).end()
+            .background_color(Color::u_rgb(30, 41, 59)).corner_radius().all(16.0 * font_scale).end();
+        clay_scope.with(&jog_box, |clay_scope| {
             let mut jog_grid = Declaration::<Texture2D, ()>::new();
             jog_grid.layout().child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).direction(LayoutDirection::TopToBottom).child_gap(8).end();
             clay_scope.with(&jog_grid, |clay_scope| {
@@ -157,82 +211,17 @@ pub fn render_manual_right_col<'a, 'render>(
                 let mut row3 = Declaration::<Texture2D, ()>::new(); row3.layout().child_gap(8).end();
                 clay_scope.with(&row3, |clay_scope| { render_jog_btn(clay_scope, "down", crate::icons::ICON_ARROW_DOWN, state, "Y", -1.0, mouse_pressed, clipboard, font_scale); });
             });
-
-            // Burn Controls
-            let mut burn_box = Declaration::<Texture2D, ()>::new();
-            burn_box.layout().child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).direction(LayoutDirection::TopToBottom).child_gap(8).end();
-            clay_scope.with(&burn_box, |clay_scope| {
-                clay_scope.text("BURN JOG", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(100, 116, 139)).end());
-                
-                let mut r1 = Declaration::<Texture2D, ()>::new(); r1.layout().child_gap(8).end();
-                clay_scope.with(&r1, |clay_scope| {
-                    crate::ui::render_burn_btn(clay_scope, "b_ul", "NW", state, -1.0, 1.0, mouse_pressed, clipboard, font_scale);
-                    crate::ui::render_burn_btn(clay_scope, "b_up", "NORTH", state, 0.0, 1.0, mouse_pressed, clipboard, font_scale);
-                    crate::ui::render_burn_btn(clay_scope, "b_ur", "NE", state, 1.0, 1.0, mouse_pressed, clipboard, font_scale);
-                });
-                let mut r2 = Declaration::<Texture2D, ()>::new(); r2.layout().child_gap(8).end();
-                clay_scope.with(&r2, |clay_scope| {
-                    crate::ui::render_burn_btn(clay_scope, "b_l", "WEST", state, -1.0, 0.0, mouse_pressed, clipboard, font_scale);
-                    
-                    let mut fire_box = Declaration::<Texture2D, ()>::new();
-                    fire_box.layout().child_gap(4).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
-                    clay_scope.with(&fire_box, |clay_scope| {
-                        let btn_id = clay_scope.id("fire_btn");
-                        let mut btn_color = Color::u_rgb(220, 38, 38);
-                        if clay_scope.pointer_over(btn_id) {
-                            btn_color = Color::u_rgb(239, 68, 68);
-                            if mouse_pressed {
-                                let mut guard = state.lock().unwrap();
-                                let s = guard.power;
-                                guard.send_command(format!("M3 S{}", s));
-                            }
-                        }
-                        let mut fire_btn = Declaration::<Texture2D, ()>::new();
-                        fire_btn.id(btn_id).layout().width(fixed!(35.0 * font_scale)).padding(Padding::all(4)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
-                        clay_scope.with(&fire_btn, |clay| { clay.text("FIRE", clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end()); });
-
-                        let off_id = clay_scope.id("burn_off_btn");
-                        let mut off_color = Color::u_rgb(2, 6, 23);
-                        if clay_scope.pointer_over(off_id) {
-                            off_color = Color::u_rgb(51, 65, 85);
-                            if mouse_pressed { state.lock().unwrap().send_command("M5".to_string()); }
-                        }
-                        let mut off_btn = Declaration::<Texture2D, ()>::new();
-                        off_btn.id(off_id).layout().width(fixed!(35.0 * font_scale)).padding(Padding::all(4)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(off_color).corner_radius().all(8.0 * font_scale).end();
-                        clay_scope.with(&off_btn, |clay| { clay.text("OFF", clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end()); });
-                    });
-
-                    crate::ui::render_burn_btn(clay_scope, "b_r", "EAST", state, 1.0, 0.0, mouse_pressed, clipboard, font_scale);
-                });
-                let mut r3 = Declaration::<Texture2D, ()>::new(); r3.layout().child_gap(8).end();
-                clay_scope.with(&r3, |clay_scope| {
-                    crate::ui::render_burn_btn(clay_scope, "b_dl", "SW", state, -1.0, -1.0, mouse_pressed, clipboard, font_scale);
-                    crate::ui::render_burn_btn(clay_scope, "b_dn", "SOUTH", state, 0.0, -1.0, mouse_pressed, clipboard, font_scale);
-                    crate::ui::render_burn_btn(clay_scope, "b_dr", "SE", state, 1.0, -1.0, mouse_pressed, clipboard, font_scale);
-                });
-            });
         });
 
-        // Safety Section (minus E-STOP)
-        if let Some(section) = sections.iter().find(|s| s.title == "Safety") {
-            let mut safety_box = Declaration::<Texture2D, ()>::new();
-            safety_box.layout().padding(Padding::all(12)).direction(LayoutDirection::TopToBottom).child_gap(16).end().background_color(Color::u_rgb(30, 41, 59)).corner_radius().all(16.0 * font_scale).end();
-            clay_scope.with(&safety_box, |clay_scope| {
-                clay_scope.text(section.title, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(section.color).end());
-                for cmd in &section.commands {
-                    let btn_id = clay_scope.id(cmd.label);
-                    let mut btn_color = Color::u_rgb(2, 6, 23);
-                    if clay_scope.pointer_over(btn_id) {
-                        btn_color = Color::u_rgb(51, 65, 85);
-                        if mouse_pressed { state.lock().unwrap().send_command(cmd.cmd.to_string()); }
-                    }
-                    let mut btn = Declaration::<Texture2D, ()>::new();
-                    btn.id(btn_id).layout().width(fixed!(140.0 * font_scale)).padding(Padding::all(6)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(12.0 * font_scale).end();
-                    clay_scope.with(&btn, |clay_scope| {
-                        clay_scope.text(cmd.label, clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
-                    });
-                }
-            });
-        }
+        // 3. Sliders
+        let mut sliders_box = Declaration::<Texture2D, ()>::new();
+        sliders_box.layout().padding(Padding::all(12)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(16).end()
+            .background_color(Color::u_rgb(30, 41, 59)).corner_radius().all(16.0 * font_scale).end();
+        clay_scope.with(&sliders_box, |clay_scope| {
+            let (dist, feed, pwr) = { let g = state.lock().unwrap(); (g.distance, g.feed_rate, g.power) };
+            render_slider(clay_scope, "dist_slider", "Step", dist, 0.1, 100.0, Color::u_rgb(59, 130, 246), state, |s, v| s.distance = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+            render_slider(clay_scope, "feed_slider", "Speed", feed, 10.0, 6000.0, Color::u_rgb(16, 185, 129), state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+            render_slider(clay_scope, "power_slider", "Power", pwr, 0.0, 1000.0, Color::u_rgb(248, 113, 113), state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+        });
     });
 }

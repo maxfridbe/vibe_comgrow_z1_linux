@@ -315,7 +315,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // Column 2: Controls (SCROLLABLE)
                 let mut col2_scroll = Declaration::<Texture2D, ()>::new();
                 let col2_id = clay_scope.id("controls_column");
-                let col2_width = if current_tab == UITab::Manual { 750.0 } else { 350.0 };
+                let col2_width = if current_tab == UITab::Manual { 450.0 } else { 450.0 };
                 let c2_offset = { state.lock().unwrap().col2_scroll_offset };
 
                 col2_scroll.id(col2_id).layout().width(fixed!(col2_width * font_scale)).height(grow!()).direction(LayoutDirection::TopToBottom).end()
@@ -331,12 +331,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 clay_scope.with(&col2_scroll, |clay_scope| {
                     match current_tab {
                         UITab::Manual => {
-                            let mut inner_row = Declaration::<Texture2D, ()>::new();
-                            inner_row.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(16).end();
-                            clay_scope.with(&inner_row, |clay_scope| {
-                                ui_manual::render_manual_left_col(clay_scope, &state, &sections, mouse_pressed, &mut clipboard, &arena, font_scale);
-                                ui_manual::render_manual_right_col(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale);
-                            });
+                            ui_manual::render_manual_left_col(clay_scope, &state, &sections, mouse_pressed, &mut clipboard, &arena, font_scale);
+                            ui_manual::render_manual_right_col(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale);
                         }
                         UITab::Test => ui_test::render_test_left_col(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale),
                         UITab::SVG => ui_svg::render_svg_left_col(clay_scope, &state, mouse_pressed, &mut clipboard, &arena, font_scale),
