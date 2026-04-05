@@ -1,0 +1,137 @@
+use std::time::{Instant, Duration};
+use raylib::prelude::Vector2;
+
+pub struct VirtualDevice {
+    pub pos: Vector2,
+    pub target_pos: Vector2,
+    pub state: String,
+    pub power: f32,
+    pub feed_rate: f32,
+    pub last_update: Instant,
+    pub move_start: Option<Instant>,
+    pub move_duration: Duration,
+    pub homing_start: Option<Instant>,
+}
+
+impl VirtualDevice {
+    pub fn new() -> Self {
+        Self {
+            pos: Vector2::new(0.0, 0.0),
+            target_pos: Vector2::new(0.0, 0.0),
+            state: "Idle".to_string(),
+            power: 0.0,
+            feed_rate: 1000.0,
+            last_update: Instant::now(),
+            move_start: None,
+            move_duration: Duration::from_secs(0),
+            homing_start: None,
+        }
+    }
+
+    pub fn update(&mut self) {
+        let now = Instant::now();
+        
+        if let Some(start) = self.homing_start {
+            if now.duration_since(start).as_secs() >= 2 {
+                self.pos = Vector2::new(0.0, 0.0);
+                self.target_pos = Vector2::new(0.0, 0.0);
+                self.state = "Idle".to_string();
+                self.homing_start = None;
+            } else {
+                self.state = "Home".to_string();
+            }
+            return;
+        }
+
+        if let Some(start) = self.move_start {
+            let elapsed = now.duration_since(start);
+            if elapsed >= self.move_duration {
+                self.pos = self.target_pos;
+                self.state = "Idle".to_string();
+                self.move_start = None;
+            } else {
+                self.state = "Run".to_string();
+            }
+        } else {
+            self.state = "Idle".to_string();
+        }
+    }
+
+    fn current_interpolated_pos(&self) -> Vector2 {
+        if let Some(start) = self.move_start {
+            let elapsed = Instant::now().duration_since(start);
+            let t = (elapsed.as_secs_f32() / self.move_duration.as_secs_f32()).min(1.0);
+            Vector2::new(
+                self.pos.x + (self.target_pos.x - self.pos.x) * t,
+                self.pos.y + (self.target_pos.y - self.pos.y) * t,
+            )
+        } else {
+            self.pos
+        }
+    }
+
+    pub fn process_command(&mut self, cmd: &str) -> Vec<String> {
+        let cmd = cmd.trim().to_uppercase();
+        if cmd == "?" {
+            let p = self.current_interpolated_pos();
+            return vec![format!("<{}|MPos:{:.3},{:.3},0.000|FS:{:.0},{}|WCO:0.000,0.000,0.000>", 
+                self.state, p.x, p.y, self.feed_rate, self.power as i32)];
+        }
+        if cmd == "$H" {
+            self.homing_start = Some(Instant::now());
+            self.state = "Home".to_string();
+            return vec!["ok".to_string()];
+        }
+        if cmd == "!" {
+            self.move_start = None;
+            self.homing_start = None;
+            self.state = "Hold".to_string();
+            return vec!["ok".to_string()];
+        }
+        if cmd == "~" {
+            self.state = "Idle".to_string();
+            return vec!["ok".to_string()];
+        }
+        if cmd == "\x18" || cmd == "0x18" {
+            self.pos = self.current_interpolated_pos();
+            self.target_pos = self.pos;
+            self.move_start = None;
+            self.homing_start = None;
+            self.state = "Alarm".to_string();
+            return vec!["Grbl 1.1h ['$' for help]".to_string(), "ok".to_string()];
+        }
+
+        // Parse G-code
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        let mut new_x = None;
+        let mut new_y = None;
+        let mut is_move = false;
+
+        for p in parts {
+            if p == "G0" || p == "G1" { is_move = true; }
+            else if p.starts_with('X') { new_x = p[1..].parse::<f32>().ok(); }
+            else if p.starts_with('Y') { new_y = p[1..].parse::<f32>().ok(); }
+            else if p.starts_with('F') { self.feed_rate = p[1..].parse::<f32>().unwrap_or(self.feed_rate); }
+            else if p.starts_with('S') { self.power = p[1..].parse::<f32>().unwrap_or(self.power); }
+            else if p == "M3" || p == "M4" { /* laser on handled by S */ }
+            else if p == "M5" { self.power = 0.0; }
+        }
+
+        if is_move {
+            let start_p = self.current_interpolated_pos();
+            self.pos = start_p;
+            if let Some(x) = new_x { self.target_pos.x = x; }
+            if let Some(y) = new_y { self.target_pos.y = y; }
+            
+            let dist = ((self.target_pos.x - self.pos.x).powi(2) + (self.target_pos.y - self.pos.y).powi(2)).sqrt();
+            let speed_mm_per_sec = self.feed_rate / 60.0;
+            let seconds = if speed_mm_per_sec > 0.0 { dist / speed_mm_per_sec } else { 0.0 };
+            
+            self.move_duration = Duration::from_secs_f32(seconds.max(0.01));
+            self.move_start = Some(Instant::now());
+            self.state = "Run".to_string();
+        }
+
+        vec!["ok".to_string()]
+    }
+}

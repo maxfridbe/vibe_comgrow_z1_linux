@@ -2,6 +2,7 @@ use std::sync::mpsc;
 use std::ffi::OsString;
 use crate::ui::Section;
 use crate::svg_helper;
+use crate::virtual_device::VirtualDevice;
 
 pub struct SafetyGuard {
     pub tx: mpsc::Sender<String>,
@@ -63,11 +64,12 @@ pub fn run_cli_mode(target_label: &str, sections: &[Section]) -> Result<(), Box<
         &cmd_str_owned
     };
 
-    run_serial_cmd(cmd_str, target_label, tx)
+    run_serial_cmd(cmd_str, target_label, tx, false)
 }
 
 pub fn run_dynamic_pattern_cli(args: &[OsString]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut pico_args = pico_args::Arguments::from_vec(args.to_vec());
+    let use_virtual = pico_args.contains("--virtual");
     let shape: String = pico_args.free_from_str()?;
     let pwr_pct: String = pico_args.value_from_str("--power").unwrap_or_else(|_| "1%".to_string());
     let speed_pct: String = pico_args.value_from_str("--speed").unwrap_or_else(|_| "100%".to_string());
@@ -90,10 +92,10 @@ pub fn run_dynamic_pattern_cli(args: &[OsString]) -> Result<(), Box<dyn std::err
     }).expect("Error setting Ctrl-C handler");
 
     let (cmd, label) = generate_pattern_gcode(&shape, &pwr_pct, &speed_pct, &scale_str, &passes_str, fit_str, &center_str)?;
-    run_serial_cmd(&cmd, &label, tx)
+    run_serial_cmd(&cmd, &label, tx, use_virtual)
 }
 
-fn generate_pattern_gcode(shape: &str, pwr_pct: &str, speed_pct: &str, scale_str: &str, passes_str: &str, fit_str: Option<String>, center_str: &str) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+pub fn generate_pattern_gcode(shape: &str, pwr_pct: &str, speed_pct: &str, scale_str: &str, passes_str: &str, fit_str: Option<String>, center_str: &str) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
     let pwr = pwr_pct.trim_end_matches('%').parse::<f32>().unwrap_or(1.0).clamp(0.0, 100.0);
     let spd = speed_pct.trim_end_matches('%').parse::<f32>().unwrap_or(100.0).clamp(1.0, 1000.0);
     let mut scale = scale_str.trim_end_matches('x').parse::<f32>().unwrap_or(1.0).max(0.01);
@@ -106,7 +108,6 @@ fn generate_pattern_gcode(shape: &str, pwr_pct: &str, speed_pct: &str, scale_str
     let cx = if center_parts.len() == 2 { parse_dimension(center_parts[0])? } else { 50.0 };
     let cy = if center_parts.len() == 2 { parse_dimension(center_parts[1])? } else { 50.0 };
 
-    // Determine intrinsic size at scale 1.0 to apply fit scaling
     let (intrinsic_w, intrinsic_h, intrinsic_min_x, intrinsic_min_y) = match shape.to_lowercase().as_str() {
         "square" => (50.0, 50.0, 0.0, 0.0),
         "heart" => (50.0, 37.5, 0.0, 0.0),
@@ -116,7 +117,7 @@ fn generate_pattern_gcode(shape: &str, pwr_pct: &str, speed_pct: &str, scale_str
                 let (_, x1, y1, x2, y2) = svg_helper::load_svg_as_gcode(&path, 1.0, 0.0, 0.0, 0, 0)?;
                 (x2 - x1, y2 - y1, x1, y1)
             } else {
-                (1.0, 1.0, 0.0, 0.0) // Fallback
+                (1.0, 1.0, 0.0, 0.0)
             }
         }
     };
@@ -129,13 +130,9 @@ fn generate_pattern_gcode(shape: &str, pwr_pct: &str, speed_pct: &str, scale_str
             let scale_w = target_w / intrinsic_w;
             let scale_h = target_h / intrinsic_h;
             scale = scale_w.min(scale_h);
-            println!("DEBUG: Auto-fit scaling to {:.4}x to fit within {}x{}", scale, target_w, target_h);
         }
     }
 
-    // Recalculate offsets to center the pattern
-    // The pattern's unscaled center is (intrinsic_min_x + intrinsic_w/2, intrinsic_min_y + intrinsic_h/2)
-    // We want the final center to be (cx, cy)
     let offset_x = cx - (intrinsic_min_x + intrinsic_w / 2.0) * scale;
     let offset_y = cy - (intrinsic_min_y + intrinsic_h / 2.0) * scale;
 
@@ -180,7 +177,7 @@ fn generate_pattern_gcode(shape: &str, pwr_pct: &str, speed_pct: &str, scale_str
     Ok((final_gcode, format!("Dynamic {} (Scale: {:.2}x, Center: {:.1},{:.1}, Power: {}%, Speed: {}%)", shape, scale, cx, cy, pwr, spd)))
 }
 
-pub fn run_serial_cmd(cmd_str: &str, label: &str, tx: mpsc::Sender<String>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub fn run_serial_cmd(cmd_str: &str, label: &str, _tx: mpsc::Sender<String>, use_virtual: bool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use std::io::{Write, Read};
     use crate::gcode::{decode_response, decode_gcode};
 
@@ -194,22 +191,25 @@ pub fn run_serial_cmd(cmd_str: &str, label: &str, tx: mpsc::Sender<String>) -> R
         format!("{:02}:{:02}:{:02}", hh, mm, ss)
     }
 
-    let port_name = "/dev/ttyUSB0";
-    let baud_rate = 115200;
+    println!("[{}] CLI: Mode = {} {}", get_ts(), label, if use_virtual { "(VIRTUAL)" } else { "" });
 
-    println!("[{}] CLI: Mode = {}", get_ts(), label);
-
-    let mut port = serialport::new(port_name, baud_rate)
-        .timeout(std::time::Duration::from_millis(100))
-        .open()?;
-
-    println!("[{}] SERIAL: Connected to {}", get_ts(), port_name);
-
-    // Clear any pending data
-    let mut discard = vec![0u8; 1024];
-    while let Ok(n) = port.read(discard.as_mut_slice()) {
-        if n == 0 { break; }
-    }
+    let mut virtual_dev = if use_virtual { Some(VirtualDevice::new()) } else { None };
+    let mut real_port = if !use_virtual {
+        let port_name = "/dev/ttyUSB0";
+        let baud_rate = 115200;
+        let mut port = serialport::new(port_name, baud_rate)
+            .timeout(std::time::Duration::from_millis(100))
+            .open()?;
+        println!("[{}] SERIAL: Connected to {}", get_ts(), port_name);
+        // Clear any pending data
+        let mut discard = vec![0u8; 1024];
+        while let Ok(n) = port.read(discard.as_mut_slice()) {
+            if n == 0 { break; }
+        }
+        Some(port)
+    } else {
+        None
+    };
 
     for line in cmd_str.lines() {
         let trimmed = line.trim();
@@ -217,77 +217,78 @@ pub fn run_serial_cmd(cmd_str: &str, label: &str, tx: mpsc::Sender<String>) -> R
         
         // Wait for Idle before Homing
         if trimmed.starts_with("$H") {
-            let mut idle_accumulator = String::new();
             let mut is_idle = false;
             let idle_start = std::time::Instant::now();
             println!("[{}] WAITING for Idle state before Homing...", get_ts());
             
             while idle_start.elapsed().as_secs() < 60 {
-                port.write_all(b"?")?;
-                std::thread::sleep(std::time::Duration::from_millis(200));
-                
-                let mut status_buf = vec![0u8; 1024];
-                if let Ok(n) = port.read(status_buf.as_mut_slice()) {
-                    if n > 0 {
-                        idle_accumulator.push_str(&String::from_utf8_lossy(&status_buf[..n]));
-                        while let Some(pos) = idle_accumulator.find('\n') {
-                            let status_line = idle_accumulator[..pos].trim().to_string();
-                            idle_accumulator.drain(..=pos);
-                            if status_line.starts_with('<') && status_line.contains("Idle") {
-                                is_idle = true;
-                                break;
-                            }
-                        }
+                if let Some(ref mut dev) = virtual_dev {
+                    dev.update();
+                    let res = dev.process_command("?");
+                    if res.iter().any(|l| l.contains("Idle")) { is_idle = true; }
+                } else if let Some(ref mut port) = real_port {
+                    port.write_all(b"?")?;
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    let mut status_buf = vec![0u8; 1024];
+                    if let Ok(n) = port.read(status_buf.as_mut_slice()) {
+                        let status_line = String::from_utf8_lossy(&status_buf[..n]);
+                        if status_line.contains("Idle") { is_idle = true; }
                     }
                 }
                 if is_idle { break; }
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
 
         let full_cmd = if trimmed == "0x18" { "\x18".to_string() } else { format!("{}\n", trimmed) };
         let explanation = decode_gcode(trimmed);
         
-        let is_laser_on = (trimmed.starts_with("M3") || trimmed.starts_with("M4")) 
-            && !trimmed.contains("S0");
-        
-        if is_laser_on {
+        if (trimmed.starts_with("M3") || trimmed.starts_with("M4")) && !trimmed.contains("S0") {
             println!("\x1b[1;31m########################################\x1b[0m");
             println!("\x1b[1;31m#            !!! LASER ON !!!          #\x1b[0m");
             println!("\x1b[1;31m########################################\x1b[0m");
         }
 
         println!("[{}] SEND: {:?} | Interpreter: {}", get_ts(), trimmed, explanation);
-        port.write_all(full_cmd.as_bytes())?;
+        
+        let mut responses = Vec::new();
+        if let Some(ref mut dev) = virtual_dev {
+            responses = dev.process_command(trimmed);
+        } else if let Some(ref mut port) = real_port {
+            port.write_all(full_cmd.as_bytes())?;
+            let mut serial_buf: Vec<u8> = vec![0; 1024];
+            let mut accumulator = String::new();
+            let start_time = std::time::Instant::now();
+            let timeout_secs = if trimmed.starts_with("$H") { 180 } else { 30 };
+            let mut finished = false;
 
-        let mut serial_buf: Vec<u8> = vec![0; 1024];
-        let mut accumulator = String::new();
-        let start_time = std::time::Instant::now();
-        let mut finished = false;
-        let timeout_secs = if trimmed.starts_with("$H") { 180 } else { 30 };
-
-        while start_time.elapsed().as_secs() < timeout_secs {
-            if let Ok(t) = port.read(serial_buf.as_mut_slice()) {
-                if t > 0 {
-                    accumulator.push_str(&String::from_utf8_lossy(&serial_buf[..t]));
-                    while let Some(pos) = accumulator.find('\n') {
-                        let res_line = accumulator[..pos].trim().to_string();
-                        accumulator.drain(..=pos);
-                        if !res_line.is_empty() {
-                            let explanation = decode_response(&res_line);
-                            println!("[{}] RECV: {:?} | Interpreter: {}", get_ts(), res_line, explanation);
-                            if res_line == "ok" || res_line.starts_with("error") {
-                                finished = true;
-                                break;
+            while start_time.elapsed().as_secs() < timeout_secs {
+                if let Ok(t) = port.read(serial_buf.as_mut_slice()) {
+                    if t > 0 {
+                        accumulator.push_str(&String::from_utf8_lossy(&serial_buf[..t]));
+                        while let Some(pos) = accumulator.find('\n') {
+                            let res_line = accumulator[..pos].trim().to_string();
+                            accumulator.drain(..=pos);
+                            if !res_line.is_empty() {
+                                responses.push(res_line.clone());
+                                if res_line == "ok" || res_line.starts_with("error") {
+                                    finished = true;
+                                    break;
+                                }
                             }
                         }
                     }
                 }
+                if finished { break; }
+                std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            if finished { break; }
-            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        for res_line in responses {
+            let explanation = decode_response(&res_line);
+            println!("[{}] RECV: {:?} | Interpreter: {}", get_ts(), res_line, explanation);
         }
         
-        // Extra wait for homing to settle
         if trimmed.starts_with("$H") {
             std::thread::sleep(std::time::Duration::from_millis(500));
         }

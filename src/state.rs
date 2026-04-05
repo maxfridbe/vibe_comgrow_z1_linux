@@ -32,6 +32,11 @@ pub struct AppState {
     pub distance: f32,
     pub feed_rate: f32,
     pub power: f32,
+    pub passes: u32,
+    pub scale: f32,
+    pub log_scroll_offset: f32,
+    pub col2_scroll_offset: f32,
+    pub is_absolute: bool,
     pub port: String,
     pub wattage: String,
     pub v_pos: Vector2,
@@ -45,74 +50,70 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn send_command(&mut self, cmd: String) {
-        let cmd = cmd.trim().to_string();
-        let explanation = decode_gcode(&cmd);
+    pub fn send_command(&mut self, cmd_str: String) {
+        let cmd_trimmed = cmd_str.trim().to_string();
+        
+        for line in cmd_trimmed.lines() {
+            let cmd = line.trim();
+            if cmd.is_empty() { continue; }
+            let explanation = decode_gcode(cmd);
 
-        // State Update Logic for virtual view
-        let parts: Vec<&str> = cmd.split_whitespace().collect();
-        let mut has_g90 = false;
-        let mut has_g91 = false;
-        let mut has_g0 = false;
-        let mut has_g1 = false;
-        let is_jog = cmd.starts_with("$J=");
+            // State Update Logic for virtual view
+            let parts: Vec<&str> = cmd.split_whitespace().collect();
+            let mut has_g0 = false;
+            let mut has_g1 = false;
+            let is_jog = cmd.starts_with("$J=");
 
-        let mut x_val = None;
-        let mut y_val = None;
-        let mut s_val = None;
+            let mut x_val = None;
+            let mut y_val = None;
+            let mut s_val = None;
 
-        for part in &parts {
-            let p = if part.starts_with("$J=") { &part[3..] } else { *part };
-            if p == "G90" { has_g90 = true; }
-            else if p == "G91" { has_g91 = true; }
-            else if p == "G0" { has_g0 = true; }
-            else if p == "G1" { has_g1 = true; }
-            else if p.starts_with('X') { x_val = p[1..].parse::<f32>().ok(); }
-            else if p.starts_with('Y') { y_val = p[1..].parse::<f32>().ok(); }
-            else if p.starts_with('S') { s_val = p[1..].parse::<f32>().ok(); }
-        }
-
-        if is_jog {
-            if has_g91 {
-                if let Some(x) = x_val { self.v_pos.x = (self.v_pos.x + x).clamp(0.0, 400.0); }
-                if let Some(y) = y_val { self.v_pos.y = (self.v_pos.y + y).clamp(0.0, 400.0); }
-            } else if has_g90 {
-                if let Some(x) = x_val { self.v_pos.x = x.clamp(0.0, 400.0); }
-                if let Some(y) = y_val { self.v_pos.y = y.clamp(0.0, 400.0); }
-            }
-        } else if has_g0 || has_g1 {
-            let old_pos = self.v_pos;
-            if has_g91 {
-                if let Some(x) = x_val { self.v_pos.x = (self.v_pos.x + x).clamp(0.0, 400.0); }
-                if let Some(y) = y_val { self.v_pos.y = (self.v_pos.y + y).clamp(0.0, 400.0); }
-            } else if has_g90 {
-                if let Some(x) = x_val { self.v_pos.x = x.clamp(0.0, 400.0); }
-                if let Some(y) = y_val { self.v_pos.y = y.clamp(0.0, 400.0); }
+            for part in &parts {
+                let p = if part.starts_with("$J=") { &part[3..] } else { *part };
+                if p == "G90" { self.is_absolute = true; }
+                else if p == "G91" { self.is_absolute = false; }
+                else if p == "G0" { has_g0 = true; }
+                else if p == "G1" { has_g1 = true; }
+                else if p.starts_with('X') { x_val = p[1..].parse::<f32>().ok(); }
+                else if p.starts_with('Y') { y_val = p[1..].parse::<f32>().ok(); }
+                else if p.starts_with('S') { s_val = p[1..].parse::<f32>().ok(); }
             }
 
-            if has_g1 {
-                self.paths.push(PathSegment {
-                    x1: old_pos.x,
-                    y1: old_pos.y,
-                    x2: self.v_pos.x,
-                    y2: self.v_pos.y,
-                    s: s_val.unwrap_or(self.power),
-                });
-            }
-        } else if cmd == "G92 X0 Y0" {
-            self.v_pos = Vector2::new(0.0, 0.0);
-        }
+            if is_jog || has_g0 || has_g1 {
+                let old_pos = self.v_pos;
+                if self.is_absolute {
+                    if let Some(x) = x_val { self.v_pos.x = x.clamp(0.0, 400.0); }
+                    if let Some(y) = y_val { self.v_pos.y = y.clamp(0.0, 400.0); }
+                } else {
+                    if let Some(x) = x_val { self.v_pos.x = (self.v_pos.x + x).clamp(0.0, 400.0); }
+                    if let Some(y) = y_val { self.v_pos.y = (self.v_pos.y + y).clamp(0.0, 400.0); }
+                }
 
-        self.last_command = cmd.clone();
-        self.serial_logs.push_back(LogEntry {
-            text: cmd.clone(),
-            explanation,
-            is_response: false,
-        });
-        if self.serial_logs.len() > 500 {
-            self.serial_logs.pop_front();
+                if has_g1 {
+                    self.paths.push(PathSegment {
+                        x1: old_pos.x,
+                        y1: old_pos.y,
+                        x2: self.v_pos.x,
+                        y2: self.v_pos.y,
+                        s: s_val.unwrap_or(self.power),
+                    });
+                }
+            } else if cmd == "G92 X0 Y0" || cmd == "$H" {
+                self.v_pos = Vector2::new(0.0, 0.0);
+            }
+
+            self.serial_logs.push_back(LogEntry {
+                text: cmd.to_string(),
+                explanation,
+                is_response: false,
+            });
+            if self.serial_logs.len() > 500 {
+                self.serial_logs.pop_front();
+            }
         }
-        let _ = self.tx.send(cmd);
+        
+        self.last_command = cmd_trimmed.clone();
+        let _ = self.tx.send(cmd_trimmed);
     }
 }
 

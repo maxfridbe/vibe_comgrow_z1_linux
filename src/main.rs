@@ -11,7 +11,7 @@ mod ui_svg;
 mod svg_helper;
 
 use clay_layout::layout::{Padding, LayoutDirection, Alignment, LayoutAlignmentX, LayoutAlignmentY};
-use clay_layout::math::{Dimensions};
+use clay_layout::math::{Dimensions, Vector2 as ClayVector2};
 use clay_layout::{Clay, Declaration, Color, grow, fixed};
 use clay_layout::render_commands::{RenderCommandConfig};
 use raylib::prelude::*;
@@ -21,6 +21,7 @@ use arboard::Clipboard;
 use std::ffi::OsString;
 
 mod cli_and_helpers;
+mod virtual_device;
 
 use crate::icons::*;
 use crate::state::{AppState, StringArena, UITab};
@@ -98,9 +99,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             icon: ICON_GAUGE,
             color: Color::u_rgb(236, 72, 153),
             commands: vec![
-                Command { label: "Square Burn", cmd: "G90 G0 X50 Y50 F3000\nM4 S1000 F500\nG1 X100\nG1 Y100\nG1 X50\nG1 Y50\nM5\n$H" },
-                Command { label: "Heart Burn", cmd: "G90 G0 X75 Y50 F3000\nM4 S1000 F500\nG1 X100 Y75\nG3 X75 Y75 R12.5\nG3 X50 Y75 R12.5\nG1 X75 Y50\nM5\n$H" },
-                Command { label: "Star Burn", cmd: "G90 G0 X100 Y135 F3000\nM4 S1000 F500\nG1 X108.4 Y111.2\nG1 X133.6 Y111.2\nG1 X113.3 Y95.8\nG1 X120.3 Y66.4\nG1 X100 Y83.2\nG1 X79.7 Y66.4\nG1 X86.7 Y95.8\nG1 X66.4 Y111.2\nG1 X91.6 Y111.2\nG1 X100 Y135\nM5\n$H" },
+                Command { label: "Square", cmd: "" },
+                Command { label: "Heart", cmd: "" },
+                Command { label: "Star", cmd: "" },
+                Command { label: "Car", cmd: "" },
+                Command { label: "Stars8", cmd: "" },
+                Command { label: "Stars9", cmd: "" },
             ],
         },
     ];
@@ -114,11 +118,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     let (tx, rx) = mpsc::channel::<String>();
-    let _safety_guard = SafetyGuard { tx: tx.clone() };
-
     let tx_for_ctrlc = tx.clone();
     ctrlc::set_handler(move || {
-        println!("\n[CTRL-C] Detected.");
         let _ = tx_for_ctrlc.send("!".to_string());
         let _ = tx_for_ctrlc.send("M5".to_string());
         let _ = tx_for_ctrlc.send("0x18".to_string());
@@ -131,6 +132,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         distance: 10.0,
         feed_rate: 1000.0,
         power: 100.0,
+        passes: 1,
+        scale: 1.0,
+        log_scroll_offset: 0.0,
+        col2_scroll_offset: 0.0,
+        is_absolute: true,
         port: "/dev/ttyUSB0".to_string(),
         wattage: "10W".to_string(),
         v_pos: Vector2::new(0.0, 0.0),
@@ -157,18 +163,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut chars: Vec<char> = (32..127).map(|c| c as u8 as char).collect();
     let icons_list: &[&str] = &[
         ICON_TERMINAL, ICON_MOVE, ICON_POWER, ICON_HOME, ICON_UNLOCK, 
-        ICON_SETTINGS, ICON_CHECK, ICON_ARROW_UP, ICON_ARROW_DOWN, 
-        ICON_ARROW_LEFT, ICON_ARROW_RIGHT, ICON_CROSSHAIR, ICON_USB, 
-        ICON_FLAME, ICON_GAUGE, ICON_SHIELD, ICON_REFRESH, ICON_CPU, 
-        ICON_TRASH, ICON_LAYERS, ICON_COPY, ICON_LASER, ICON_SWEEP,
-        ICON_SERIAL
+        ICON_REFRESH, ICON_SETTINGS, ICON_LAYERS, ICON_GAUGE, ICON_LASER,
+        ICON_ARROW_UP, ICON_ARROW_DOWN, ICON_ARROW_LEFT, ICON_ARROW_RIGHT,
+        ICON_CROSSHAIR, ICON_FLAME, ICON_USB, ICON_SHIELD, ICON_CPU, ICON_TRASH,
+        ICON_COPY, ICON_SWEEP, ICON_SERIAL, ICON_CHECK,
     ];
-    for icon in icons_list {
-        chars.extend(icon.chars());
+    for &icon in icons_list {
+        for c in icon.chars() {
+            if !chars.contains(&c) { chars.push(c); }
+        }
     }
 
-    let font = rl.load_font_from_memory(&thread, ".ttf", FONT_DATA, 64, Some(&chars.iter().collect::<String>())).expect("Failed to load font");
-    let mut clay = Clay::new(Dimensions::new(rl.get_screen_width() as f32, rl.get_screen_height() as f32));
+    let font_chars: String = chars.iter().collect();
+    let font = rl.load_font_from_memory(&thread, ".ttf", FONT_DATA, 64, Some(&font_chars))
+        .expect("Failed to load font");
+
+    let mut clay = Clay::new(Dimensions::new(1280.0, 800.0));
     clay.set_measure_text_function(|text, config| {
         let size = config.font_size as f32;
         let width = text.len() as f32 * (size * 0.60);
@@ -178,34 +188,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut clipboard = Clipboard::new().ok();
     let mut font_scale: f32 = 1.0;
 
-    let mut sections = sections;
-    sections.push(Section {
-        title: "Y-JUMP (Absolute)",
-        icon: ICON_LAYERS,
-        color: Color::u_rgb(236, 72, 153),
-        commands: vec![
-            Command { label: "Y 16", cmd: "G90 G0 Y16" },
-            Command { label: "Y 12", cmd: "G90 G0 Y12" },
-            Command { label: "Y 8", cmd: "G90 G0 Y8" },
-            Command { label: "Y 4", cmd: "G90 G0 Y4" },
-        ],
-    });
-    sections.push(Section {
-        title: "X-JUMP (Absolute)",
-        icon: ICON_LAYERS,
-        color: Color::u_rgb(34, 197, 94),
-        commands: vec![
-            Command { label: "X 100", cmd: "G90 G0 X100" },
-            Command { label: "X 200", cmd: "G90 G0 X200" },
-            Command { label: "X 300", cmd: "G90 G0 X300" },
-            Command { label: "X 400", cmd: "G90 G0 X400" },
-        ],
-    });
-
     while !rl.window_should_close() {
         arena.clear();
 
-        // Handle scaling
         if rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL) {
             if rl.is_key_pressed(KeyboardKey::KEY_EQUAL) || rl.is_key_pressed(KeyboardKey::KEY_KP_ADD) {
                 font_scale = (font_scale + 0.1).min(5.0);
@@ -227,26 +212,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         clay.pointer_state(clay_layout::math::Vector2 { x: mouse_pos.x, y: mouse_pos.y }, mouse_down);
         clay.update_scroll_containers(true, clay_layout::math::Vector2 { x: scroll_delta.x * 50.0, y: scroll_delta.y * 50.0 }, rl.get_frame_time());
 
-        // Use a consistent ID hashing for the canvas to ensure size detection works
-        let canvas_id_val = clay_scope_id("canvas");
-        let mut canvas_side = 400.0 * font_scale;
-        let canvas_data = unsafe { clay_layout::bindings::Clay_GetElementData(canvas_id_val.id) };
-        if canvas_data.found {
-            canvas_side = canvas_data.boundingBox.width;
-        }
-
         let mut clay_scope = clay.begin::<Texture2D, ()>();
 
         let mut root_decl = Declaration::<Texture2D, ()>::new();
         root_decl.id(clay_scope.id("root"))
-            .layout().width(grow!()).height(fixed!(screen_height - 12.0)).padding(Padding::all(6)).child_gap(16).direction(LayoutDirection::TopToBottom).end()
+            .layout().width(grow!()).height(fixed!(screen_height - 12.0)).padding(Padding::all(6)).child_gap(12).direction(LayoutDirection::TopToBottom).end()
             .background_color(Color::u_rgb(15, 23, 42));
 
         clay_scope.with(&root_decl, |clay_scope| {
             let bottom_bar_height = 160.0 * font_scale;
-            let standard_margin = (20.0 * font_scale) as u16;
+            let standard_margin = (12.0 * font_scale) as u16;
 
-            // HEADER
             let mut header_decl = Declaration::<Texture2D, ()>::new();
             header_decl.layout().width(grow!()).height(fixed!(80.0 * font_scale)).padding(Padding::all(12)).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end()
                 .background_color(Color::u_rgb(30, 41, 59))
@@ -257,9 +233,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 title_group.layout().child_gap(16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
                 clay_scope.with(&title_group, |clay_scope| {
                     let mut icon_box = Declaration::<Texture2D, ()>::new();
-                    icon_box.layout().padding(Padding::all(8)).end()
-                        .background_color(Color::u_rgb(37, 99, 235))
-                        .corner_radius().all(12.0 * font_scale).end();
+                    icon_box.layout().padding(Padding::all(8)).end().background_color(Color::u_rgb(37, 99, 235)).corner_radius().all(12.0 * font_scale).end();
                     clay_scope.with(&icon_box, |clay_scope| {
                         clay_scope.text(ICON_LASER, clay_layout::text::TextConfig::new().font_size((32.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
                     });
@@ -285,7 +259,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         clay_scope.text(arena.push(wattage), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(216, 180, 254)).end());
                     });
 
-                    // Header E-STOP
                     let estop_h_id = clay_scope.id("estop_header");
                     let mut estop_h_color = Color::u_rgb(153, 27, 27); 
                     if clay_scope.pointer_over(estop_h_id) {
@@ -299,15 +272,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         }
                     }
                     let mut estop_h_btn = Declaration::<Texture2D, ()>::new();
-                    estop_h_btn.id(estop_h_id).layout().padding(Padding::new(12, 12, 6, 6)).end()
-                        .background_color(estop_h_color).corner_radius().all(12.0 * font_scale).end();
+                    estop_h_btn.id(estop_h_id).layout().padding(Padding::new(12, 12, 6, 6)).end().background_color(estop_h_color).corner_radius().all(12.0 * font_scale).end();
                     clay_scope.with(&estop_h_btn, |clay_scope| {
                         clay_scope.text("E-STOP", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
                     });
                 });
             });
 
-            // TAB BAR
             let mut tab_bar = Declaration::<Texture2D, ()>::new();
             tab_bar.layout().width(grow!()).direction(LayoutDirection::LeftToRight).padding(Padding::horizontal(standard_margin)).child_gap(10).end();
             clay_scope.with(&tab_bar, |clay_scope| {
@@ -317,82 +288,121 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 if render_tab_btn(clay_scope, "tab_svg", "SVG", current_tab == UITab::SVG, font_scale) { state.lock().unwrap().current_tab = UITab::SVG; }
             });
 
-            // CONTENT
             let mut content_area = Declaration::<Texture2D, ()>::new();
-            content_area.layout().width(grow!()).height(grow!()).direction(LayoutDirection::LeftToRight).padding(Padding::new(standard_margin, standard_margin, standard_margin, (bottom_bar_height + 20.0) as u16)).child_gap(standard_margin).end();
+            content_area.layout().width(grow!()).height(grow!()).direction(LayoutDirection::LeftToRight).child_gap(12).end();
             clay_scope.with(&content_area, |clay_scope| {
                 let current_tab = state.lock().unwrap().current_tab.clone();
 
-                // Col 1: Left
-                match current_tab {
-                    UITab::Manual => ui_manual::render_manual_left_col(clay_scope, &state, &sections, mouse_pressed, &mut clipboard, &arena, font_scale),
-                    UITab::Test => ui_test::render_test_left_col(clay_scope, &state, &sections, mouse_pressed, &mut clipboard, &arena, font_scale),
-                    UITab::SVG => ui_svg::render_svg_left_col(clay_scope, &state, mouse_pressed, &mut clipboard, &arena, font_scale),
-                    _ => {}
-                }
-
-                // Col 2: Center
-                let mut col2 = Declaration::<Texture2D, ()>::new();
-                col2.layout().width(grow!()).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(12).end();
-                clay_scope.with(&col2, |clay_scope| {
+                // Column 1: Grid (Always on Left, Grows)
+                let mut col1 = Declaration::<Texture2D, ()>::new();
+                col1.layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).child_gap(12).end();
+                
+                clay_scope.with(&col1, |clay_scope| {
                     let mut canvas_box = Declaration::<Texture2D, ()>::new();
-                    canvas_box.id(clay_scope.id("canvas")).layout().width(grow!()).height(fixed!(canvas_side)).end().background_color(Color::u_rgb(30, 41, 59)).corner_radius().all(16.0 * font_scale).end();
+                    canvas_box.id(clay_scope.id("canvas")).layout().width(grow!()).height(grow!()).end().background_color(Color::u_rgb(30, 41, 59)).corner_radius().all(16.0 * font_scale).end();
                     clay_scope.with(&canvas_box, |_| {});
 
                     let mut label_box = Declaration::<Texture2D, ()>::new();
-                    label_box.layout().padding(Padding::all(10)).direction(LayoutDirection::TopToBottom).child_gap(4).end();
+                    label_box.layout().width(grow!()).padding(Padding::all(10)).direction(LayoutDirection::LeftToRight).child_gap(24).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
                     clay_scope.with(&label_box, |clay_scope| {
                         let (vx, vy, mx, my, mstate) = { let g = state.lock().unwrap(); (g.v_pos.x, g.v_pos.y, g.machine_pos.x, g.machine_pos.y, g.machine_state.clone()) };
-                        clay_scope.text(arena.push(format!("Virtual: X: {:.1}  Y: {:.1}", vx, vy)), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(96, 165, 250)).end());
-                        clay_scope.text(arena.push(format!("Machine: X: {:.1}  Y: {:.1}", mx, my)), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
-                        clay_scope.text(arena.push(format!("Status: {}", mstate)), clay_layout::text::TextConfig::new().font_size((16.0 * font_scale) as u16).color(Color::u_rgb(34, 197, 94)).end());
+                        clay_scope.text(arena.push(format!("V: X:{:.1} Y:{:.1}", vx, vy)), clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(96, 165, 250)).end());
+                        clay_scope.text(arena.push(format!("M: X:{:.1} Y:{:.1}", mx, my)), clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
+                        clay_scope.text(arena.push(format!("Status: {}", mstate)), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(34, 197, 94)).end());
                     });
                 });
 
-                // Col 3: Right
-                match current_tab {
-                    UITab::Manual => ui_manual::render_manual_right_col(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale),
-                    _ => {
-                        let mut col3_spacer = Declaration::<Texture2D, ()>::new(); col3_spacer.layout().width(fixed!(400.0 * font_scale)).end(); clay_scope.with(&col3_spacer, |_| {});
-                    }
+                // Column 2: Controls (SCROLLABLE)
+                let mut col2_scroll = Declaration::<Texture2D, ()>::new();
+                let col2_id = clay_scope.id("controls_column");
+                let col2_width = if current_tab == UITab::Manual { 750.0 } else { 350.0 };
+                let c2_offset = { state.lock().unwrap().col2_scroll_offset };
+
+                col2_scroll.id(col2_id).layout().width(fixed!(col2_width * font_scale)).height(grow!()).direction(LayoutDirection::TopToBottom).end()
+                    .clip(false, true, ClayVector2 { x: 0.0, y: c2_offset });
+                
+                if clay_scope.pointer_over(col2_id) {
+                    let mut g = state.lock().unwrap();
+                    g.col2_scroll_offset += scroll_delta.y * 40.0;
+                    if g.col2_scroll_offset > 0.0 { g.col2_scroll_offset = 0.0; }
+                    // Bounds checking for scroll could be improved if we knew content height
                 }
+
+                clay_scope.with(&col2_scroll, |clay_scope| {
+                    match current_tab {
+                        UITab::Manual => {
+                            let mut inner_row = Declaration::<Texture2D, ()>::new();
+                            inner_row.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(16).end();
+                            clay_scope.with(&inner_row, |clay_scope| {
+                                ui_manual::render_manual_left_col(clay_scope, &state, &sections, mouse_pressed, &mut clipboard, &arena, font_scale);
+                                ui_manual::render_manual_right_col(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale);
+                            });
+                        }
+                        UITab::Test => ui_test::render_test_left_col(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale),
+                        UITab::SVG => ui_svg::render_svg_left_col(clay_scope, &state, mouse_pressed, &mut clipboard, &arena, font_scale),
+                        _ => {}
+                    }
+                });
             });
 
-            // DOCKED BOTTOM BAR
+            // FIXED BOTTOM AREA
             let mut bottom_area = Declaration::<Texture2D, ()>::new();
-            bottom_area
-                .floating()
-                    .attach_points(clay_layout::elements::FloatingAttachPointType::CenterBottom, clay_layout::elements::FloatingAttachPointType::CenterBottom)
-                    .attach_to(clay_layout::elements::FloatingAttachToElement::Parent)
-                .end()
-                .layout()
-                    .width(grow!())
-                    .height(fixed!(bottom_bar_height))
-                    .direction(LayoutDirection::LeftToRight)
-                    .child_gap(16)
-                    .padding(Padding::all(10))
-                .end();
+            bottom_area.layout().width(grow!()).height(fixed!(bottom_bar_height)).direction(LayoutDirection::LeftToRight).child_gap(16).end();
 
             clay_scope.with(&bottom_area, |clay_scope| {
                 let mut log_box = Declaration::<Texture2D, ()>::new();
-                let serial_id_node = clay_scope.id("serial_box");
-                
-                log_box.id(serial_id_node).layout().width(grow!()).height(grow!()).padding(Padding::all(12)).direction(LayoutDirection::TopToBottom).child_gap(4).end()
+                log_box.layout().width(grow!()).height(grow!()).padding(Padding::all(12)).direction(LayoutDirection::TopToBottom).child_gap(4).end()
                     .background_color(Color::u_rgb(2, 6, 23)).corner_radius().all(16.0 * font_scale).end().border().top((2.0 * font_scale) as u16).color(Color::u_rgb(168, 85, 247)).end();
                 
                 clay_scope.with(&log_box, |clay_scope| {
-                    clay_scope.text("SERIAL LOG", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
-                    let logs = state.lock().unwrap().serial_logs.clone();
-                    for (i, log) in logs.iter().rev().enumerate() {
-                        let text_color = if log.is_response { Color::u_rgb(0, 0, 0) } else if i == 0 { Color::u_rgb(255, 255, 255) } else { Color::u_rgb(148, 163, 184) };
-                        let mut row = Declaration::<Texture2D, ()>::new();
-                        row.layout().width(grow!()).padding(Padding::horizontal(8)).padding(Padding::vertical(2)).child_gap(20).end();
-                        if log.is_response { row.background_color(Color::u_rgb(255, 255, 255)).corner_radius().all(4.0 * font_scale).end(); }
-                        clay_scope.with(&row, |clay_scope| {
-                            clay_scope.text(arena.push(log.text.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(text_color).end());
-                            clay_scope.text(arena.push(log.explanation.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(text_color).end());
+                    let mut title_row = Declaration::<Texture2D, ()>::new();
+                    title_row.layout().width(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Right, LayoutAlignmentY::Center)).child_gap(16).end();
+                    clay_scope.with(&title_row, |clay_scope| {
+                        clay_scope.text("SERIAL LOG", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
+                        let port_id = clay_scope.id("port_toggle");
+                        let current_port = { state.lock().unwrap().port.clone() };
+                        let mut port_color = if current_port == "VIRTUAL" { Color::u_rgb(192, 132, 252) } else { Color::u_rgb(52, 211, 153) };
+                        if clay_scope.pointer_over(port_id) {
+                            port_color = Color::u_rgb(255, 255, 255);
+                            if mouse_pressed {
+                                let mut g = state.lock().unwrap();
+                                if g.port == "VIRTUAL" { g.port = "/dev/ttyUSB0".to_string(); } 
+                                else { g.port = "VIRTUAL".to_string(); g.machine_state = "Idle".to_string(); g.machine_pos = Vector2::new(0.0, 0.0); }
+                            }
+                        }
+                        let mut port_btn = Declaration::<Texture2D, ()>::new();
+                        port_btn.id(port_id).layout().padding(Padding::horizontal(8)).end();
+                        clay_scope.with(&port_btn, |clay| {
+                            clay.text(arena.push(format!("DEVICE: {}", current_port)), clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(port_color).end());
                         });
+                    });
+
+                    let logs = state.lock().unwrap().serial_logs.clone();
+                    let offset = { state.lock().unwrap().log_scroll_offset };
+                    let mut log_scroll = Declaration::<Texture2D, ()>::new();
+                    let log_scroll_id = clay_scope.id("log_scroll");
+                    log_scroll.id(log_scroll_id).layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(2).end().clip(false, true, ClayVector2 { x: 0.0, y: offset });
+                    
+                    if clay_scope.pointer_over(log_scroll_id) {
+                        let mut g = state.lock().unwrap();
+                        g.log_scroll_offset += scroll_delta.y * 40.0;
+                        if g.log_scroll_offset > 0.0 { g.log_scroll_offset = 0.0; }
+                        let max_scroll = -(logs.len() as f32 * 20.0);
+                        if g.log_scroll_offset < max_scroll { g.log_scroll_offset = max_scroll; }
                     }
+
+                    clay_scope.with(&log_scroll, |clay_scope| {
+                        for (i, log) in logs.iter().rev().take(100).enumerate() {
+                            let text_color = if log.is_response { Color::u_rgb(0, 0, 0) } else if i == 0 { Color::u_rgb(255, 255, 255) } else { Color::u_rgb(148, 163, 184) };
+                            let mut row = Declaration::<Texture2D, ()>::new();
+                            row.layout().width(grow!()).padding(Padding::horizontal(8)).padding(Padding::vertical(2)).child_gap(20).end();
+                            if log.is_response { row.background_color(Color::u_rgb(255, 255, 255)).corner_radius().all(4.0 * font_scale).end(); }
+                            clay_scope.with(&row, |clay_scope| {
+                                clay_scope.text(arena.push(log.text.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(text_color).end());
+                                clay_scope.text(arena.push(log.explanation.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(text_color).end());
+                            });
+                        }
+                    });
                 });
 
                 let mut estop_b = Declaration::<Texture2D, ()>::new();
@@ -443,7 +453,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if canvas_rect_actual.width > 0.0 {
             let margin = 20.0;
             let side = (canvas_rect_actual.width - margin * 2.0).min(canvas_rect_actual.height - margin * 2.0);
-            let draw_area = raylib::math::Rectangle::new(canvas_rect_actual.x + margin, canvas_rect_actual.y + margin, side, side);
+            let draw_area = raylib::math::Rectangle::new(canvas_rect_actual.x + (canvas_rect_actual.width - side) / 2.0, canvas_rect_actual.y + (canvas_rect_actual.height - side) / 2.0, side, side);
             for i in 0..=10 {
                 let x = draw_area.x + (i as f32 / 10.0) * side;
                 let y = draw_area.y + (i as f32 / 10.0) * side;
@@ -456,16 +466,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let end = raylib::math::Vector2::new(draw_area.x + (p.x2 / 400.0) * side, draw_area.y + draw_area.height - (p.y2 / 400.0) * side);
                 d.draw_line_ex(start, end, 2.0, raylib::color::Color::new(255, 71, 87, (p.s / 1000.0 * 255.0) as u8));
             }
-            let head_pos = raylib::math::Vector2::new(draw_area.x + (guard.v_pos.x / 400.0) * side, draw_area.y + draw_area.height - (guard.v_pos.y / 400.0) * side);
+            let head_pos = raylib::math::Vector2::new(draw_area.x + (guard.machine_pos.x / 400.0) * side, draw_area.y + draw_area.height - (guard.machine_pos.y / 400.0) * side);
             d.draw_circle_v(head_pos, 5.0 * font_scale, raylib::color::Color::new(59, 130, 246, 100));
             d.draw_circle_v(head_pos, 2.0 * font_scale, raylib::color::Color::RED);
         }
     }
     Ok(())
-}
-
-fn clay_scope_id(id: &str) -> clay_layout::id::Id {
-    unsafe { 
-        clay_layout::id::Id { id: clay_layout::bindings::Clay__HashString(clay_layout::bindings::Clay_String::from(id), 0, 0) }
-    }
 }
