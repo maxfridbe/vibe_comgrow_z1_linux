@@ -58,6 +58,11 @@ pub struct AppState {
     pub copied_at: Option<std::time::Instant>,
     pub serial_logs: VecDeque<LogEntry>,
     pub tx: Sender<String>,
+    pub boundary_enabled: bool,
+    pub boundary_x: f32,
+    pub boundary_y: f32,
+    pub boundary_w: f32,
+    pub boundary_h: f32,
 }
 
 impl AppState {
@@ -113,13 +118,7 @@ impl AppState {
             }
 
             if has_g1 {
-                self.paths.push(PathSegment {
-                    x1: old_pos.x,
-                    y1: old_pos.y,
-                    x2: target.x,
-                    y2: target.y,
-                    s: s_val.unwrap_or(self.power),
-                });
+                self.add_path_segment(old_pos.x, old_pos.y, target.x, target.y, s_val.unwrap_or(self.power));
                 self.v_pos = target;
             } else if (has_g2 || has_g3) && r_val.is_some() {
                 let r = r_val.unwrap();
@@ -131,8 +130,9 @@ impl AppState {
                 let d2 = dx*dx + dy*dy;
                 let d = d2.sqrt();
                 
-                if d > 0.0 && d <= 2.0 * r.abs() {
-                    let h = (r*r - d2/4.0).sqrt();
+                // Use a larger epsilon for d <= 2r check to handle floating point precision at different scales
+                if d > 0.0 && d <= 2.0 * r.abs() + 0.1 {
+                    let h = (r*r - d2/4.0).max(0.0).sqrt();
                     let mut cx = (start.x + end.x) / 2.0;
                     let mut cy = (start.y + end.y) / 2.0;
                     
@@ -158,13 +158,7 @@ impl AppState {
                         let t = i as f32 / segments as f32;
                         let angle = start_angle + t * (end_angle - start_angle);
                         let next_p = Vector2::new(cx + r.abs() * angle.cos(), cy + r.abs() * angle.sin());
-                        self.paths.push(PathSegment {
-                            x1: prev_p.x,
-                            y1: prev_p.y,
-                            x2: next_p.x,
-                            y2: next_p.y,
-                            s: s_val.unwrap_or(self.power),
-                        });
+                        self.add_path_segment(prev_p.x, prev_p.y, next_p.x, next_p.y, s_val.unwrap_or(self.power));
                         prev_p = next_p;
                     }
                 }
@@ -187,6 +181,10 @@ impl AppState {
                 self.serial_logs.pop_front();
             }
         }
+    }
+
+    fn add_path_segment(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, s: f32) {
+        self.paths.push(PathSegment { x1, y1, x2, y2, s });
     }
 }
 

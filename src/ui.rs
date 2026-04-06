@@ -1,10 +1,11 @@
 use clay_layout::layout::{Padding, LayoutAlignmentX, LayoutAlignmentY, Alignment, LayoutDirection};
-use clay_layout::{Declaration, Color, grow, fixed};
+use clay_layout::{Declaration, grow, fixed, Color as ClayColor};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
 use arboard::Clipboard;
-use crate::state::{AppState, StringArena, UITab};
+use crate::state::{AppState, StringArena};
 use crate::icons::*;
+use crate::styles::*;
 
 pub fn render_tab_btn<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
@@ -13,14 +14,17 @@ pub fn render_tab_btn<'a, 'render>(
     active: bool,
     font_scale: f32,
 ) -> bool where 'a: 'render {
-    let color = if active { Color::u_rgb(59, 130, 246) } else { Color::u_rgb(30, 41, 59) };
-    let text_color = if active { Color::u_rgb(255, 255, 255) } else { Color::u_rgb(148, 163, 184) };
+    let color = if active { COLOR_PRIMARY } else { COLOR_BG_SECTION };
+    let text_color = if active { COLOR_TEXT_WHITE } else { COLOR_TEXT_MUTED };
     
     let btn_id = clay.id(id);
     let mut btn = Declaration::<Texture2D, ()>::new();
-    btn.id(btn_id).layout().padding(Padding::new(16, 16, 10, 10)).end()
+    btn.id(btn_id).layout()
+        .padding(Padding::new(16, 16, 10, 10)).end()
         .background_color(color)
-        .corner_radius().top_left(8.0 * font_scale).top_right(8.0 * font_scale).end();
+        .corner_radius()
+            .top_left(8.0 * font_scale)
+            .top_right(8.0 * font_scale).end();
     
     let mut clicked = false;
     clay.with(&btn, |clay_scope| {
@@ -40,7 +44,7 @@ pub struct Command {
 pub struct Section {
     pub title: &'static str,
     pub icon: &'static str,
-    pub color: Color,
+    pub color: ClayColor,
     pub commands: Vec<Command>,
 }
 
@@ -57,10 +61,10 @@ pub fn render_jog_btn<'a, 'render>(
     disabled: bool,
 ) -> bool where 'a: 'render {
     let btn_id = clay.id(id);
-    let mut color = if disabled { Color::u_rgb(15, 23, 42) } else { Color::u_rgb(30, 41, 59) };
+    let mut color = if disabled { COLOR_BG_DISABLED } else { COLOR_BG_SECTION };
     let mut clicked = false;
     if !disabled && clay.pointer_over(btn_id) {
-        color = Color::u_rgb(59, 130, 246);
+        color = COLOR_PRIMARY;
         if mouse_pressed {
             clicked = true;
             let mut guard = state.lock().unwrap();
@@ -82,7 +86,7 @@ pub fn render_jog_btn<'a, 'render>(
         .background_color(color)
         .corner_radius().all(8.0 * font_scale).end();
     
-    let text_color = if disabled { Color::u_rgb(71, 85, 105) } else { Color::u_rgb(255, 255, 255) };
+    let text_color = if disabled { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
     clay.with(&btn, |clay| {
         clay.text(icon, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(text_color).end());
     });
@@ -102,10 +106,10 @@ pub fn render_burn_btn<'a, 'render>(
     disabled: bool,
 ) -> bool where 'a: 'render {
     let btn_id = clay.id(id);
-    let mut color = if disabled { Color::u_rgb(15, 23, 42) } else { Color::u_rgb(147, 51, 234) }; 
+    let mut color = if disabled { COLOR_BG_DISABLED } else { COLOR_ACCENT_PURPLE }; 
     let mut clicked = false;
     if !disabled && clay.pointer_over(btn_id) {
-        color = Color::u_rgb(168, 85, 247); 
+        color = COLOR_ACCENT_PURPLE_LIGHT; 
         if mouse_pressed {
             clicked = true;
             let mut guard = state.lock().unwrap();
@@ -130,11 +134,49 @@ pub fn render_burn_btn<'a, 'render>(
         .background_color(color)
         .corner_radius().all(8.0 * font_scale).end();
 
-    let text_color = if disabled { Color::u_rgb(71, 85, 105) } else { Color::u_rgb(255, 255, 255) };
+    let text_color = if disabled { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
     clay.with(&btn, |clay| {
         clay.text(label, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(text_color).end());
     });
     clicked
+}
+
+pub fn render_checkbox<'a, 'render, F>(
+    clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
+    id: &str,
+    label: &str,
+    checked: bool,
+    state: &Arc<Mutex<AppState>>,
+    update: F,
+    mouse_pressed: bool,
+    font_scale: f32,
+) where F: FnOnce(&mut AppState, bool), 'a: 'render {
+    let btn_id = clay.id(id);
+    let mut btn = Declaration::<Texture2D, ()>::new();
+    btn.id(btn_id).layout().padding(Padding::all(8)).child_gap(12).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end()
+        .background_color(COLOR_BG_SECTION)
+        .corner_radius().all(8.0 * font_scale).end();
+    
+    if clay.pointer_over(btn_id) && mouse_pressed {
+        let mut guard = state.lock().unwrap();
+        update(&mut guard, !checked);
+    }
+
+    clay.with(&btn, |clay_scope| {
+        let mut box_decl = Declaration::<Texture2D, ()>::new();
+        let box_color = if checked { COLOR_PRIMARY } else { COLOR_BG_DARK };
+        box_decl.layout().width(fixed!(20.0 * font_scale)).height(fixed!(20.0 * font_scale)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+            .background_color(box_color)
+            .corner_radius().all(4.0 * font_scale).end();
+        
+        clay_scope.with(&box_decl, |clay_scope| {
+            if checked {
+                clay_scope.text(ICON_CHECK, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
+            }
+        });
+
+        clay_scope.text(label, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_MUTED).end());
+    });
 }
 
 pub fn render_slider<'a, 'render, F>(
@@ -144,7 +186,7 @@ pub fn render_slider<'a, 'render, F>(
     value: f32,
     min: f32,
     max: f32,
-    color: Color,
+    color: ClayColor,
     state: &Arc<Mutex<AppState>>,
     update: F,
     mouse_pos: raylib::math::Vector2,
@@ -163,13 +205,13 @@ pub fn render_slider<'a, 'render, F>(
         let mut header = Declaration::<Texture2D, ()>::new();
         header.layout().width(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
         clay.with(&header, |clay| {
-            clay.text(label, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(100, 116, 139)).end());
+            clay.text(label, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_LABEL).end());
             clay.text(arena.push(format!("{:.1}", value)), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(color).end());
         });
 
         let mut track = Declaration::<Texture2D, ()>::new();
         track.id(slider_id).layout().width(grow!()).height(fixed!(6.0 * font_scale)).end()
-            .background_color(Color::u_rgb(2, 6, 23))
+            .background_color(COLOR_BG_DARK)
             .corner_radius().all(3.0 * font_scale).end();
         
         if clay.pointer_over(slider_id) || clay.pointer_over(container_id) {

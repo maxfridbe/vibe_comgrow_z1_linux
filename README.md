@@ -1,5 +1,7 @@
 # Comgrow Z1 Laser GRBL Runner
 
+
+![Screenshot Example](./assets/screenshot.png)
 A custom engineering tool for the Comgrow Z1 Laser engraver, featuring a high-fidelity tabbed UI and a safety-first CLI.
 
 ## Features

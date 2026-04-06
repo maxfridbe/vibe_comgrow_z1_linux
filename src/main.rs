@@ -7,11 +7,14 @@ mod comm;
 mod ui;
 mod ui_manual;
 mod ui_test;
+mod ui_svg;
 mod svg_helper;
+mod styles;
 
+use styles::*;
 use clay_layout::layout::{Padding, LayoutDirection, Alignment, LayoutAlignmentX, LayoutAlignmentY};
 use clay_layout::math::{Dimensions, Vector2 as ClayVector2};
-use clay_layout::{Clay, Declaration, Color, grow, fixed};
+use clay_layout::{Clay, Declaration, grow, fixed};
 use clay_layout::render_commands::{RenderCommandConfig};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -37,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Section {
             title: "Real-Time & System",
             icon: ICON_REFRESH,
-            color: Color::u_rgb(96, 165, 250),
+            color: COLOR_USB_ICON,
             commands: vec![
                 Command { label: "Status", cmd: "?" },
                 Command { label: "Home", cmd: "$H" },
@@ -51,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Section {
             title: "Laser & Air",
             icon: ICON_FLAME,
-            color: Color::u_rgb(251, 146, 60),
+            color: COLOR_WARNING,
             commands: vec![
                 Command { label: "Dynamic", cmd: "M4" },
                 Command { label: "Air On", cmd: "M8" },
@@ -61,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Section {
             title: "Calibration",
             icon: ICON_GAUGE,
-            color: Color::u_rgb(52, 211, 153),
+            color: COLOR_SUCCESS_LIGHT,
             commands: vec![
                 Command { label: "Max S", cmd: "$30=1000" },
                 Command { label: "Laser Mode", cmd: "$32=1" },
@@ -73,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Section {
             title: "Safety",
             icon: ICON_SHIELD,
-            color: Color::u_rgb(248, 113, 113),
+            color: COLOR_SLIDER_POWER,
             commands: vec![
                 Command { label: "Gyro", cmd: "$140=16" },
                 Command { label: "Hard Lmt", cmd: "$21=1" },
@@ -85,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Section {
             title: "Modals",
             icon: ICON_LAYERS,
-            color: Color::u_rgb(192, 132, 252),
+            color: COLOR_ACCENT_PURPLE_VIRTUAL,
             commands: vec![
                 Command { label: "Abs", cmd: "G90" },
                 Command { label: "Inc", cmd: "G91" },
@@ -96,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Section {
             title: "Test Patterns",
             icon: ICON_GAUGE,
-            color: Color::u_rgb(236, 72, 153),
+            color: COLOR_PINK,
             commands: vec![
                 Command { label: "Square", cmd: "" },
                 Command { label: "Heart", cmd: "" },
@@ -146,6 +149,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         copied_at: None,
         serial_logs: std::collections::VecDeque::new(),
         tx,
+        boundary_enabled: false,
+        boundary_x: 0.0,
+        boundary_y: 0.0,
+        boundary_w: 100.0,
+        boundary_h: 100.0,
     }));
 
     start_serial_thread(Arc::clone(&state), rx);
@@ -216,7 +224,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut root_decl = Declaration::<Texture2D, ()>::new();
         root_decl.id(clay_scope.id("root"))
             .layout().width(grow!()).height(fixed!(screen_height - 12.0)).padding(Padding::all(6)).child_gap(12).direction(LayoutDirection::TopToBottom).end()
-            .background_color(Color::u_rgb(15, 23, 42));
+            .background_color(COLOR_BG_MAIN);
 
         clay_scope.with(&root_decl, |clay_scope| {
             let bottom_bar_height = 160.0 * font_scale;
@@ -224,7 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             let mut header_decl = Declaration::<Texture2D, ()>::new();
             header_decl.layout().width(grow!()).height(fixed!(80.0 * font_scale)).padding(Padding::all(12)).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end()
-                .background_color(Color::u_rgb(30, 41, 59))
+                .background_color(COLOR_BG_SECTION)
                 .corner_radius().all(16.0 * font_scale).end();
 
             clay_scope.with(&header_decl, |clay_scope| {
@@ -232,11 +240,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 title_group.layout().child_gap(16).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
                 clay_scope.with(&title_group, |clay_scope| {
                     let mut icon_box = Declaration::<Texture2D, ()>::new();
-                    icon_box.layout().padding(Padding::all(8)).end().background_color(Color::u_rgb(37, 99, 235)).corner_radius().all(12.0 * font_scale).end();
+                    icon_box.layout().padding(Padding::all(8)).end().background_color(COLOR_PRIMARY_HOVER).corner_radius().all(12.0 * font_scale).end();
                     clay_scope.with(&icon_box, |clay_scope| {
-                        clay_scope.text(ICON_LASER, clay_layout::text::TextConfig::new().font_size((32.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+                        clay_scope.text(ICON_LASER, clay_layout::text::TextConfig::new().font_size((32.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
                     });
-                    clay_scope.text("Comgrow Z1 Laser GRBL Runner", clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+                    clay_scope.text("Comgrow Z1 Laser GRBL Runner", clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
                 });
 
                 let mut spacer = Declaration::<Texture2D, ()>::new(); spacer.layout().width(grow!()).end(); clay_scope.with(&spacer, |_| {});
@@ -246,22 +254,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 clay_scope.with(&settings_group, |clay_scope| {
                     let (port, wattage) = { let g = state.lock().unwrap(); (g.port.clone(), g.wattage.clone()) };
                     let mut input_box = Declaration::<Texture2D, ()>::new();
-                    input_box.layout().padding(Padding::all(6)).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end().background_color(Color::u_rgb(2, 6, 23)).corner_radius().all(12.0 * font_scale).end();
+                    input_box.layout().padding(Padding::all(6)).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end().background_color(COLOR_BG_DARK).corner_radius().all(12.0 * font_scale).end();
                     clay_scope.with(&input_box, |clay_scope| {
-                        clay_scope.text(ICON_USB, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(Color::u_rgb(96, 165, 250)).end());
-                        clay_scope.text(arena.push(port), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(191, 219, 254)).end());
+                        clay_scope.text(ICON_USB, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(COLOR_USB_ICON).end());
+                        clay_scope.text(arena.push(port), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_PORT_TEXT).end());
                     });
                     let mut wattage_box = Declaration::<Texture2D, ()>::new();
-                    wattage_box.layout().padding(Padding::all(6)).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end().background_color(Color::u_rgb(2, 6, 23)).corner_radius().all(12.0 * font_scale).end();
+                    wattage_box.layout().padding(Padding::all(6)).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end().background_color(COLOR_BG_DARK).corner_radius().all(12.0 * font_scale).end();
                     clay_scope.with(&wattage_box, |clay_scope| {
-                        clay_scope.text(ICON_CPU, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(Color::u_rgb(192, 132, 252)).end());
-                        clay_scope.text(arena.push(wattage), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(216, 180, 254)).end());
+                        clay_scope.text(ICON_CPU, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(COLOR_CPU_ICON).end());
+                        clay_scope.text(arena.push(wattage), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_WATTAGE_TEXT).end());
                     });
 
                     let estop_h_id = clay_scope.id("estop_header");
-                    let mut estop_h_color = Color::u_rgb(153, 27, 27); 
+                    let mut estop_h_color = COLOR_DANGER_DARK; 
                     if clay_scope.pointer_over(estop_h_id) {
-                        estop_h_color = Color::u_rgb(185, 28, 28);
+                        estop_h_color = COLOR_DANGER_HOVER;
                         if mouse_pressed {
                             let mut guard = state.lock().unwrap();
                             guard.send_command("!".to_string());
@@ -273,7 +281,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let mut estop_h_btn = Declaration::<Texture2D, ()>::new();
                     estop_h_btn.id(estop_h_id).layout().padding(Padding::new(12, 12, 6, 6)).end().background_color(estop_h_color).corner_radius().all(12.0 * font_scale).end();
                     clay_scope.with(&estop_h_btn, |clay_scope| {
-                        clay_scope.text("E-STOP", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+                        clay_scope.text("E-STOP", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
                     });
                 });
             });
@@ -297,21 +305,21 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 
                 clay_scope.with(&col1, |clay_scope| {
                     let mut canvas_box = Declaration::<Texture2D, ()>::new();
-                    canvas_box.id(clay_scope.id("canvas")).layout().width(grow!()).height(grow!()).end().background_color(Color::u_rgb(30, 41, 59)).corner_radius().all(16.0 * font_scale).end();
+                    canvas_box.id(clay_scope.id("canvas")).layout().width(grow!()).height(grow!()).end().background_color(COLOR_BG_SECTION).corner_radius().all(16.0 * font_scale).end();
                     clay_scope.with(&canvas_box, |_| {});
 
                     let mut label_box = Declaration::<Texture2D, ()>::new();
                     label_box.layout().width(grow!()).padding(Padding::all(10)).direction(LayoutDirection::LeftToRight).child_gap(24).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
                     clay_scope.with(&label_box, |clay_scope| {
                         let (vx, vy, mx, my, mstate) = { let g = state.lock().unwrap(); (g.v_pos.x, g.v_pos.y, g.machine_pos.x, g.machine_pos.y, g.machine_state.clone()) };
-                        clay_scope.text(arena.push(format!("V: X:{:.1} Y:{:.1}", vx, vy)), clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(96, 165, 250)).end());
-                        clay_scope.text(arena.push(format!("M: X:{:.1} Y:{:.1}", mx, my)), clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
-                        clay_scope.text(arena.push(format!("Status: {}", mstate)), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(34, 197, 94)).end());
+                        clay_scope.text(arena.push(format!("V: X:{:.1} Y:{:.1}", vx, vy)), clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(COLOR_USB_ICON).end());
+                        clay_scope.text(arena.push(format!("M: X:{:.1} Y:{:.1}", mx, my)), clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(COLOR_TEXT_MUTED).end());
+                        clay_scope.text(arena.push(format!("Status: {}", mstate)), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_SUCCESS).end());
 
                         let tidy_id = clay_scope.id("tidy_grid");
-                        let mut tidy_color = Color::u_rgb(100, 116, 139);
+                        let mut tidy_color = COLOR_TEXT_LABEL;
                         if clay_scope.pointer_over(tidy_id) {
-                            tidy_color = Color::u_rgb(255, 255, 255);
+                            tidy_color = COLOR_TEXT_WHITE;
                             if mouse_pressed {
                                 let mut guard = state.lock().unwrap();
                                 guard.paths.clear();
@@ -343,10 +351,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 clay_scope.with(&col2_scroll, |clay_scope| {
                     match current_tab {
                         UITab::Manual => {
-                            ui_manual::render_manual_left_col(clay_scope, &state, &sections, mouse_pressed, &mut clipboard, &arena, font_scale);
+                            ui_manual::render_manual_left_subcol(clay_scope, &state, &sections, mouse_pressed, &mut clipboard, &arena, font_scale);
                             ui_manual::render_manual_right_col(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale);
                         }
-                        UITab::Pattern => ui_test::render_test_left_col(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale),
+                        UITab::Pattern => ui_test::render_test_controls(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale),
                         _ => {}
                     }
                 });
@@ -360,9 +368,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let mut estop_b = Declaration::<Texture2D, ()>::new();
                 let estop_b_id = clay_scope.id("estop_bottom");
                 let estop_size = 140.0 * font_scale;
-                estop_b.id(estop_b_id).layout().width(fixed!(estop_size)).height(fixed!(estop_size)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(Color::u_rgb(220, 38, 38)).corner_radius().all(estop_size / 2.0).end();
+                estop_b.id(estop_b_id).layout().width(fixed!(estop_size)).height(fixed!(estop_size)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(COLOR_DANGER).corner_radius().all(estop_size / 2.0).end();
                 clay_scope.with(&estop_b, |clay_scope| {
-                    clay_scope.text("E-STOP", clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+                    clay_scope.text("E-STOP", clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
                     if clay_scope.pointer_over(estop_b_id) && mouse_pressed {
                         let mut g = state.lock().unwrap(); g.send_command("!".to_string()); g.send_command("M5".to_string()); g.send_command("0x18".to_string());
                     }
@@ -371,18 +379,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let mut log_box = Declaration::<Texture2D, ()>::new();
                 let serial_id_node = clay_scope.id("serial_box");
                 log_box.id(serial_id_node).layout().width(grow!()).height(grow!()).padding(Padding::all(12)).direction(LayoutDirection::TopToBottom).child_gap(4).end()
-                    .background_color(Color::u_rgb(2, 6, 23)).corner_radius().all(16.0 * font_scale).end().border().top((2.0 * font_scale) as u16).color(Color::u_rgb(168, 85, 247)).end();
+                    .background_color(COLOR_BG_DARK).corner_radius().all(16.0 * font_scale).end().border().top((2.0 * font_scale) as u16).color(COLOR_ACCENT_PURPLE_LIGHT).end();
                 
                 clay_scope.with(&log_box, |clay_scope| {
                     let mut title_row = Declaration::<Texture2D, ()>::new();
                     title_row.layout().width(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Right, LayoutAlignmentY::Center)).child_gap(16).end();
                     clay_scope.with(&title_row, |clay_scope| {
-                        clay_scope.text("SERIAL LOG", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(71, 85, 105)).end());
+                        clay_scope.text("SERIAL LOG", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(COLOR_TEXT_DISABLED).end());
                         let port_id = clay_scope.id("port_toggle");
                         let current_port = { state.lock().unwrap().port.clone() };
-                        let mut port_color = if current_port == "VIRTUAL" { Color::u_rgb(192, 132, 252) } else { Color::u_rgb(52, 211, 153) };
+                        let mut port_color = if current_port == "VIRTUAL" { COLOR_ACCENT_PURPLE_VIRTUAL } else { COLOR_SUCCESS_LIGHT };
                         if clay_scope.pointer_over(port_id) {
-                            port_color = Color::u_rgb(255, 255, 255);
+                            port_color = COLOR_TEXT_WHITE;
                             if mouse_pressed {
                                 let mut g = state.lock().unwrap();
                                 if g.port == "VIRTUAL" { g.port = "/dev/ttyUSB0".to_string(); } 
@@ -412,10 +420,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                     clay_scope.with(&log_scroll, |clay_scope| {
                         for (i, log) in logs.iter().rev().take(100).enumerate() {
-                            let text_color = if log.is_response { Color::u_rgb(0, 0, 0) } else if i == 0 { Color::u_rgb(255, 255, 255) } else { Color::u_rgb(148, 163, 184) };
+                            let text_color = if log.is_response { COLOR_TEXT_BLACK } else if i == 0 { COLOR_TEXT_WHITE } else { COLOR_TEXT_MUTED };
                             let mut row = Declaration::<Texture2D, ()>::new();
                             row.layout().width(grow!()).padding(Padding::horizontal(8)).padding(Padding::vertical(2)).child_gap(10).end();
-                            if log.is_response { row.background_color(Color::u_rgb(255, 255, 255)).corner_radius().all(4.0 * font_scale).end(); }
+                            if log.is_response { row.background_color(COLOR_TEXT_WHITE).corner_radius().all(4.0 * font_scale).end(); }
                             clay_scope.with(&row, |clay_scope| {
                                 clay_scope.text(arena.push(format!("[{}]", log.timestamp)), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(text_color).end());
                                 clay_scope.text(arena.push(log.text.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(text_color).end());
@@ -471,6 +479,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 d.draw_line_v(raylib::math::Vector2::new(draw_area.x, y), raylib::math::Vector2::new(draw_area.x + draw_area.width, y), raylib::color::Color::new(255, 255, 255, 40));
             }
             let guard = state.lock().unwrap();
+            if guard.boundary_enabled {
+                let bx = draw_area.x + (guard.boundary_x / 400.0) * side;
+                let by = draw_area.y + draw_area.height - (guard.boundary_y / 400.0) * side - (guard.boundary_h / 400.0) * side;
+                let bw = (guard.boundary_w / 400.0) * side;
+                let bh = (guard.boundary_h / 400.0) * side;
+                d.draw_rectangle_lines_ex(raylib::math::Rectangle::new(bx, by, bw, bh), 2.0, raylib::color::Color::new(52, 211, 153, 150));
+            }
             for p in &guard.paths {
                 let start = raylib::math::Vector2::new(draw_area.x + (p.x1 / 400.0) * side, draw_area.y + draw_area.height - (p.y1 / 400.0) * side);
                 let end = raylib::math::Vector2::new(draw_area.x + (p.x2 / 400.0) * side, draw_area.y + draw_area.height - (p.y2 / 400.0) * side);

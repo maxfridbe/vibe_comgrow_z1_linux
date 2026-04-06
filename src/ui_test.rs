@@ -1,14 +1,15 @@
 use clay_layout::layout::{Padding, LayoutAlignmentX, LayoutAlignmentY, Alignment, LayoutDirection};
-use clay_layout::{Declaration, Color, grow, fixed};
+use clay_layout::{Declaration, grow};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
 use arboard::Clipboard;
 use crate::state::{AppState, StringArena};
-use crate::ui::{Section, render_burn_btn, render_slider};
+use crate::ui::{Section, render_burn_btn, render_slider, render_checkbox};
 use crate::cli_and_helpers::generate_pattern_gcode;
 use rfd::FileDialog;
+use crate::styles::*;
 
-pub fn render_test_left_col<'a, 'render>(
+pub fn render_test_controls<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
     state: &Arc<Mutex<AppState>>,
     sections: &[Section],
@@ -26,39 +27,73 @@ pub fn render_test_left_col<'a, 'render>(
     let is_idle = { state.lock().unwrap().machine_state == "Idle" };
 
     clay.with(&left_col, |clay_scope| {
-        // 1. SVG Controls (At the top)
+        // 1. Boundary Settings (At the top)
+        let mut boundary_box = Declaration::<Texture2D, ()>::new();
+        boundary_box.layout().width(grow!()).direction(LayoutDirection::TopToBottom).padding(Padding::all(12)).child_gap(12).end()
+            .background_color(COLOR_BG_SECTION)
+            .corner_radius().all(16.0 * font_scale).end();
+        
+        clay_scope.with(&boundary_box, |clay_scope| {
+            clay_scope.text("BOUNDARY SETTINGS", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_MUTED).end());
+            
+            let (enabled, bx, by, bw, bh) = {
+                let g = state.lock().unwrap();
+                (g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
+            };
+
+            render_checkbox(clay_scope, "boundary_enabled", "Enable Boundary Clipping", enabled, state, |s, v| s.boundary_enabled = v, mouse_pressed, font_scale);
+            
+            let mut grid = Declaration::<Texture2D, ()>::new();
+            grid.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(16).end();
+            clay_scope.with(&grid, |clay_scope| {
+                let mut col1 = Declaration::<Texture2D, ()>::new(); col1.layout().direction(LayoutDirection::TopToBottom).child_gap(8).end();
+                clay_scope.with(&col1, |clay_scope| {
+                    render_slider(clay_scope, "bound_x", "X Pos", bx, 0.0, 400.0, COLOR_SLIDER_X, state, |s, v| s.boundary_x = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+                    render_slider(clay_scope, "bound_w", "Width", bw, 1.0, 400.0, COLOR_SLIDER_W, state, |s, v| s.boundary_w = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+                });
+                let mut col2 = Declaration::<Texture2D, ()>::new(); col2.layout().direction(LayoutDirection::TopToBottom).child_gap(8).end();
+                clay_scope.with(&col2, |clay_scope| {
+                    render_slider(clay_scope, "bound_y", "Y Pos", by, 0.0, 400.0, COLOR_SLIDER_Y, state, |s, v| s.boundary_y = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+                    render_slider(clay_scope, "bound_h", "Height", bh, 1.0, 400.0, COLOR_SLIDER_H, state, |s, v| s.boundary_h = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+                });
+            });
+        });
+
+        // 2. SVG Controls
         let mut svg_box = Declaration::<Texture2D, ()>::new();
         svg_box.layout().width(grow!()).direction(LayoutDirection::TopToBottom).padding(Padding::all(12)).child_gap(12).end()
-            .background_color(Color::u_rgb(30, 41, 59))
+            .background_color(COLOR_BG_SECTION)
             .corner_radius().all(16.0 * font_scale).end();
         
         clay_scope.with(&svg_box, |clay_scope| {
-            clay_scope.text("SVG LOADING", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
+            clay_scope.text("SVG LOADING", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_MUTED).end());
             
             let load_id = clay_scope.id("load_svg_btn");
-            let mut load_color = if !is_idle { Color::u_rgb(15, 23, 42) } else { Color::u_rgb(37, 99, 235) };
+            let mut load_color = if !is_idle { COLOR_BG_DISABLED } else { COLOR_PRIMARY_HOVER };
             if is_idle && clay_scope.pointer_over(load_id) {
-                load_color = Color::u_rgb(59, 130, 246);
+                load_color = COLOR_PRIMARY;
                 if mouse_pressed {
-                    // RFD Dialog
                     if let Some(path_buf) = FileDialog::new()
                         .add_filter("Scalable Vector Graphics", &["svg"])
                         .pick_file() 
                     {
                         let path_str = path_buf.to_string_lossy().to_string();
-                        let (pwr, spd, scl, pas) = {
+                        let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = {
                             let g = state.lock().unwrap();
-                            (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes)
+                            (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
                         };
                         
+                        let fit = if b_enabled { Some(format!("{}x{}", bw, bh)) } else { None };
+                        let center = if b_enabled { format!("{},{}", bx + bw/2.0, by + bh/2.0) } else { "200,200".to_string() };
+
                         match generate_pattern_gcode(
                             &path_str, 
                             &format!("{}%", pwr), 
                             &format!("{}%", spd), 
                             &format!("{}x", scl), 
                             &pas.to_string(),
-                            None,
-                            "200,200"
+                            fit,
+                            &center
                         ) {
                             Ok((gcode, _)) => {
                                 state.lock().unwrap().send_command(gcode);
@@ -72,16 +107,16 @@ pub fn render_test_left_col<'a, 'render>(
             let mut load_btn = Declaration::<Texture2D, ()>::new();
             load_btn.id(load_id).layout().padding(Padding::all(10)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(load_color).corner_radius().all(8.0 * font_scale).end();
             
-            let load_text_color = if !is_idle { Color::u_rgb(71, 85, 105) } else { Color::u_rgb(255, 255, 255) };
+            let load_text_color = if !is_idle { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
             clay_scope.with(&load_btn, |clay| {
                 clay.text("LOAD CUSTOM SVG", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
             });
         });
 
-        // 2. Sliders
+        // 3. Sliders
         let mut controls_box = Declaration::<Texture2D, ()>::new();
         controls_box.layout().width(grow!()).direction(LayoutDirection::TopToBottom).padding(Padding::all(12)).child_gap(16).end()
-            .background_color(Color::u_rgb(30, 41, 59))
+            .background_color(COLOR_BG_SECTION)
             .corner_radius().all(16.0 * font_scale).end();
         
         clay_scope.with(&controls_box, |clay_scope| {
@@ -90,46 +125,56 @@ pub fn render_test_left_col<'a, 'render>(
                 (g.power, g.feed_rate, g.scale, g.passes)
             };
             
-            render_slider(clay_scope, "test_power", "Power", pwr, 0.0, 1000.0, Color::u_rgb(248, 113, 113), state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
-            render_slider(clay_scope, "test_speed", "Speed", spd, 10.0, 6000.0, Color::u_rgb(16, 185, 129), state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
-            render_slider(clay_scope, "test_scale", "Scale", scl, 0.1, 5.0, Color::u_rgb(59, 130, 246), state, |s, v| s.scale = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
-            render_slider(clay_scope, "test_passes", "Passes", pas as f32, 1.0, 20.0, Color::u_rgb(192, 132, 252), state, |s, v| s.passes = v as u32, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+            render_slider(clay_scope, "test_power", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+            render_slider(clay_scope, "test_speed", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+            render_slider(clay_scope, "test_scale", "Scale", scl, 0.1, 5.0, COLOR_SLIDER_STEP, state, |s, v| s.scale = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+            render_slider(clay_scope, "test_passes", "Passes", pas as f32, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| s.passes = v as u32, mouse_pos, mouse_down, scroll_y, arena, font_scale);
         });
 
-        // 3. Test Patterns
+        // 4. Test Patterns (2 Column Layout)
         for section in sections {
             if section.title == "Test Patterns" {
                 let mut section_box = Declaration::<Texture2D, ()>::new();
                 section_box.layout().width(grow!()).direction(LayoutDirection::TopToBottom).padding(Padding::all(16)).child_gap(12).end()
-                    .background_color(Color::u_rgb(30, 41, 59))
+                    .background_color(COLOR_BG_SECTION)
                     .corner_radius().all(16.0 * font_scale).end();
                 
                 clay_scope.with(&section_box, |clay| {
                     clay.text(section.title, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(section.color).end());
-                    for cmd in &section.commands {
-                        if crate::ui::render_burn_btn(clay, arena.push(format!("test_{}", cmd.label)), cmd.label, state, 0.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle) {
-                            let (pwr, spd, scl, pas) = {
-                                let g = state.lock().unwrap();
-                                (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes)
-                            };
-                            
-                            match generate_pattern_gcode(
-                                cmd.label, 
-                                &format!("{}%", pwr), 
-                                &format!("{}%", spd), 
-                                &format!("{}x", scl), 
-                                &pas.to_string(),
-                                None,
-                                "200,200" 
-                            ) {
-                                Ok((gcode, _)) => {
-                                    state.lock().unwrap().send_command(gcode);
-                                }
-                                Err(e) => {
-                                    println!("Error generating G-code: {}", e);
+                    
+                    for row_chunk in section.commands.chunks(2) {
+                        let mut row = Declaration::<Texture2D, ()>::new();
+                        row.layout().width(grow!()).child_gap(12).end();
+                        clay.with(&row, |clay| {
+                            for cmd in row_chunk {
+                                if render_burn_btn(clay, arena.push(format!("test_{}", cmd.label)), cmd.label, state, 0.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle) {
+                                    let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = {
+                                        let g = state.lock().unwrap();
+                                        (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
+                                    };
+                                    
+                                    let fit = if b_enabled { Some(format!("{}x{}", bw, bh)) } else { None };
+                                    let center = if b_enabled { format!("{},{}", bx + bw/2.0, by + bh/2.0) } else { "200,200".to_string() };
+
+                                    match generate_pattern_gcode(
+                                        cmd.label, 
+                                        &format!("{}%", pwr), 
+                                        &format!("{}%", spd), 
+                                        &format!("{}x", scl), 
+                                        &pas.to_string(),
+                                        fit,
+                                        &center 
+                                    ) {
+                                        Ok((gcode, _)) => {
+                                            state.lock().unwrap().send_command(gcode);
+                                        }
+                                        Err(e) => {
+                                            println!("Error generating G-code: {}", e);
+                                        }
+                                    }
                                 }
                             }
-                        }
+                        });
                     }
                 });
             }
