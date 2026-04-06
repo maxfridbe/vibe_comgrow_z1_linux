@@ -23,6 +23,8 @@ pub fn render_test_left_col<'a, 'render>(
     let mut left_col = Declaration::<Texture2D, ()>::new();
     left_col.layout().height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
     
+    let is_idle = { state.lock().unwrap().machine_state == "Idle" };
+
     clay.with(&left_col, |clay_scope| {
         // 1. SVG Controls (At the top)
         let mut svg_box = Declaration::<Texture2D, ()>::new();
@@ -34,8 +36,8 @@ pub fn render_test_left_col<'a, 'render>(
             clay_scope.text("SVG LOADING", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
             
             let load_id = clay_scope.id("load_svg_btn");
-            let mut load_color = Color::u_rgb(37, 99, 235);
-            if clay_scope.pointer_over(load_id) {
+            let mut load_color = if !is_idle { Color::u_rgb(15, 23, 42) } else { Color::u_rgb(37, 99, 235) };
+            if is_idle && clay_scope.pointer_over(load_id) {
                 load_color = Color::u_rgb(59, 130, 246);
                 if mouse_pressed {
                     // RFD Dialog
@@ -69,8 +71,10 @@ pub fn render_test_left_col<'a, 'render>(
             
             let mut load_btn = Declaration::<Texture2D, ()>::new();
             load_btn.id(load_id).layout().padding(Padding::all(10)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(load_color).corner_radius().all(8.0 * font_scale).end();
+            
+            let load_text_color = if !is_idle { Color::u_rgb(71, 85, 105) } else { Color::u_rgb(255, 255, 255) };
             clay_scope.with(&load_btn, |clay| {
-                clay.text("LOAD CUSTOM SVG", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+                clay.text("LOAD CUSTOM SVG", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
             });
         });
 
@@ -103,7 +107,7 @@ pub fn render_test_left_col<'a, 'render>(
                 clay_scope.with(&section_box, |clay| {
                     clay.text(section.title, clay_layout::text::TextConfig::new().font_size((18.0 * font_scale) as u16).color(section.color).end());
                     for cmd in &section.commands {
-                        if render_burn_btn(clay, arena.push(format!("test_{}", cmd.label)), cmd.label, state, 0.0, 0.0, mouse_pressed, clipboard, font_scale) {
+                        if crate::ui::render_burn_btn(clay, arena.push(format!("test_{}", cmd.label)), cmd.label, state, 0.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle) {
                             let (pwr, spd, scl, pas) = {
                                 let g = state.lock().unwrap();
                                 (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes)

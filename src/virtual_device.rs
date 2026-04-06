@@ -11,6 +11,7 @@ pub struct VirtualDevice {
     pub move_start: Option<Instant>,
     pub move_duration: Duration,
     pub homing_start: Option<Instant>,
+    pub homing_start_pos: Vector2,
     pub is_absolute: bool,
     pub is_metric: bool,
     pub air_assist: bool,
@@ -28,6 +29,7 @@ impl VirtualDevice {
             move_start: None,
             move_duration: Duration::from_secs(0),
             homing_start: None,
+            homing_start_pos: Vector2::new(0.0, 0.0),
             is_absolute: true,
             is_metric: true,
             air_assist: false,
@@ -38,13 +40,20 @@ impl VirtualDevice {
         let now = Instant::now();
         
         if let Some(start) = self.homing_start {
-            if now.duration_since(start).as_secs() >= 5 {
+            let elapsed = now.duration_since(start);
+            let duration = Duration::from_secs(5);
+            if elapsed >= duration {
                 self.pos = Vector2::new(0.0, 0.0);
                 self.target_pos = Vector2::new(0.0, 0.0);
                 self.state = "Idle".to_string();
                 self.homing_start = None;
             } else {
                 self.state = "Home".to_string();
+                let t = elapsed.as_secs_f32() / duration.as_secs_f32();
+                self.pos = Vector2::new(
+                    self.homing_start_pos.x * (1.0 - t),
+                    self.homing_start_pos.y * (1.0 - t),
+                );
             }
             return;
         }
@@ -57,6 +66,7 @@ impl VirtualDevice {
                 self.move_start = None;
             } else {
                 self.state = "Run".to_string();
+                self.pos = self.current_interpolated_pos();
             }
         } else {
             if self.state != "Alarm" && self.state != "Hold" {
@@ -72,6 +82,13 @@ impl VirtualDevice {
             Vector2::new(
                 self.pos.x + (self.target_pos.x - self.pos.x) * t,
                 self.pos.y + (self.target_pos.y - self.pos.y) * t,
+            )
+        } else if let Some(start) = self.homing_start {
+            let elapsed = Instant::now().duration_since(start);
+            let t = (elapsed.as_secs_f32() / 5.0).min(1.0);
+            Vector2::new(
+                self.homing_start_pos.x * (1.0 - t),
+                self.homing_start_pos.y * (1.0 - t),
             )
         } else {
             self.pos
@@ -92,16 +109,8 @@ impl VirtualDevice {
 
         if cmd == "$H" {
             self.homing_start = Some(Instant::now());
+            self.homing_start_pos = self.pos;
             self.state = "Home".to_string();
-            // Simulate blocking behavior for $H by sleeping or just returning ok after delay
-            // Since we want to match the logs, we can sleep here or let run_serial_cmd wait.
-            // But wait, run_serial_cmd in virtual mode doesn't wait unless we return empty and it loops.
-            // Let's just sleep for realism in CLI mode.
-            std::thread::sleep(Duration::from_secs(5));
-            self.pos = Vector2::new(0.0, 0.0);
-            self.target_pos = Vector2::new(0.0, 0.0);
-            self.state = "Idle".to_string();
-            self.homing_start = None;
             return vec!["ok".to_string()];
         }
         if cmd == "$X" {

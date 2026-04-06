@@ -4,11 +4,22 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use crate::gcode::decode_gcode;
 
+fn get_ts() -> String {
+    let now = std::time::SystemTime::now();
+    let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let secs = duration.as_secs();
+    let hh = (secs / 3600) % 24;
+    let mm = (secs / 60) % 60;
+    let ss = secs % 60;
+    format!("{:02}:{:02}:{:02}", hh, mm, ss)
+}
+
 #[derive(Clone)]
 pub struct LogEntry {
     pub text: String,
     pub explanation: String,
     pub is_response: bool,
+    pub timestamp: String,
 }
 
 pub struct PathSegment {
@@ -52,68 +63,72 @@ pub struct AppState {
 impl AppState {
     pub fn send_command(&mut self, cmd_str: String) {
         let cmd_trimmed = cmd_str.trim().to_string();
-        
         for line in cmd_trimmed.lines() {
             let cmd = line.trim();
             if cmd.is_empty() { continue; }
-            let explanation = decode_gcode(cmd);
+            let _ = self.tx.send(cmd.to_string());
+        }
+        self.last_command = cmd_trimmed.clone();
+    }
 
-            // State Update Logic for virtual view
-            let parts: Vec<&str> = cmd.split_whitespace().collect();
-            let mut has_g0 = false;
-            let mut has_g1 = false;
-            let is_jog = cmd.starts_with("$J=");
+    pub fn process_command_for_state(&mut self, cmd: &str, force_log: bool) {
+        let explanation = decode_gcode(cmd);
+        
+        // State Update Logic for virtual view
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
+        let mut has_g0 = false;
+        let mut has_g1 = false;
+        let is_jog = cmd.starts_with("$J=");
 
-            let mut x_val = None;
-            let mut y_val = None;
-            let mut s_val = None;
+        let mut x_val = None;
+        let mut y_val = None;
+        let mut s_val = None;
 
-            for part in &parts {
-                let p = if part.starts_with("$J=") { &part[3..] } else { *part };
-                if p == "G90" { self.is_absolute = true; }
-                else if p == "G91" { self.is_absolute = false; }
-                else if p == "G0" { has_g0 = true; }
-                else if p == "G1" { has_g1 = true; }
-                else if p.starts_with('X') { x_val = p[1..].parse::<f32>().ok(); }
-                else if p.starts_with('Y') { y_val = p[1..].parse::<f32>().ok(); }
-                else if p.starts_with('S') { s_val = p[1..].parse::<f32>().ok(); }
+        for part in &parts {
+            let p = if part.starts_with("$J=") { &part[3..] } else { *part };
+            if p == "G90" { self.is_absolute = true; }
+            else if p == "G91" { self.is_absolute = false; }
+            else if p == "G0" { has_g0 = true; }
+            else if p == "G1" { has_g1 = true; }
+            else if p.starts_with('X') { x_val = p[1..].parse::<f32>().ok(); }
+            else if p.starts_with('Y') { y_val = p[1..].parse::<f32>().ok(); }
+            else if p.starts_with('S') { s_val = p[1..].parse::<f32>().ok(); }
+        }
+
+        if is_jog || has_g0 || has_g1 {
+            let old_pos = self.v_pos;
+            if self.is_absolute {
+                if let Some(x) = x_val { self.v_pos.x = x.clamp(0.0, 400.0); }
+                if let Some(y) = y_val { self.v_pos.y = y.clamp(0.0, 400.0); }
+            } else {
+                if let Some(x) = x_val { self.v_pos.x = (self.v_pos.x + x).clamp(0.0, 400.0); }
+                if let Some(y) = y_val { self.v_pos.y = (self.v_pos.y + y).clamp(0.0, 400.0); }
             }
 
-            if is_jog || has_g0 || has_g1 {
-                let old_pos = self.v_pos;
-                if self.is_absolute {
-                    if let Some(x) = x_val { self.v_pos.x = x.clamp(0.0, 400.0); }
-                    if let Some(y) = y_val { self.v_pos.y = y.clamp(0.0, 400.0); }
-                } else {
-                    if let Some(x) = x_val { self.v_pos.x = (self.v_pos.x + x).clamp(0.0, 400.0); }
-                    if let Some(y) = y_val { self.v_pos.y = (self.v_pos.y + y).clamp(0.0, 400.0); }
-                }
-
-                if has_g1 {
-                    self.paths.push(PathSegment {
-                        x1: old_pos.x,
-                        y1: old_pos.y,
-                        x2: self.v_pos.x,
-                        y2: self.v_pos.y,
-                        s: s_val.unwrap_or(self.power),
-                    });
-                }
-            } else if cmd == "G92 X0 Y0" || cmd == "$H" {
-                self.v_pos = Vector2::new(0.0, 0.0);
+            if has_g1 {
+                self.paths.push(PathSegment {
+                    x1: old_pos.x,
+                    y1: old_pos.y,
+                    x2: self.v_pos.x,
+                    y2: self.v_pos.y,
+                    s: s_val.unwrap_or(self.power),
+                });
             }
+        } else if cmd == "G92 X0 Y0" || cmd == "$H" {
+            self.v_pos = Vector2::new(0.0, 0.0);
+        }
 
+        if cmd != "?" || force_log {
             self.serial_logs.push_back(LogEntry {
-                text: cmd.to_string(),
+                text: format!("SEND: {}", cmd),
                 explanation,
                 is_response: false,
+                timestamp: get_ts(),
             });
             if self.serial_logs.len() > 500 {
                 self.serial_logs.pop_front();
             }
         }
-        
-        self.last_command = cmd_trimmed.clone();
-        let _ = self.tx.send(cmd_trimmed);
     }
 }
 

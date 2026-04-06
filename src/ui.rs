@@ -54,11 +54,12 @@ pub fn render_jog_btn<'a, 'render>(
     mouse_pressed: bool,
     clipboard: &mut Option<Clipboard>,
     font_scale: f32,
+    disabled: bool,
 ) -> bool where 'a: 'render {
     let btn_id = clay.id(id);
-    let mut color = Color::u_rgb(30, 41, 59);
+    let mut color = if disabled { Color::u_rgb(15, 23, 42) } else { Color::u_rgb(30, 41, 59) };
     let mut clicked = false;
-    if clay.pointer_over(btn_id) {
+    if !disabled && clay.pointer_over(btn_id) {
         color = Color::u_rgb(59, 130, 246);
         if mouse_pressed {
             clicked = true;
@@ -80,8 +81,10 @@ pub fn render_jog_btn<'a, 'render>(
         .end()
         .background_color(color)
         .corner_radius().all(8.0 * font_scale).end();
+    
+    let text_color = if disabled { Color::u_rgb(71, 85, 105) } else { Color::u_rgb(255, 255, 255) };
     clay.with(&btn, |clay| {
-        clay.text(icon, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+        clay.text(icon, clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(text_color).end());
     });
     clicked
 }
@@ -96,11 +99,12 @@ pub fn render_burn_btn<'a, 'render>(
     mouse_pressed: bool,
     clipboard: &mut Option<Clipboard>,
     font_scale: f32,
+    disabled: bool,
 ) -> bool where 'a: 'render {
     let btn_id = clay.id(id);
-    let mut color = Color::u_rgb(147, 51, 234); 
+    let mut color = if disabled { Color::u_rgb(15, 23, 42) } else { Color::u_rgb(147, 51, 234) }; 
     let mut clicked = false;
-    if clay.pointer_over(btn_id) {
+    if !disabled && clay.pointer_over(btn_id) {
         color = Color::u_rgb(168, 85, 247); 
         if mouse_pressed {
             clicked = true;
@@ -125,8 +129,10 @@ pub fn render_burn_btn<'a, 'render>(
         .end()
         .background_color(color)
         .corner_radius().all(8.0 * font_scale).end();
+
+    let text_color = if disabled { Color::u_rgb(71, 85, 105) } else { Color::u_rgb(255, 255, 255) };
     clay.with(&btn, |clay| {
-        clay.text(label, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+        clay.text(label, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(text_color).end());
     });
     clicked
 }

@@ -185,7 +185,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
     let arena = StringArena::new();
     let mut clipboard = Clipboard::new().ok();
-    let mut font_scale: f32 = 1.0;
+    let mut font_scale: f32 = 1.3;
 
     while !rl.window_should_close() {
         arena.clear();
@@ -357,6 +357,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             bottom_area.layout().width(grow!()).height(fixed!(bottom_bar_height)).direction(LayoutDirection::LeftToRight).child_gap(16).end();
 
             clay_scope.with(&bottom_area, |clay_scope| {
+                let mut estop_b = Declaration::<Texture2D, ()>::new();
+                let estop_b_id = clay_scope.id("estop_bottom");
+                let estop_size = 140.0 * font_scale;
+                estop_b.id(estop_b_id).layout().width(fixed!(estop_size)).height(fixed!(estop_size)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(Color::u_rgb(220, 38, 38)).corner_radius().all(estop_size / 2.0).end();
+                clay_scope.with(&estop_b, |clay_scope| {
+                    clay_scope.text("E-STOP", clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+                    if clay_scope.pointer_over(estop_b_id) && mouse_pressed {
+                        let mut g = state.lock().unwrap(); g.send_command("!".to_string()); g.send_command("M5".to_string()); g.send_command("0x18".to_string());
+                    }
+                });
+
                 let mut log_box = Declaration::<Texture2D, ()>::new();
                 let serial_id_node = clay_scope.id("serial_box");
                 log_box.id(serial_id_node).layout().width(grow!()).height(grow!()).padding(Padding::all(12)).direction(LayoutDirection::TopToBottom).child_gap(4).end()
@@ -403,24 +414,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         for (i, log) in logs.iter().rev().take(100).enumerate() {
                             let text_color = if log.is_response { Color::u_rgb(0, 0, 0) } else if i == 0 { Color::u_rgb(255, 255, 255) } else { Color::u_rgb(148, 163, 184) };
                             let mut row = Declaration::<Texture2D, ()>::new();
-                            row.layout().width(grow!()).padding(Padding::horizontal(8)).padding(Padding::vertical(2)).child_gap(20).end();
+                            row.layout().width(grow!()).padding(Padding::horizontal(8)).padding(Padding::vertical(2)).child_gap(10).end();
                             if log.is_response { row.background_color(Color::u_rgb(255, 255, 255)).corner_radius().all(4.0 * font_scale).end(); }
                             clay_scope.with(&row, |clay_scope| {
+                                clay_scope.text(arena.push(format!("[{}]", log.timestamp)), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(text_color).end());
                                 clay_scope.text(arena.push(log.text.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(text_color).end());
                                 clay_scope.text(arena.push(log.explanation.clone()), clay_layout::text::TextConfig::new().font_size((11.0 * font_scale) as u16).color(text_color).end());
                             });
                         }
                     });
-                });
-
-                let mut estop_b = Declaration::<Texture2D, ()>::new();
-                let estop_b_id = clay_scope.id("estop_bottom");
-                estop_b.id(estop_b_id).layout().width(fixed!(150.0 * font_scale)).height(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(Color::u_rgb(220, 38, 38)).corner_radius().all(16.0 * font_scale).end();
-                clay_scope.with(&estop_b, |clay_scope| {
-                    clay_scope.text("E-STOP", clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
-                    if clay_scope.pointer_over(estop_b_id) && mouse_pressed {
-                        let mut g = state.lock().unwrap(); g.send_command("!".to_string()); g.send_command("M5".to_string()); g.send_command("0x18".to_string());
-                    }
                 });
             });
         });

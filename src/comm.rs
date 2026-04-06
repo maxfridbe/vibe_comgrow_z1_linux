@@ -43,29 +43,52 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                     // Periodic Status Query (every 250ms for virtual to feel snappy)
                     if last_status_query.elapsed().as_millis() > 250 {
                         let responses = virtual_machine.process_command("?");
-                        handle_responses(&state, responses, &mut wait_for_ok);
+                        handle_responses(&state, responses, &mut wait_for_ok, false);
                         last_status_query = std::time::Instant::now();
                     }
 
                     // Receive from rx
                     while let Ok(cmd) = rx.try_recv() {
                         if cmd == "!" || cmd == "~" || cmd == "?" || cmd == "\x18" || cmd == "0x18" {
+                            {
+                                let mut guard = state.lock().unwrap();
+                                guard.process_command_for_state(&cmd, true);
+                            }
                             let responses = virtual_machine.process_command(&cmd);
-                            handle_responses(&state, responses, &mut wait_for_ok);
+                            handle_responses(&state, responses, &mut wait_for_ok, cmd == "?");
                             if cmd == "\x18" || cmd == "0x18" {
                                 queue.clear();
                                 wait_for_ok = false;
                             }
                         } else {
-                            queue.push_back(cmd);
+                            for line in cmd.lines() {
+                                if !line.trim().is_empty() {
+                                    queue.push_back(line.trim().to_string());
+                                }
+                            }
                         }
                     }
 
                     if !wait_for_ok {
                         if let Some(cmd) = queue.pop_front() {
-                            let responses = virtual_machine.process_command(&cmd);
-                            handle_responses(&state, responses, &mut wait_for_ok);
+                            {
+                                let mut guard = state.lock().unwrap();
+                                guard.process_command_for_state(&cmd, false);
+                            }
                             wait_for_ok = true;
+                            let responses = virtual_machine.process_command(&cmd);
+                            handle_responses(&state, responses, &mut wait_for_ok, false);
+
+                            // Simulate realistic timing by waiting for the virtual machine to finish its move/home
+                            while virtual_machine.state == "Run" || virtual_machine.state == "Home" {
+                                std::thread::sleep(std::time::Duration::from_millis(10));
+                                virtual_machine.update();
+                                if last_status_query.elapsed().as_millis() > 250 {
+                                    let responses = virtual_machine.process_command("?");
+                                    handle_responses(&state, responses, &mut wait_for_ok, false);
+                                    last_status_query = std::time::Instant::now();
+                                }
+                            }
                         }
                     }
 
@@ -83,6 +106,7 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                             text: format!("Connected to {}", port_name),
                             explanation: format!("Baud rate: {}", baud_rate),
                             is_response: false,
+                            timestamp: get_timestamp(),
                         });
                     }
 
@@ -103,27 +127,35 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                             last_status_query = std::time::Instant::now();
                         }
 
-                        // Receive from rx
-                        while let Ok(cmd) = rx.try_recv() {
-                            if cmd == "!" || cmd == "~" || cmd == "?" || cmd == "\x18" || cmd == "0x18" {
-                                let actual_cmd = if cmd == "0x18" { "\x18" } else { &cmd };
-                                let _ = port.write_all(actual_cmd.as_bytes());
-                                if actual_cmd == "\x18" {
-                                    wait_for_ok = false;
-                                    queue.clear();
-                                }
-                            } else {
-                                queue.push_back(cmd);
+                    // Receive from rx
+                    while let Ok(cmd) = rx.try_recv() {
+                        if cmd == "!" || cmd == "~" || cmd == "?" || cmd == "\x18" || cmd == "0x18" {
+                            {
+                                let mut guard = state.lock().unwrap();
+                                guard.process_command_for_state(&cmd, true);
                             }
+                            let actual_cmd = if cmd == "0x18" { "\x18" } else { &cmd };
+                            let _ = port.write_all(actual_cmd.as_bytes());
+                            if actual_cmd == "\x18" {
+                                wait_for_ok = false;
+                                queue.clear();
+                            }
+                        } else {
+                            queue.push_back(cmd);
                         }
+                    }
 
-                        if !wait_for_ok {
-                            if let Some(cmd) = queue.pop_front() {
-                                let full_cmd = format!("{}\n", cmd);
-                                let _ = port.write_all(full_cmd.as_bytes());
-                                wait_for_ok = true;
+                    if !wait_for_ok {
+                        if let Some(cmd) = queue.pop_front() {
+                            {
+                                let mut guard = state.lock().unwrap();
+                                guard.process_command_for_state(&cmd, false);
                             }
+                            let full_cmd = format!("{}\n", cmd);
+                            let _ = port.write_all(full_cmd.as_bytes());
+                            wait_for_ok = true;
                         }
+                    }
 
                         // Read responses
                         match port.read(serial_buf.as_mut_slice()) {
@@ -134,7 +166,7 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                                     line_accumulator.drain(..=pos);
                                     if !line.is_empty() {
                                         let res_vec = vec![line];
-                                        handle_responses(&state, res_vec, &mut wait_for_ok);
+                                        handle_responses(&state, res_vec, &mut wait_for_ok, false);
                                     }
                                 }
                             }
@@ -151,7 +183,7 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
     });
 }
 
-fn handle_responses(state: &Arc<Mutex<AppState>>, responses: Vec<String>, wait_for_ok: &mut bool) {
+fn handle_responses(state: &Arc<Mutex<AppState>>, responses: Vec<String>, wait_for_ok: &mut bool, force_log: bool) {
     for line in responses {
         if line.is_empty() { continue; }
         if line == "ok" || line.starts_with("error") || line.starts_with("Grbl") {
@@ -181,11 +213,12 @@ fn handle_responses(state: &Arc<Mutex<AppState>>, responses: Vec<String>, wait_f
         }
 
         let is_periodic_status = line.starts_with('<') && line.contains('|');
-        if !is_periodic_status || line.contains("Alarm") || line.contains("Hold") {
+        if !is_periodic_status || line.contains("Alarm") || line.contains("Hold") || force_log {
             guard.serial_logs.push_back(LogEntry {
-                text: line,
+                text: format!("RECV: {}", line),
                 explanation,
                 is_response: true,
+                timestamp: get_timestamp(),
             });
             if guard.serial_logs.len() > 500 {
                 guard.serial_logs.pop_front();
