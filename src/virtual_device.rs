@@ -10,11 +10,20 @@ pub struct VirtualDevice {
     pub last_update: Instant,
     pub move_start: Option<Instant>,
     pub move_duration: Duration,
+    pub arc_data: Option<ArcData>,
     pub homing_start: Option<Instant>,
     pub homing_start_pos: Vector2,
     pub is_absolute: bool,
     pub is_metric: bool,
     pub air_assist: bool,
+}
+
+pub struct ArcData {
+    pub center: Vector2,
+    pub radius: f32,
+    pub start_angle: f32,
+    pub end_angle: f32,
+    pub is_clockwise: bool,
 }
 
 impl VirtualDevice {
@@ -28,6 +37,7 @@ impl VirtualDevice {
             last_update: Instant::now(),
             move_start: None,
             move_duration: Duration::from_secs(0),
+            arc_data: None,
             homing_start: None,
             homing_start_pos: Vector2::new(0.0, 0.0),
             is_absolute: true,
@@ -64,6 +74,7 @@ impl VirtualDevice {
                 self.pos = self.target_pos;
                 self.state = "Idle".to_string();
                 self.move_start = None;
+                self.arc_data = None;
             } else {
                 self.state = "Run".to_string();
                 self.pos = self.current_interpolated_pos();
@@ -79,10 +90,19 @@ impl VirtualDevice {
         if let Some(start) = self.move_start {
             let elapsed = Instant::now().duration_since(start);
             let t = (elapsed.as_secs_f32() / self.move_duration.as_secs_f32()).min(1.0);
-            Vector2::new(
-                self.pos.x + (self.target_pos.x - self.pos.x) * t,
-                self.pos.y + (self.target_pos.y - self.pos.y) * t,
-            )
+            
+            if let Some(ref arc) = self.arc_data {
+                let angle = arc.start_angle + t * (arc.end_angle - arc.start_angle);
+                Vector2::new(
+                    arc.center.x + arc.radius * angle.cos(),
+                    arc.center.y + arc.radius * angle.sin(),
+                )
+            } else {
+                Vector2::new(
+                    self.pos.x + (self.target_pos.x - self.pos.x) * t,
+                    self.pos.y + (self.target_pos.y - self.pos.y) * t,
+                )
+            }
         } else if let Some(start) = self.homing_start {
             let elapsed = Instant::now().duration_since(start);
             let t = (elapsed.as_secs_f32() / 5.0).min(1.0);
@@ -134,6 +154,7 @@ impl VirtualDevice {
             self.target_pos = self.pos;
             self.move_start = None;
             self.homing_start = None;
+            self.arc_data = None;
             self.state = "Alarm".to_string();
             return vec!["Grbl 1.1h ['$' for help]".to_string(), "ok".to_string()];
         }
@@ -142,11 +163,16 @@ impl VirtualDevice {
         let parts: Vec<&str> = cmd.split_whitespace().collect();
         let mut new_x = None;
         let mut new_y = None;
+        let mut new_r = None;
         let mut is_move = false;
+        let mut is_arc = false;
+        let mut is_clockwise = false;
 
         for p in parts {
             match p {
                 "G0" | "G1" => is_move = true,
+                "G2" => { is_move = true; is_arc = true; is_clockwise = true; },
+                "G3" => { is_move = true; is_arc = true; is_clockwise = false; },
                 "G90" => self.is_absolute = true,
                 "G91" => self.is_absolute = false,
                 "G21" => self.is_metric = true,
@@ -158,6 +184,7 @@ impl VirtualDevice {
                 _ => {
                     if p.starts_with('X') { new_x = p[1..].parse::<f32>().ok(); }
                     else if p.starts_with('Y') { new_y = p[1..].parse::<f32>().ok(); }
+                    else if p.starts_with('R') { new_r = p[1..].parse::<f32>().ok(); }
                     else if p.starts_with('F') { self.feed_rate = p[1..].parse::<f32>().unwrap_or(self.feed_rate); }
                     else if p.starts_with('S') { self.power = p[1..].parse::<f32>().unwrap_or(self.power); }
                 }
@@ -167,23 +194,70 @@ impl VirtualDevice {
         if is_move {
             let start_p = self.current_interpolated_pos();
             self.pos = start_p;
+            let mut target = start_p;
             if self.is_absolute {
-                if let Some(x) = new_x { self.target_pos.x = x; }
-                if let Some(y) = new_y { self.target_pos.y = y; }
+                if let Some(x) = new_x { target.x = x; }
+                if let Some(y) = new_y { target.y = y; }
             } else {
-                if let Some(x) = new_x { self.target_pos.x += x; }
-                if let Some(y) = new_y { self.target_pos.y += y; }
+                if let Some(x) = new_x { target.x += x; }
+                if let Some(y) = new_y { target.y += y; }
             }
+            self.target_pos = target;
             
-            let dist = ((self.target_pos.x - self.pos.x).powi(2) + (self.target_pos.y - self.pos.y).powi(2)).sqrt();
-            let speed_mm_per_sec = self.feed_rate / 60.0;
-            let seconds = if speed_mm_per_sec > 0.0 { dist / speed_mm_per_sec } else { 0.0 };
-            
-            self.move_duration = Duration::from_secs_f32(seconds.max(0.01));
+            if is_arc && new_r.is_some() {
+                let r = new_r.unwrap();
+                let dx = target.x - start_p.x;
+                let dy = target.y - start_p.y;
+                let d2 = dx*dx + dy*dy;
+                let d = d2.sqrt();
+                
+                if d > 0.0 && d <= 2.0 * r.abs() {
+                    let h = ((r*r - d2/4.0).max(0.0)).sqrt();
+                    let mut cx = (start_p.x + target.x) / 2.0;
+                    let mut cy = (start_p.y + target.y) / 2.0;
+                    
+                    let multiplier = if (is_clockwise && r > 0.0) || (!is_clockwise && r < 0.0) { 1.0 } else { -1.0 };
+                    cx += multiplier * h * dy / d;
+                    cy -= multiplier * h * dx / d;
+                    
+                    let start_angle = (start_p.y - cy).atan2(start_p.x - cx);
+                    let mut end_angle = (target.y - cy).atan2(target.x - cx);
+                    
+                    if is_clockwise {
+                        if end_angle >= start_angle { end_angle -= 2.0 * std::f32::consts::PI; }
+                    } else {
+                        if end_angle <= start_angle { end_angle += 2.0 * std::f32::consts::PI; }
+                    }
+                    
+                    self.arc_data = Some(ArcData {
+                        center: Vector2::new(cx, cy),
+                        radius: r.abs(),
+                        start_angle,
+                        end_angle,
+                        is_clockwise,
+                    });
+                    
+                    // Approximate arc length for timing
+                    let arc_len = r.abs() * (end_angle - start_angle).abs();
+                    let speed_mm_per_sec = self.feed_rate / 60.0;
+                    let seconds = if speed_mm_per_sec > 0.0 { arc_len / speed_mm_per_sec } else { 0.0 };
+                    self.move_duration = Duration::from_secs_f32(seconds.max(0.01));
+                } else {
+                    // Fallback to linear
+                    let dist = d;
+                    let speed_mm_per_sec = self.feed_rate / 60.0;
+                    let seconds = if speed_mm_per_sec > 0.0 { dist / speed_mm_per_sec } else { 0.0 };
+                    self.move_duration = Duration::from_secs_f32(seconds.max(0.01));
+                }
+            } else {
+                let dist = ((self.target_pos.x - self.pos.x).powi(2) + (self.target_pos.y - self.pos.y).powi(2)).sqrt();
+                let speed_mm_per_sec = self.feed_rate / 60.0;
+                let seconds = if speed_mm_per_sec > 0.0 { dist / speed_mm_per_sec } else { 0.0 };
+                self.move_duration = Duration::from_secs_f32(seconds.max(0.01));
+            }
+
             self.move_start = Some(Instant::now());
             self.state = "Run".to_string();
-            
-            // For G0, we could return ok immediately. For G1, we also return ok immediately in GRBL (it goes to planner).
         }
 
         vec!["ok".to_string()]

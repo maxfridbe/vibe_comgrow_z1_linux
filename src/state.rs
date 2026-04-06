@@ -78,11 +78,14 @@ impl AppState {
         let parts: Vec<&str> = cmd.split_whitespace().collect();
         let mut has_g0 = false;
         let mut has_g1 = false;
+        let mut has_g2 = false;
+        let mut has_g3 = false;
         let is_jog = cmd.starts_with("$J=");
 
         let mut x_val = None;
         let mut y_val = None;
         let mut s_val = None;
+        let mut r_val = None;
 
         for part in &parts {
             let p = if part.starts_with("$J=") { &part[3..] } else { *part };
@@ -90,29 +93,84 @@ impl AppState {
             else if p == "G91" { self.is_absolute = false; }
             else if p == "G0" { has_g0 = true; }
             else if p == "G1" { has_g1 = true; }
+            else if p == "G2" { has_g2 = true; }
+            else if p == "G3" { has_g3 = true; }
             else if p.starts_with('X') { x_val = p[1..].parse::<f32>().ok(); }
             else if p.starts_with('Y') { y_val = p[1..].parse::<f32>().ok(); }
             else if p.starts_with('S') { s_val = p[1..].parse::<f32>().ok(); }
+            else if p.starts_with('R') { r_val = p[1..].parse::<f32>().ok(); }
         }
 
-        if is_jog || has_g0 || has_g1 {
+        if is_jog || has_g0 || has_g1 || has_g2 || has_g3 {
             let old_pos = self.v_pos;
+            let mut target = self.v_pos;
             if self.is_absolute {
-                if let Some(x) = x_val { self.v_pos.x = x.clamp(0.0, 400.0); }
-                if let Some(y) = y_val { self.v_pos.y = y.clamp(0.0, 400.0); }
+                if let Some(x) = x_val { target.x = x.clamp(0.0, 400.0); }
+                if let Some(y) = y_val { target.y = y.clamp(0.0, 400.0); }
             } else {
-                if let Some(x) = x_val { self.v_pos.x = (self.v_pos.x + x).clamp(0.0, 400.0); }
-                if let Some(y) = y_val { self.v_pos.y = (self.v_pos.y + y).clamp(0.0, 400.0); }
+                if let Some(x) = x_val { target.x = (target.x + x).clamp(0.0, 400.0); }
+                if let Some(y) = y_val { target.y = (target.y + y).clamp(0.0, 400.0); }
             }
 
             if has_g1 {
                 self.paths.push(PathSegment {
                     x1: old_pos.x,
                     y1: old_pos.y,
-                    x2: self.v_pos.x,
-                    y2: self.v_pos.y,
+                    x2: target.x,
+                    y2: target.y,
                     s: s_val.unwrap_or(self.power),
                 });
+                self.v_pos = target;
+            } else if (has_g2 || has_g3) && r_val.is_some() {
+                let r = r_val.unwrap();
+                let start = old_pos;
+                let end = target;
+                
+                let dx = end.x - start.x;
+                let dy = end.y - start.y;
+                let d2 = dx*dx + dy*dy;
+                let d = d2.sqrt();
+                
+                if d > 0.0 && d <= 2.0 * r.abs() {
+                    let h = (r*r - d2/4.0).sqrt();
+                    let mut cx = (start.x + end.x) / 2.0;
+                    let mut cy = (start.y + end.y) / 2.0;
+                    
+                    // Center calculation for G2/G3 with R
+                    // For G2 (CW), center is to the right of the vector if R > 0
+                    // For G3 (CCW), center is to the left of the vector if R > 0
+                    let multiplier = if (has_g2 && r > 0.0) || (has_g3 && r < 0.0) { 1.0 } else { -1.0 };
+                    cx += multiplier * h * dy / d;
+                    cy -= multiplier * h * dx / d;
+                    
+                    let start_angle = (start.y - cy).atan2(start.x - cx);
+                    let mut end_angle = (end.y - cy).atan2(end.x - cx);
+                    
+                    if has_g2 { // CW
+                        if end_angle >= start_angle { end_angle -= 2.0 * std::f32::consts::PI; }
+                    } else { // CCW
+                        if end_angle <= start_angle { end_angle += 2.0 * std::f32::consts::PI; }
+                    }
+                    
+                    let segments = 20;
+                    let mut prev_p = start;
+                    for i in 1..=segments {
+                        let t = i as f32 / segments as f32;
+                        let angle = start_angle + t * (end_angle - start_angle);
+                        let next_p = Vector2::new(cx + r.abs() * angle.cos(), cy + r.abs() * angle.sin());
+                        self.paths.push(PathSegment {
+                            x1: prev_p.x,
+                            y1: prev_p.y,
+                            x2: next_p.x,
+                            y2: next_p.y,
+                            s: s_val.unwrap_or(self.power),
+                        });
+                        prev_p = next_p;
+                    }
+                }
+                self.v_pos = target;
+            } else {
+                self.v_pos = target;
             }
         } else if cmd == "G92 X0 Y0" || cmd == "$H" {
             self.v_pos = Vector2::new(0.0, 0.0);
