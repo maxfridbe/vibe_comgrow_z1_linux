@@ -11,6 +11,9 @@ pub struct VirtualDevice {
     pub move_start: Option<Instant>,
     pub move_duration: Duration,
     pub homing_start: Option<Instant>,
+    pub is_absolute: bool,
+    pub is_metric: bool,
+    pub air_assist: bool,
 }
 
 impl VirtualDevice {
@@ -25,6 +28,9 @@ impl VirtualDevice {
             move_start: None,
             move_duration: Duration::from_secs(0),
             homing_start: None,
+            is_absolute: true,
+            is_metric: true,
+            air_assist: false,
         }
     }
 
@@ -32,7 +38,7 @@ impl VirtualDevice {
         let now = Instant::now();
         
         if let Some(start) = self.homing_start {
-            if now.duration_since(start).as_secs() >= 2 {
+            if now.duration_since(start).as_secs() >= 5 {
                 self.pos = Vector2::new(0.0, 0.0);
                 self.target_pos = Vector2::new(0.0, 0.0);
                 self.state = "Idle".to_string();
@@ -53,7 +59,9 @@ impl VirtualDevice {
                 self.state = "Run".to_string();
             }
         } else {
-            self.state = "Idle".to_string();
+            if self.state != "Alarm" && self.state != "Hold" {
+                self.state = "Idle".to_string();
+            }
         }
     }
 
@@ -77,10 +85,28 @@ impl VirtualDevice {
             return vec![format!("<{}|MPos:{:.3},{:.3},0.000|FS:{:.0},{}|WCO:0.000,0.000,0.000>", 
                 self.state, p.x, p.y, self.feed_rate, self.power as i32)];
         }
+        
+        if self.state == "Alarm" && cmd != "$X" && cmd != "0X18" && cmd != "\x18" {
+            return vec!["error:9".to_string()]; // Alarm lock
+        }
+
         if cmd == "$H" {
             self.homing_start = Some(Instant::now());
             self.state = "Home".to_string();
+            // Simulate blocking behavior for $H by sleeping or just returning ok after delay
+            // Since we want to match the logs, we can sleep here or let run_serial_cmd wait.
+            // But wait, run_serial_cmd in virtual mode doesn't wait unless we return empty and it loops.
+            // Let's just sleep for realism in CLI mode.
+            std::thread::sleep(Duration::from_secs(5));
+            self.pos = Vector2::new(0.0, 0.0);
+            self.target_pos = Vector2::new(0.0, 0.0);
+            self.state = "Idle".to_string();
+            self.homing_start = None;
             return vec!["ok".to_string()];
+        }
+        if cmd == "$X" {
+            self.state = "Idle".to_string();
+            return vec!["[MSG:Caution: Unlocked]".to_string(), "ok".to_string()];
         }
         if cmd == "!" {
             self.move_start = None;
@@ -89,7 +115,9 @@ impl VirtualDevice {
             return vec!["ok".to_string()];
         }
         if cmd == "~" {
-            self.state = "Idle".to_string();
+            if self.state == "Hold" {
+                self.state = "Idle".to_string();
+            }
             return vec!["ok".to_string()];
         }
         if cmd == "\x18" || cmd == "0x18" {
@@ -108,20 +136,35 @@ impl VirtualDevice {
         let mut is_move = false;
 
         for p in parts {
-            if p == "G0" || p == "G1" { is_move = true; }
-            else if p.starts_with('X') { new_x = p[1..].parse::<f32>().ok(); }
-            else if p.starts_with('Y') { new_y = p[1..].parse::<f32>().ok(); }
-            else if p.starts_with('F') { self.feed_rate = p[1..].parse::<f32>().unwrap_or(self.feed_rate); }
-            else if p.starts_with('S') { self.power = p[1..].parse::<f32>().unwrap_or(self.power); }
-            else if p == "M3" || p == "M4" { /* laser on handled by S */ }
-            else if p == "M5" { self.power = 0.0; }
+            match p {
+                "G0" | "G1" => is_move = true,
+                "G90" => self.is_absolute = true,
+                "G91" => self.is_absolute = false,
+                "G21" => self.is_metric = true,
+                "G20" => self.is_metric = false,
+                "M3" | "M4" => { /* laser on handled by S */ },
+                "M5" => self.power = 0.0,
+                "M8" => self.air_assist = true,
+                "M9" => self.air_assist = false,
+                _ => {
+                    if p.starts_with('X') { new_x = p[1..].parse::<f32>().ok(); }
+                    else if p.starts_with('Y') { new_y = p[1..].parse::<f32>().ok(); }
+                    else if p.starts_with('F') { self.feed_rate = p[1..].parse::<f32>().unwrap_or(self.feed_rate); }
+                    else if p.starts_with('S') { self.power = p[1..].parse::<f32>().unwrap_or(self.power); }
+                }
+            }
         }
 
         if is_move {
             let start_p = self.current_interpolated_pos();
             self.pos = start_p;
-            if let Some(x) = new_x { self.target_pos.x = x; }
-            if let Some(y) = new_y { self.target_pos.y = y; }
+            if self.is_absolute {
+                if let Some(x) = new_x { self.target_pos.x = x; }
+                if let Some(y) = new_y { self.target_pos.y = y; }
+            } else {
+                if let Some(x) = new_x { self.target_pos.x += x; }
+                if let Some(y) = new_y { self.target_pos.y += y; }
+            }
             
             let dist = ((self.target_pos.x - self.pos.x).powi(2) + (self.target_pos.y - self.pos.y).powi(2)).sqrt();
             let speed_mm_per_sec = self.feed_rate / 60.0;
@@ -130,6 +173,8 @@ impl VirtualDevice {
             self.move_duration = Duration::from_secs_f32(seconds.max(0.01));
             self.move_start = Some(Instant::now());
             self.state = "Run".to_string();
+            
+            // For G0, we could return ok immediately. For G1, we also return ok immediately in GRBL (it goes to planner).
         }
 
         vec!["ok".to_string()]

@@ -76,7 +76,7 @@ pub fn run_dynamic_pattern_cli(args: &[OsString]) -> Result<(), Box<dyn std::err
     let scale_str: String = pico_args.value_from_str("--scale").unwrap_or_else(|_| "1x".to_string());
     let passes_str: String = pico_args.value_from_str("--passes").unwrap_or_else(|_| "1".to_string());
     let fit_str: Option<String> = pico_args.opt_value_from_str("--fit")?;
-    let center_str: String = pico_args.value_from_str("--center").unwrap_or_else(|_| "100,100".to_string());
+    let center_str: String = pico_args.value_from_str("--center").unwrap_or_else(|_| "200,200".to_string());
 
     let (tx, _rx) = mpsc::channel::<String>();
     let _guard = SafetyGuard { tx: tx.clone() };
@@ -105,8 +105,8 @@ pub fn generate_pattern_gcode(shape: &str, pwr_pct: &str, speed_pct: &str, scale
     let bed_size = 400.0;
 
     let center_parts: Vec<&str> = center_str.split(',').collect();
-    let cx = if center_parts.len() == 2 { parse_dimension(center_parts[0])? } else { 50.0 };
-    let cy = if center_parts.len() == 2 { parse_dimension(center_parts[1])? } else { 50.0 };
+    let cx = if center_parts.len() == 2 { parse_dimension(center_parts[0])? } else { 200.0 };
+    let cy = if center_parts.len() == 2 { parse_dimension(center_parts[1])? } else { 200.0 };
 
     let (intrinsic_w, intrinsic_h, intrinsic_min_x, intrinsic_min_y) = match shape.to_lowercase().as_str() {
         "square" => (50.0, 50.0, 0.0, 0.0),
@@ -254,6 +254,11 @@ pub fn run_serial_cmd(cmd_str: &str, label: &str, _tx: mpsc::Sender<String>, use
         let mut responses = Vec::new();
         if let Some(ref mut dev) = virtual_dev {
             responses = dev.process_command(trimmed);
+            // If it started a move or homing, wait for it to finish to simulate realistic timing in CLI mode
+            while dev.state == "Run" || dev.state == "Home" {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                dev.update();
+            }
         } else if let Some(ref mut port) = real_port {
             port.write_all(full_cmd.as_bytes())?;
             let mut serial_buf: Vec<u8> = vec![0; 1024];

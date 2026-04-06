@@ -7,7 +7,6 @@ mod comm;
 mod ui;
 mod ui_manual;
 mod ui_test;
-mod ui_svg;
 mod svg_helper;
 
 use clay_layout::layout::{Padding, LayoutDirection, Alignment, LayoutAlignmentX, LayoutAlignmentY};
@@ -34,7 +33,7 @@ const FONT_DATA: &[u8] = include_bytes!("../assets/font.ttf");
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();
     
-    let sections = vec![
+    let mut sections = vec![
         Section {
             title: "Real-Time & System",
             icon: ICON_REFRESH,
@@ -221,7 +220,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         clay_scope.with(&root_decl, |clay_scope| {
             let bottom_bar_height = 160.0 * font_scale;
-            let standard_margin = (12.0 * font_scale) as u16;
+            let standard_margin = (20.0 * font_scale) as u16;
 
             let mut header_decl = Declaration::<Texture2D, ()>::new();
             header_decl.layout().width(grow!()).height(fixed!(80.0 * font_scale)).padding(Padding::all(12)).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end()
@@ -284,12 +283,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             clay_scope.with(&tab_bar, |clay_scope| {
                 let current_tab = state.lock().unwrap().current_tab.clone();
                 if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, font_scale) { state.lock().unwrap().current_tab = UITab::Manual; }
-                if render_tab_btn(clay_scope, "tab_test", "Test", current_tab == UITab::Test, font_scale) { state.lock().unwrap().current_tab = UITab::Test; }
-                if render_tab_btn(clay_scope, "tab_svg", "SVG", current_tab == UITab::SVG, font_scale) { state.lock().unwrap().current_tab = UITab::SVG; }
+                if render_tab_btn(clay_scope, "tab_pattern", "Pattern", current_tab == UITab::Pattern, font_scale) { state.lock().unwrap().current_tab = UITab::Pattern; }
             });
 
             let mut content_area = Declaration::<Texture2D, ()>::new();
-            content_area.layout().width(grow!()).height(grow!()).direction(LayoutDirection::LeftToRight).child_gap(12).end();
+            content_area.layout().width(grow!()).height(grow!()).direction(LayoutDirection::LeftToRight).padding(Padding::all(standard_margin)).child_gap(16).end();
             clay_scope.with(&content_area, |clay_scope| {
                 let current_tab = state.lock().unwrap().current_tab.clone();
 
@@ -309,6 +307,21 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         clay_scope.text(arena.push(format!("V: X:{:.1} Y:{:.1}", vx, vy)), clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(96, 165, 250)).end());
                         clay_scope.text(arena.push(format!("M: X:{:.1} Y:{:.1}", mx, my)), clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
                         clay_scope.text(arena.push(format!("Status: {}", mstate)), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(34, 197, 94)).end());
+
+                        let tidy_id = clay_scope.id("tidy_grid");
+                        let mut tidy_color = Color::u_rgb(100, 116, 139);
+                        if clay_scope.pointer_over(tidy_id) {
+                            tidy_color = Color::u_rgb(255, 255, 255);
+                            if mouse_pressed {
+                                let mut guard = state.lock().unwrap();
+                                guard.paths.clear();
+                            }
+                        }
+                        let mut tidy_btn = Declaration::<Texture2D, ()>::new();
+                        tidy_btn.id(tidy_id).layout().padding(Padding::horizontal(8)).end();
+                        clay_scope.with(&tidy_btn, |clay| {
+                            clay.text(ICON_SWEEP, clay_layout::text::TextConfig::new().font_size((20.0 * font_scale) as u16).color(tidy_color).end());
+                        });
                     });
                 });
 
@@ -325,7 +338,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let mut g = state.lock().unwrap();
                     g.col2_scroll_offset += scroll_delta.y * 40.0;
                     if g.col2_scroll_offset > 0.0 { g.col2_scroll_offset = 0.0; }
-                    // Bounds checking for scroll could be improved if we knew content height
                 }
 
                 clay_scope.with(&col2_scroll, |clay_scope| {
@@ -334,8 +346,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             ui_manual::render_manual_left_col(clay_scope, &state, &sections, mouse_pressed, &mut clipboard, &arena, font_scale);
                             ui_manual::render_manual_right_col(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale);
                         }
-                        UITab::Test => ui_test::render_test_left_col(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale),
-                        UITab::SVG => ui_svg::render_svg_left_col(clay_scope, &state, mouse_pressed, &mut clipboard, &arena, font_scale),
+                        UITab::Pattern => ui_test::render_test_left_col(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale),
                         _ => {}
                     }
                 });
@@ -347,7 +358,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             clay_scope.with(&bottom_area, |clay_scope| {
                 let mut log_box = Declaration::<Texture2D, ()>::new();
-                log_box.layout().width(grow!()).height(grow!()).padding(Padding::all(12)).direction(LayoutDirection::TopToBottom).child_gap(4).end()
+                let serial_id_node = clay_scope.id("serial_box");
+                log_box.id(serial_id_node).layout().width(grow!()).height(grow!()).padding(Padding::all(12)).direction(LayoutDirection::TopToBottom).child_gap(4).end()
                     .background_color(Color::u_rgb(2, 6, 23)).corner_radius().all(16.0 * font_scale).end().border().top((2.0 * font_scale) as u16).color(Color::u_rgb(168, 85, 247)).end();
                 
                 clay_scope.with(&log_box, |clay_scope| {
@@ -468,4 +480,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     }
     Ok(())
+}
+
+fn clay_scope_id(id: &str) -> clay_layout::id::Id {
+    unsafe { 
+        clay_layout::id::Id { id: clay_layout::bindings::Clay__HashString(clay_layout::bindings::Clay_String::from(id), 0, 0) }
+    }
 }

@@ -6,6 +6,7 @@ use arboard::Clipboard;
 use crate::state::{AppState, StringArena};
 use crate::ui::{Section, render_burn_btn, render_slider};
 use crate::cli_and_helpers::generate_pattern_gcode;
+use rfd::FileDialog;
 
 pub fn render_test_left_col<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
@@ -23,6 +24,57 @@ pub fn render_test_left_col<'a, 'render>(
     left_col.layout().height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
     
     clay.with(&left_col, |clay_scope| {
+        // 1. SVG Controls (At the top)
+        let mut svg_box = Declaration::<Texture2D, ()>::new();
+        svg_box.layout().width(grow!()).direction(LayoutDirection::TopToBottom).padding(Padding::all(12)).child_gap(12).end()
+            .background_color(Color::u_rgb(30, 41, 59))
+            .corner_radius().all(16.0 * font_scale).end();
+        
+        clay_scope.with(&svg_box, |clay_scope| {
+            clay_scope.text("SVG LOADING", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(148, 163, 184)).end());
+            
+            let load_id = clay_scope.id("load_svg_btn");
+            let mut load_color = Color::u_rgb(37, 99, 235);
+            if clay_scope.pointer_over(load_id) {
+                load_color = Color::u_rgb(59, 130, 246);
+                if mouse_pressed {
+                    // RFD Dialog
+                    if let Some(path_buf) = FileDialog::new()
+                        .add_filter("Scalable Vector Graphics", &["svg"])
+                        .pick_file() 
+                    {
+                        let path_str = path_buf.to_string_lossy().to_string();
+                        let (pwr, spd, scl, pas) = {
+                            let g = state.lock().unwrap();
+                            (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes)
+                        };
+                        
+                        match generate_pattern_gcode(
+                            &path_str, 
+                            &format!("{}%", pwr), 
+                            &format!("{}%", spd), 
+                            &format!("{}x", scl), 
+                            &pas.to_string(),
+                            None,
+                            "200,200"
+                        ) {
+                            Ok((gcode, _)) => {
+                                state.lock().unwrap().send_command(gcode);
+                            }
+                            Err(e) => { println!("Error loading SVG: {}", e); }
+                        }
+                    }
+                }
+            }
+            
+            let mut load_btn = Declaration::<Texture2D, ()>::new();
+            load_btn.id(load_id).layout().padding(Padding::all(10)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(load_color).corner_radius().all(8.0 * font_scale).end();
+            clay_scope.with(&load_btn, |clay| {
+                clay.text("LOAD CUSTOM SVG", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(Color::u_rgb(255, 255, 255)).end());
+            });
+        });
+
+        // 2. Sliders
         let mut controls_box = Declaration::<Texture2D, ()>::new();
         controls_box.layout().width(grow!()).direction(LayoutDirection::TopToBottom).padding(Padding::all(12)).child_gap(16).end()
             .background_color(Color::u_rgb(30, 41, 59))
@@ -40,6 +92,7 @@ pub fn render_test_left_col<'a, 'render>(
             render_slider(clay_scope, "test_passes", "Passes", pas as f32, 1.0, 20.0, Color::u_rgb(192, 132, 252), state, |s, v| s.passes = v as u32, mouse_pos, mouse_down, scroll_y, arena, font_scale);
         });
 
+        // 3. Test Patterns
         for section in sections {
             if section.title == "Test Patterns" {
                 let mut section_box = Declaration::<Texture2D, ()>::new();
@@ -63,7 +116,7 @@ pub fn render_test_left_col<'a, 'render>(
                                 &format!("{}x", scl), 
                                 &pas.to_string(),
                                 None,
-                                "100,100" // Default center for UI tests
+                                "200,200" 
                             ) {
                                 Ok((gcode, _)) => {
                                     state.lock().unwrap().send_command(gcode);

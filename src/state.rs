@@ -19,13 +19,13 @@ pub struct PathSegment {
     pub s: f32,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum UITab {
     Manual,
-    Test,
-    SVG,
+    Pattern,
     Image,
 }
+
 
 pub struct AppState {
     pub current_tab: UITab,
