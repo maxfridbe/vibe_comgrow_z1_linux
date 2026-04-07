@@ -17,6 +17,7 @@ pub fn render_tab_btn<'a, 'render>(
     let icon = match label {
         "Manual" => ICON_MOVE,
         "Pattern" => ICON_GAUGE,
+        "Image" => ICON_IMAGE,
         _ => ICON_TERMINAL,
     };
 

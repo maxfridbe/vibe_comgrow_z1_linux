@@ -28,6 +28,7 @@ pub struct PathSegment {
     pub x2: f32,
     pub y2: f32,
     pub s: f32,
+    pub intensity: f32,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -57,6 +58,7 @@ pub struct AppState {
     pub preview_paths: Vec<PathSegment>,
     pub preview_pattern: Option<String>,
     pub custom_svg_path: Option<String>,
+    pub custom_image_path: Option<String>,
     pub last_command: String,
     pub copied_at: Option<std::time::Instant>,
     pub serial_logs: VecDeque<LogEntry>,
@@ -70,7 +72,6 @@ pub struct AppState {
 
 impl AppState {
     pub fn process_command_for_preview(&mut self, cmd: &str) {
-        // State Update Logic for virtual view - but for preview paths
         let parts: Vec<&str> = cmd.split_whitespace().collect();
         let mut has_g0 = false;
         let mut has_g1 = false;
@@ -107,7 +108,8 @@ impl AppState {
             }
 
             if has_g1 {
-                self.preview_paths.push(PathSegment { x1: old_pos.x, y1: old_pos.y, x2: target.x, y2: target.y, s: s_val.unwrap_or(self.power) });
+                let intensity = (s_val.unwrap_or(self.power) / 1000.0).clamp(0.0, 1.0);
+                self.preview_paths.push(PathSegment { x1: old_pos.x, y1: old_pos.y, x2: target.x, y2: target.y, s: s_val.unwrap_or(self.power), intensity });
                 self.v_pos = target;
             } else if (has_g2 || has_g3) && r_val.is_some() {
                 let r = r_val.unwrap();
@@ -134,7 +136,8 @@ impl AppState {
                         let t = i as f32 / segments as f32;
                         let angle = start_angle + t * (end_angle - start_angle);
                         let next_p = Vector2::new(cx + r.abs() * angle.cos(), cy + r.abs() * angle.sin());
-                        self.preview_paths.push(PathSegment { x1: prev_p.x, y1: prev_p.y, x2: next_p.x, y2: next_p.y, s: s_val.unwrap_or(self.power) });
+                        let intensity = (s_val.unwrap_or(self.power) / 1000.0).clamp(0.0, 1.0);
+                        self.preview_paths.push(PathSegment { x1: prev_p.x, y1: prev_p.y, x2: next_p.x, y2: next_p.y, s: s_val.unwrap_or(self.power), intensity });
                         prev_p = next_p;
                     }
                 }
@@ -158,7 +161,6 @@ impl AppState {
     pub fn process_command_for_state(&mut self, cmd: &str, force_log: bool) {
         let explanation = decode_gcode(cmd);
         
-        // State Update Logic for virtual view
         let parts: Vec<&str> = cmd.split_whitespace().collect();
         let mut has_g0 = false;
         let mut has_g1 = false;
@@ -203,34 +205,21 @@ impl AppState {
                 let r = r_val.unwrap();
                 let start = old_pos;
                 let end = target;
-                
                 let dx = end.x - start.x;
                 let dy = end.y - start.y;
                 let d2 = dx*dx + dy*dy;
                 let d = d2.sqrt();
-                
-                // Use a larger epsilon for d <= 2r check to handle floating point precision at different scales
                 if d > 0.0 && d <= 2.0 * r.abs() + 0.1 {
                     let h = (r*r - d2/4.0).max(0.0).sqrt();
                     let mut cx = (start.x + end.x) / 2.0;
                     let mut cy = (start.y + end.y) / 2.0;
-                    
-                    // Center calculation for G2/G3 with R
-                    // For G2 (CW), center is to the right of the vector if R > 0
-                    // For G3 (CCW), center is to the left of the vector if R > 0
                     let multiplier = if (has_g2 && r > 0.0) || (has_g3 && r < 0.0) { 1.0 } else { -1.0 };
                     cx += multiplier * h * dy / d;
                     cy -= multiplier * h * dx / d;
-                    
                     let start_angle = (start.y - cy).atan2(start.x - cx);
                     let mut end_angle = (end.y - cy).atan2(end.x - cx);
-                    
-                    if has_g2 { // CW
-                        if end_angle >= start_angle { end_angle -= 2.0 * std::f32::consts::PI; }
-                    } else { // CCW
-                        if end_angle <= start_angle { end_angle += 2.0 * std::f32::consts::PI; }
-                    }
-                    
+                    if has_g2 { if end_angle >= start_angle { end_angle -= 2.0 * std::f32::consts::PI; } }
+                    else { if end_angle <= start_angle { end_angle += 2.0 * std::f32::consts::PI; } }
                     let segments = 20;
                     let mut prev_p = start;
                     for i in 1..=segments {
@@ -263,7 +252,8 @@ impl AppState {
     }
 
     fn add_path_segment(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, s: f32) {
-        self.paths.push(PathSegment { x1, y1, x2, y2, s });
+        let intensity = (s / 1000.0).clamp(0.0, 1.0);
+        self.paths.push(PathSegment { x1, y1, x2, y2, s, intensity });
     }
 }
 

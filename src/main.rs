@@ -8,6 +8,7 @@ mod ui;
 mod ui_manual;
 mod ui_test;
 mod ui_svg;
+mod ui_image;
 mod svg_helper;
 mod styles;
 
@@ -54,6 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         preview_paths: Vec::new(),
         preview_pattern: None,
         custom_svg_path: None,
+        custom_image_path: None,
         last_command: String::new(),
         copied_at: None,
         serial_logs: std::collections::VecDeque::new(),
@@ -86,6 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ICON_ARROW_UP, ICON_ARROW_DOWN, ICON_ARROW_LEFT, ICON_ARROW_RIGHT,
         ICON_CROSSHAIR, ICON_FLAME, ICON_USB, ICON_SHIELD, ICON_CPU, ICON_TRASH,
         ICON_COPY, ICON_SWEEP, ICON_SERIAL, ICON_CHECK, ICON_FILE, ICON_EYE,
+        ICON_IMAGE,
     ];
     for &icon in icons_list {
         for c in icon.chars() {
@@ -313,6 +316,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let current_tab = state.lock().unwrap().current_tab.clone();
                 if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, font_scale) { state.lock().unwrap().current_tab = UITab::Manual; }
                 if render_tab_btn(clay_scope, "tab_pattern", "Pattern", current_tab == UITab::Pattern, font_scale) { state.lock().unwrap().current_tab = UITab::Pattern; }
+                if render_tab_btn(clay_scope, "tab_image", "Image", current_tab == UITab::Image, font_scale) { state.lock().unwrap().current_tab = UITab::Image; }
             });
 
             let mut content_area = Declaration::<Texture2D, ()>::new();
@@ -377,7 +381,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             ui_manual::render_manual_right_col(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale);
                         }
                         UITab::Pattern => ui_test::render_test_controls(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale),
-                        _ => {}
+                        UITab::Image => ui_image::render_image_controls(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale),
                     }
                 });
             });
@@ -495,12 +499,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             for p in &guard.paths {
                 let start = raylib::math::Vector2::new(draw_area.x + (p.x1 / 400.0) * side, draw_area.y + draw_area.height - (p.y1 / 400.0) * side);
                 let end = raylib::math::Vector2::new(draw_area.x + (p.x2 / 400.0) * side, draw_area.y + draw_area.height - (p.y2 / 400.0) * side);
-                d.draw_line_ex(start, end, 2.0, raylib::color::Color::new(255, 71, 87, (p.s / 1000.0 * 255.0) as u8));
+                d.draw_line_ex(start, end, 2.0, raylib::color::Color::new(255, 71, 87, (p.intensity * 255.0) as u8));
             }
             for p in &guard.preview_paths {
                 let start = raylib::math::Vector2::new(draw_area.x + (p.x1 / 400.0) * side, draw_area.y + draw_area.height - (p.y1 / 400.0) * side);
                 let end = raylib::math::Vector2::new(draw_area.x + (p.x2 / 400.0) * side, draw_area.y + draw_area.height - (p.y2 / 400.0) * side);
-                d.draw_line_ex(start, end, 2.0, raylib::color::Color::GREEN);
+                d.draw_line_ex(start, end, 2.0, raylib::color::Color::new(0, 255, 0, (p.intensity * 255.0) as u8));
             }
             let head_pos = raylib::math::Vector2::new(draw_area.x + (guard.machine_pos.x / 400.0) * side, draw_area.y + draw_area.height - (guard.machine_pos.y / 400.0) * side);
             d.draw_circle_v(head_pos, 5.0 * font_scale, raylib::color::Color::new(59, 130, 246, 100));
