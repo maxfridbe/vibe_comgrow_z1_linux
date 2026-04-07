@@ -9,7 +9,9 @@ use font_kit::family_name::FamilyName;
 use font_kit::properties::{Properties, Weight};
 use font_kit::handle::Handle;
 use font_kit::font::Font;
+use font_kit::outline::OutlineSink;
 use pathfinder_geometry::vector::Vector2F;
+use pathfinder_geometry::line_segment::LineSegment2F;
 
 pub struct SafetyGuard {
     pub tx: mpsc::Sender<String>,
@@ -217,7 +219,59 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
     Ok((gcode, format!("Image {} (Scale: {:.2}x, Center: {:.1},{:.1}, Power: {}%, Speed: {}%, LowFid: {:.2}, HighFid: {:.2})", filename, final_scale, center.0, center.1, pwr_max, speed, low_fid, high_fid)))
 }
 
-pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, passes: u32, fit: Option<(f32, f32)>, center: (f32, f32), bold: bool, _outline: bool, letter_spacing: f32, _line_spacing: f32, font_family: &str, is_preview: bool) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+struct VectorGCodeBuilder {
+    gcode: String,
+    offset: Vector2F,
+    scale: f32,
+    current_pos: Vector2F,
+    start_pos: Vector2F,
+    power: f32,
+    speed: f32,
+}
+
+impl OutlineSink for VectorGCodeBuilder {
+    fn move_to(&mut self, to: Vector2F) {
+        let p = (to + self.offset) * self.scale;
+        self.gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2} F3000\n", p.x(), p.y()));
+        self.gcode.push_str(&format!("M4 S{} F{:.0}\n", self.power * 10.0, self.speed * 10.0));
+        self.current_pos = to;
+        self.start_pos = to;
+    }
+
+    fn line_to(&mut self, to: Vector2F) {
+        let p = (to + self.offset) * self.scale;
+        self.gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", p.x(), p.y()));
+        self.current_pos = to;
+    }
+
+    fn quadratic_curve_to(&mut self, control: Vector2F, to: Vector2F) {
+        let segments = 10;
+        for i in 1..=segments {
+            let t = i as f32 / segments as f32;
+            let p = self.current_pos * (1.0 - t).powi(2) + control * 2.0 * (1.0 - t) * t + to * t.powi(2);
+            self.line_to(p);
+        }
+    }
+
+    fn cubic_curve_to(&mut self, control: LineSegment2F, to: Vector2F) {
+        let segments = 10;
+        for i in 1..=segments {
+            let t = i as f32 / segments as f32;
+            let p = self.current_pos * (1.0 - t).powi(3) + control.from() * 3.0 * (1.0 - t).powi(2) * t + control.to() * 3.0 * (1.0 - t) * t.powi(2) + to * t.powi(3);
+            self.line_to(p);
+        }
+    }
+
+    fn close(&mut self) {
+        let d = (self.current_pos - self.start_pos).length();
+        if d > 0.01 {
+            self.line_to(self.start_pos);
+        }
+        self.gcode.push_str("M5\n");
+    }
+}
+
+pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, passes: u32, fit: Option<(f32, f32)>, center: (f32, f32), bold: bool, outline: bool, letter_spacing: f32, _line_spacing: f32, font_family: &str, is_preview: bool) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
     use font_kit::canvas::{Canvas, Format, RasterizationOptions};
     use font_kit::hinting::HintingOptions;
     use pathfinder_geometry::vector::Vector2I;
@@ -268,8 +322,8 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
 
     for c in text.chars() {
         if let Some(glyph_id) = font.glyph_for_char(c) {
-            let advance = font.advance(glyph_id).unwrap_or(Vector2F::zero()).x() * font_scale;
-            let bounds = font.typographic_bounds(glyph_id).unwrap_or(RectF::new(Vector2F::zero(), Vector2F::zero()));
+            let advance = font.advance(glyph_id).unwrap_or(Vector2F::new(0.0, 0.0)).x() * font_scale;
+            let bounds = font.typographic_bounds(glyph_id).unwrap_or(RectF::new(Vector2F::new(0.0, 0.0), Vector2F::new(0.0, 0.0)));
             
             let gx = current_x + bounds.origin().x() * font_scale;
             let gy = bounds.origin().y() * font_scale;
@@ -291,6 +345,42 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
 
     if glyphs.is_empty() {
         return Ok((String::new(), "Empty text".to_string()));
+    }
+
+    if outline {
+        let mut final_scale = scale;
+        let w = max_x - min_x;
+        let h = max_y - min_y;
+        if let Some((fw, fh)) = fit {
+            final_scale = (fw / w).min(fh / h);
+        }
+
+        let mut gcode = String::new();
+        gcode.push_str("G90\n$H\n");
+
+        let effective_passes = if is_preview { 1 } else { passes };
+        
+        let box_center = Vector2F::new((min_x + max_x) / 2.0, (min_y + max_y) / 2.0);
+        let center_vec = Vector2F::new(center.0, center.1);
+
+        for _ in 0..effective_passes {
+            for glyph in &glyphs {
+                let mut builder = VectorGCodeBuilder {
+                    gcode: String::new(),
+                    offset: glyph.offset - box_center + (center_vec / final_scale),
+                    scale: final_scale,
+                    current_pos: Vector2F::new(0.0, 0.0),
+                    start_pos: Vector2F::new(0.0, 0.0),
+                    power: pwr_max,
+                    speed: speed,
+                };
+                
+                font.outline(glyph.glyph_id, HintingOptions::None, &mut builder).ok();
+                gcode.push_str(&builder.gcode);
+            }
+        }
+        gcode.push_str("$H\n");
+        return Ok((gcode, format!("Text Outline \"{}\"", text)));
     }
 
     let width = (max_x - min_x).max(1.0).ceil() as u32;
@@ -388,6 +478,34 @@ mod tests {
                 assert!(label.contains("Image"), "Label should describe the generated text");
             },
             Err(e) => panic!("G-code generation failed: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_text_gcode_generation_outline() {
+        let text = "Hi";
+        let pwr = 100.0;
+        let spd = 1000.0;
+        let scl = 1.0;
+        let passes = 1;
+        let fit = None;
+        let center = (200.0, 200.0);
+        let bold = false;
+        let outline = true;
+        let letter_spacing = 0.0;
+        let _line_spacing = 1.0;
+        let font_family = "Default";
+
+        let result = generate_text_gcode(text, pwr, spd, scl, passes, fit, center, bold, outline, letter_spacing, _line_spacing, font_family, true);
+        
+        match result {
+            Ok((gcode, label)) => {
+                println!("Outline GCode length: {}", gcode.len());
+                assert!(!gcode.is_empty(), "G-code should not be empty");
+                assert!(gcode.contains("G1"), "G-code should contain movement commands");
+                assert!(label.contains("Outline"), "Label should describe the outline mode");
+            },
+            Err(e) => panic!("Outline G-code generation failed: {}", e),
         }
     }
 }
