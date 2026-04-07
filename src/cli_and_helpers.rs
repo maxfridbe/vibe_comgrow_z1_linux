@@ -222,27 +222,42 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
     for _ in 0..passes {
         for y in 0..img.height() {
             let actual_y = offset_y + (img.height() as f32 - 1.0 - y as f32) * final_scale;
-            // Move to start of line
-            gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2} F3000\n", offset_x, actual_y));
-            gcode.push_str(&format!("M4 F{}\n", f_val));
-            
+
+            // Find first and last non-zero pixels in this row to avoid crossing the whole canvas
+            let mut first_x = None;
+            let mut last_x = None;
+
             for x in 0..img.width() {
                 let pixel = img.get_pixel(x, y);
-                // Luminance formula: 0.2126*R + 0.7152*G + 0.0722*B
                 let luminance = 0.2126 * pixel[0] as f32 + 0.7152 * pixel[1] as f32 + 0.0722 * pixel[2] as f32;
-                // Invert: darker (lower luminance) -> higher power
-                let mut intensity = 1.0 - (luminance / 255.0);
-                
-                // Apply fidelity remapping
-                intensity = ((intensity - low_fid) / (high_fid - low_fid).max(0.001)).clamp(0.0, 1.0);
+                let intensity = 1.0 - (luminance / 255.0);
+                let remapped = ((intensity - low_fid) / (high_fid - low_fid).max(0.001)).clamp(0.0, 1.0);
 
-                let s_val = (intensity * pwr_max * 10.0) as i32;
-                
-                let actual_x = offset_x + x as f32 * final_scale;
-                if s_val > 0 {
-                    gcode.push_str(&format!("G1 X{:.2} S{}\n", actual_x, s_val));
-                } else {
-                    gcode.push_str(&format!("G0 X{:.2}\n", actual_x));
+                if remapped > 0.01 { // Threshold for "empty"
+                    if first_x.is_none() { first_x = Some(x); }
+                    last_x = Some(x);
+                }
+            }
+
+            if let (Some(fx), Some(lx)) = (first_x, last_x) {
+                // Move to start of relevant content
+                gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2} F3000\n", offset_x + fx as f32 * final_scale, actual_y));
+                gcode.push_str(&format!("M4 F{}\n", f_val));
+
+                for x in fx..=lx {
+                    let pixel = img.get_pixel(x, y);
+                    let luminance = 0.2126 * pixel[0] as f32 + 0.7152 * pixel[1] as f32 + 0.0722 * pixel[2] as f32;
+                    let intensity = 1.0 - (luminance / 255.0);
+                    let remapped = ((intensity - low_fid) / (high_fid - low_fid).max(0.001)).clamp(0.0, 1.0);
+                    let s_val = (remapped * pwr_max * 10.0) as i32;
+
+                    let actual_x = offset_x + x as f32 * final_scale;
+                    if s_val > 0 {
+                        gcode.push_str(&format!("G1 X{:.2} S{}\n", actual_x, s_val));
+                    } else {
+                        // Internal jump over empty pixel
+                        gcode.push_str(&format!("G0 X{:.2}\n", actual_x));
+                    }
                 }
             }
         }
