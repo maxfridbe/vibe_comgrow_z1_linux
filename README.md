@@ -1,24 +1,38 @@
 # Comgrow Z1 Laser GRBL Runner
 
+![Screenshot Main](./assets/screenshot.png)
+![Screenshot Text](./assets/screenshot_text.png)
 
-![Screenshot Example](./assets/screenshot.png)
 A custom engineering tool for the Comgrow Z1 Laser engraver, featuring a high-fidelity tabbed UI and a safety-first CLI.
 
-## Features
+## New Features
+- **Interactive Text Tab**: 
+    - Type directly into the UI with a blinking cursor.
+    - Select from all available system fonts with a scrollable dropdown.
+    - High-fidelity vector and raster rendering via `font-kit`.
+- **Content-Aware Outline Tracing**:
+    - Use the `[]` button to trace the exact footprint of your work without firing the laser.
+    - Traces text, images, and patterns with precision.
+- **Optimized Bidirectional Scanning**:
+    - Efficient zigzag raster paths for text and images.
+    - Drastically reduced travel time between lines.
+- **Automatic Homing**: Every job automatically begins and ends with a `$H` sequence for perfect calibration.
+
+## Core Features
 - **Tabbed Interface**: 
     - **Manual**: Full 3-column layout with 40+ Quick Commands and Jog controls.
-    - **Test**: Direct access to built-in burn patterns and shape testing.
-    - **SVG**: Vector path preview and SVG file loading.
+    - **Text**: Advanced text rendering and engraving controls.
+    - **Image**: Custom image loading with fidelity and scale adjustment.
+    - **Pattern**: Direct access to built-in burn patterns and SVG loading.
 - **Docked Engineering Console**: Persistent Serial Log and massive E-STOP button fixed to the bottom of the screen.
 - **Virtual Grid**: Real-time persistent visualizer showing machine and virtual head positions.
 - **UI Scaling**: Full interface zooming via `Ctrl` + `+/-` that respects layout boundaries.
-- **Advanced CLI**: Named parameters, machine boundary checking, and interpreted G-code logs.
 - **Safety**: Robust `SafetyGuard` ensures the laser is powered down and machine reset on any exit or crash.
 
 ## Setup
 
 ### 1. Install Dependencies
-Run the included installation script to set up required system headers:
+Run the included installation script to set up required system libraries:
 ```bash
 ./install-dependent-packages.sh
 ```
@@ -62,14 +76,9 @@ Execute predefined shapes or assets using named parameters:
 ```bash
 ./target/debug/comgrow-z1-app test-pattern [shape] --power [pct]% --speed [pct]% --scale [scale]x --passes [count]
 ```
-Example (Low power, full speed, 4x size, 2 passes):
-```bash
-./target/debug/comgrow-z1-app test-pattern Square --power 1% --speed 100% --scale 4x --passes 2
-```
-*Note: Supports assets! Try `test-pattern car` if `assets/car.svg` exists.*
 
 ## Safety
 - **Soft Reset**: Always available in the UI or via `Reset` in CLI.
 - **E-STOP on Exit**: Automatically sends `!`, `M5`, `0x18` on normal exit or `Ctrl-C`.
-- **Dual E-STOP**: Global E-STOP buttons located in both Header and Footer.
+- **Dynamic Visual Feedback**: E-STOP buttons turn green when the machine is in an Alarm or Hold state.
 - **Dynamic Power**: Uses `M4` mode to prevent over-burn during speed changes.
