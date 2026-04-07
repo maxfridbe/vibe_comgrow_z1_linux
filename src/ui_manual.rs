@@ -1,5 +1,5 @@
 use clay_layout::layout::{Padding, LayoutAlignmentX, LayoutAlignmentY, Alignment, LayoutDirection};
-use clay_layout::{Declaration, grow, fixed, fit};
+use clay_layout::{Declaration, grow, fixed};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
 use arboard::Clipboard;
@@ -18,7 +18,7 @@ pub fn render_manual_left_subcol<'a, 'render>(
     font_scale: f32,
 ) where 'a: 'render {
     let mut left_col = Declaration::<Texture2D, ()>::new();
-    left_col.layout().height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
+    left_col.layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
     
     let is_idle = { state.lock().unwrap().machine_state == "Idle" };
 
@@ -88,7 +88,7 @@ pub fn render_manual_right_col<'a, 'render>(
     font_scale: f32,
 ) where 'a: 'render {
     let mut right_col = Declaration::<Texture2D, ()>::new();
-    right_col.layout().height(grow!()).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(16).width(fit!()).end();
+    right_col.layout().height(grow!()).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(16).width(grow!()).end();
     
     let is_idle = { state.lock().unwrap().machine_state == "Idle" };
 

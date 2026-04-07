@@ -24,7 +24,7 @@ pub fn render_test_controls<'a, 'render>(
     font_scale: f32,
 ) where 'a: 'render {
     let mut left_col = Declaration::<Texture2D, ()>::new();
-    left_col.layout().height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
+    left_col.layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
     
     let is_idle = { state.lock().unwrap().machine_state == "Idle" };
 

@@ -358,7 +358,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // Column 2: Controls (SCROLLABLE)
                 let mut col2_scroll = Declaration::<Texture2D, ()>::new();
                 let col2_id = clay_scope.id("controls_column");
-                let col2_width = if current_tab == UITab::Manual { 450.0 } else { 450.0 };
+                let col2_width = 400.0;
                 let c2_offset = { state.lock().unwrap().col2_scroll_offset };
 
                 col2_scroll.id(col2_id).layout().width(fixed!(col2_width * font_scale)).height(grow!()).direction(LayoutDirection::TopToBottom).end()
