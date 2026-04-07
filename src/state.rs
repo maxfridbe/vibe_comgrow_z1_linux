@@ -68,6 +68,9 @@ pub struct AppState {
     pub boundary_y: f32,
     pub boundary_w: f32,
     pub boundary_h: f32,
+    pub img_low_fidelity: f32,
+    pub img_high_fidelity: f32,
+    pub is_processing: bool,
 }
 
 impl AppState {

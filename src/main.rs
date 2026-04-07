@@ -67,6 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         boundary_h: 100.0,
         img_low_fidelity: 0.0,
         img_high_fidelity: 1.0,
+        is_processing: false,
     }));
 
     let (tx, rx) = mpsc::channel();
@@ -446,6 +447,21 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 });
             });
         });
+
+        let is_processing = { state.lock().unwrap().is_processing };
+        if is_processing {
+            let mut overlay_decl = Declaration::<Texture2D, ()>::new();
+            overlay_decl.id(clay_scope.id("overlay"))
+                .layout().width(fixed!(render_width)).height(fixed!(render_height)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                .background_color(clay_layout::Color::rgba(0.0, 0.0, 0.0, 180.0));
+            clay_scope.with(&overlay_decl, |clay_scope| {
+                let mut box_decl = Declaration::<Texture2D, ()>::new();
+                box_decl.layout().padding(Padding::all(32)).end().background_color(COLOR_BG_SECTION).corner_radius().all(16.0 * font_scale).end();
+                clay_scope.with(&box_decl, |clay_scope| {
+                    clay_scope.text("PROCESSING G-CODE...", clay_layout::text::TextConfig::new().font_size((32.0 * font_scale) as u16).color(COLOR_PRIMARY).end());
+                });
+            });
+        }
 
         let render_commands = clay_scope.end();
         let mut d = rl.begin_drawing(&thread);

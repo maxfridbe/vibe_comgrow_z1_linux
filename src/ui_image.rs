@@ -70,52 +70,43 @@ pub fn render_image_controls<'a, 'render>(
         clay_scope.with(&img_box, |clay_scope| {
             clay_scope.text("IMAGE LOADING", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_MUTED).end());
             
-            let mut pick_row = Declaration::<Texture2D, ()>::new();
-            pick_row.layout().direction(LayoutDirection::LeftToRight).child_gap(12).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
-            
-            clay_scope.with(&pick_row, |clay_scope| {
-                let load_id = clay_scope.id("pick_image_btn");
-                let mut load_color = if !is_idle { COLOR_BG_DISABLED } else { COLOR_PRIMARY_HOVER };
-                if is_idle && clay_scope.pointer_over(load_id) {
-                    load_color = COLOR_PRIMARY;
-                    if mouse_pressed {
-                        if let Some(path_buf) = FileDialog::new()
-                            .add_filter("Images", &["png", "jpg", "jpeg", "bmp"])
-                            .pick_file() 
-                        {
-                            state.lock().unwrap().custom_image_path = Some(path_buf.to_string_lossy().to_string());
-                        }
+            let load_id = clay_scope.id("pick_image_btn");
+            let mut load_color = if !is_idle { COLOR_BG_DISABLED } else { COLOR_PRIMARY_HOVER };
+            if is_idle && clay_scope.pointer_over(load_id) {
+                load_color = COLOR_PRIMARY;
+                if mouse_pressed {
+                    if let Some(path_buf) = FileDialog::new()
+                        .add_filter("Images", &["png", "jpg", "jpeg", "bmp"])
+                        .pick_file() 
+                    {
+                        state.lock().unwrap().custom_image_path = Some(path_buf.to_string_lossy().to_string());
                     }
                 }
-                
-                let mut load_btn = Declaration::<Texture2D, ()>::new();
-                load_btn.id(load_id).layout().padding(Padding::all(10)).direction(LayoutDirection::LeftToRight).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(load_color).corner_radius().all(8.0 * font_scale).end();
-                
-                let load_text_color = if !is_idle { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
-                clay_scope.with(&load_btn, |clay| {
-                    clay.text(ICON_IMAGE, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
-                    clay.text("Pick Custom Image", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
-                });
+            }
+            
+            let mut load_btn = Declaration::<Texture2D, ()>::new();
+            load_btn.id(load_id).layout().padding(Padding::all(10)).direction(LayoutDirection::LeftToRight).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(load_color).corner_radius().all(8.0 * font_scale).end();
+            
+            let load_text_color = if !is_idle { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
+            clay_scope.with(&load_btn, |clay| {
+                clay.text(ICON_IMAGE, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
+                clay.text("Pick Custom Image", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
             });
 
+            // Fidelity Sliders immediately under Pick button
             let (low_fid, high_fid) = { let g = state.lock().unwrap(); (g.img_low_fidelity, g.img_high_fidelity) };
-
-            let mut fid_col = Declaration::<Texture2D, ()>::new();
-            fid_col.layout().width(grow!()).direction(LayoutDirection::TopToBottom).child_gap(12).end();
-            clay_scope.with(&fid_col, |clay_scope| {
-                render_slider(clay_scope, "img_low_fid", "Low Fidelity (White)", low_fid, 0.0, 1.0, COLOR_SLIDER_X, state, |s, v| s.img_low_fidelity = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
-                render_slider(clay_scope, "img_high_fid", "High Fidelity (Black)", high_fid, 0.0, 1.0, COLOR_SLIDER_Y, state, |s, v| s.img_high_fidelity = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
-            });
+            render_slider(clay_scope, "img_low_fid", "Low Fidelity (White)", low_fid, 0.0, 1.0, COLOR_SLIDER_X, state, |s, v| s.img_low_fidelity = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+            render_slider(clay_scope, "img_high_fid", "High Fidelity (Black)", high_fid, 0.0, 1.0, COLOR_SLIDER_Y, state, |s, v| s.img_high_fidelity = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
 
             let custom_path = { state.lock().unwrap().custom_image_path.clone() };
             if let Some(p) = custom_path {
                 let filename = Path::new(&p).file_name().and_then(|f| f.to_str()).unwrap_or("unknown");
                 
                 let mut file_info_row = Declaration::<Texture2D, ()>::new();
-                file_info_row.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+                file_info_row.layout().child_gap(12).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
                 
                 clay_scope.with(&file_info_row, |clay_scope| {
-                    // Preview Eyeball
+                    // Preview Eyeball first
                     let eye_id = clay_scope.id("eye_custom_image");
                     let is_previewing = { state.lock().unwrap().preview_pattern.as_deref() == Some("custom_image") };
                     let mut eye_color = if is_previewing { COLOR_SUCCESS } else { COLOR_TEXT_MUTED };
@@ -129,16 +120,23 @@ pub fn render_image_controls<'a, 'render>(
                             } else {
                                 g.preview_pattern = Some("custom_image".to_string());
                                 g.preview_paths.clear();
+                                g.is_processing = true;
                                 let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh, l_fid, h_fid) = (g.power, g.feed_rate, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h, g.img_low_fidelity, g.img_high_fidelity);
                                 let fit = if b_enabled { Some((bw, bh)) } else { None };
                                 let center = if b_enabled { (bx + bw/2.0, by + bh/2.0) } else { (200.0, 200.0) };
-                                if let Ok((gcode, _)) = generate_image_gcode(&p, pwr, spd * 10.0, scl, pas, fit, center, l_fid, h_fid) {
-                                    let original_v_pos = g.v_pos;
-                                    let original_is_abs = g.is_absolute;
-                                    for line in gcode.lines() { g.process_command_for_preview(line); }
-                                    g.v_pos = original_v_pos;
-                                    g.is_absolute = original_is_abs;
-                                }
+                                let state_clone = Arc::clone(state);
+                                let path_clone = p.clone();
+                                std::thread::spawn(move || {
+                                    if let Ok((gcode, _)) = generate_image_gcode(&path_clone, pwr, spd * 10.0, scl, pas, fit, center, l_fid, h_fid) {
+                                        let mut g = state_clone.lock().unwrap();
+                                        let original_v_pos = g.v_pos;
+                                        let original_is_abs = g.is_absolute;
+                                        for line in gcode.lines() { g.process_command_for_preview(line); }
+                                        g.v_pos = original_v_pos;
+                                        g.is_absolute = original_is_abs;
+                                    }
+                                    state_clone.lock().unwrap().is_processing = false;
+                                });
                             }
                         }
                     }
@@ -149,22 +147,23 @@ pub fn render_image_controls<'a, 'render>(
                     });
 
                     clay_scope.text(arena.push(filename.to_string()), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
-                });
-                
-                let mut action_row = Declaration::<Texture2D, ()>::new();
-                action_row.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
-                clay_scope.with(&action_row, |clay| {
-                    if render_burn_btn(clay, "burn_custom_image", "BURN", state, 0.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle) {
+                    
+                    if render_burn_btn(clay_scope, "burn_custom_image", "BURN", state, 0.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle) {
                         let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh, l_fid, h_fid) = {
-                            let g = state.lock().unwrap();
+                            let mut g = state.lock().unwrap();
+                            g.is_processing = true;
                             (g.power, g.feed_rate, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h, g.img_low_fidelity, g.img_high_fidelity)
                         };
                         let fit = if b_enabled { Some((bw, bh)) } else { None };
                         let center = if b_enabled { (bx + bw/2.0, by + bh/2.0) } else { (200.0, 200.0) };
-
-                        if let Ok((gcode, _)) = generate_image_gcode(&p, pwr, spd, scl, pas, fit, center, l_fid, h_fid) {
-                            state.lock().unwrap().send_command(gcode);
-                        }
+                        let state_clone = Arc::clone(state);
+                        let path_clone = p.clone();
+                        std::thread::spawn(move || {
+                            if let Ok((gcode, _)) = generate_image_gcode(&path_clone, pwr, spd, scl, pas, fit, center, l_fid, h_fid) {
+                                state_clone.lock().unwrap().send_command(gcode);
+                            }
+                            state_clone.lock().unwrap().is_processing = false;
+                        });
                     }
                 });
             }

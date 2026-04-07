@@ -187,8 +187,16 @@ pub fn generate_pattern_gcode(shape: &str, pwr_pct: &str, speed_pct: &str, scale
     Ok((final_gcode, format!("Dynamic {} (Scale: {:.2}x, Center: {:.1},{:.1}, Power: {}%, Speed: {}%)", shape, scale, cx, cy, pwr, spd)))
 }
 
-pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, passes: u32, fit: Option<(f32, f32)>, center: (f32, f32)) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
-    let img = raylib::prelude::Image::load_image(path).map_err(|e| format!("Failed to load image: {}", e))?;
+pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, passes: u32, fit: Option<(f32, f32)>, center: (f32, f32), low_fid: f32, high_fid: f32) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+    let mut img_base = image::open(path)?;
+    
+    // Resize image to a reasonable resolution for laser etching (e.g. max 500px dimension)
+    // This dramatically speeds up G-code generation and reduces file size
+    let max_dim = 500;
+    if img_base.width() > max_dim || img_base.height() > max_dim {
+        img_base = img_base.resize(max_dim, max_dim, image::imageops::FilterType::Lanczos3);
+    }
+    let img = img_base.to_rgba8();
     
     let w = img.width() as f32;
     let h = img.height() as f32;
@@ -205,26 +213,29 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
     let offset_x = center.0 - out_w / 2.0;
     let offset_y = center.1 - out_h / 2.0;
 
-    let mut gcode = String::new();
+    // Pre-allocate a large string to avoid reallocations
+    let mut gcode = String::with_capacity(img.width() as usize * img.height() as usize * 40);
     gcode.push_str("G90\n$H\n");
     
-    let pixels = img.get_image_data();
     let f_val = (speed * 10.0) as i32;
 
     for _ in 0..passes {
         for y in 0..img.height() {
-            let actual_y = offset_y + (img.height() - 1 - y) as f32 * final_scale;
+            let actual_y = offset_y + (img.height() as f32 - 1.0 - y as f32) * final_scale;
             // Move to start of line
             gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2} F3000\n", offset_x, actual_y));
             gcode.push_str(&format!("M4 F{}\n", f_val));
             
             for x in 0..img.width() {
-                let pixel_idx = (y * img.width() as i32 + x) as usize;
-                let color = pixels[pixel_idx];
-                // Luminance formula for more accurate grayscale conversion
-                let luminance = 0.2126 * color.r as f32 + 0.7152 * color.g as f32 + 0.0722 * color.b as f32;
+                let pixel = img.get_pixel(x, y);
+                // Luminance formula: 0.2126*R + 0.7152*G + 0.0722*B
+                let luminance = 0.2126 * pixel[0] as f32 + 0.7152 * pixel[1] as f32 + 0.0722 * pixel[2] as f32;
                 // Invert: darker (lower luminance) -> higher power
-                let intensity = 1.0 - (luminance / 255.0);
+                let mut intensity = 1.0 - (luminance / 255.0);
+                
+                // Apply fidelity remapping
+                intensity = ((intensity - low_fid) / (high_fid - low_fid).max(0.001)).clamp(0.0, 1.0);
+
                 let s_val = (intensity * pwr_max * 10.0) as i32;
                 
                 let actual_x = offset_x + x as f32 * final_scale;
@@ -239,7 +250,7 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
     gcode.push_str("M5\n$H\n");
 
     let filename = std::path::Path::new(path).file_name().and_then(|f| f.to_str()).unwrap_or("image");
-    Ok((gcode, format!("Image {} (Scale: {:.2}x, Center: {:.1},{:.1}, Power: {}%, Speed: {}%)", filename, final_scale, center.0, center.1, pwr_max, speed)))
+    Ok((gcode, format!("Image {} (Scale: {:.2}x, Center: {:.1},{:.1}, Power: {}%, Speed: {}%, LowFid: {:.2}, HighFid: {:.2})", filename, final_scale, center.0, center.1, pwr_max, speed, low_fid, high_fid)))
 }
 
 pub fn run_serial_cmd(cmd_str: &str, label: &str, _tx: mpsc::Sender<String>, use_virtual: bool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
