@@ -191,55 +191,107 @@ pub fn render_slider<'a, 'render, F>(
     update: F,
     mouse_pos: raylib::math::Vector2,
     mouse_down: bool,
-    scroll_y: f32,
+    _scroll_y: f32,
     arena: &StringArena,
     font_scale: f32,
 ) where F: FnOnce(&mut AppState, f32), 'a: 'render {
     let slider_id = clay.id(id);
     let container_id = clay.id(arena.push(format!("{}_container", id)));
+    let btn_minus_id = clay.id(arena.push(format!("{}_minus", id)));
+    let btn_plus_id = clay.id(arena.push(format!("{}_plus", id)));
+    
     let mut container = Declaration::<Texture2D, ()>::new();
     container.id(container_id)
         .layout().width(fixed!(180.0 * font_scale)).direction(LayoutDirection::TopToBottom).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top)).child_gap(4).end();
     
+    let mut next_val = None;
+    let raw_step = (max - min) * 0.05;
+    let step = if max - min > 10.0 { raw_step.round().max(1.0) } else { (raw_step * 10.0).round().max(0.1) / 10.0 };
+
     clay.with(&container, |clay| {
         let mut header = Declaration::<Texture2D, ()>::new();
         header.layout().width(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
         clay.with(&header, |clay| {
             clay.text(label, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_LABEL).end());
-            clay.text(arena.push(format!("{:.1}", value)), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(color).end());
+            
+            // Intelligent rounding
+            let val_str = if value.fract() == 0.0 { format!("{}", value as i32) } else { format!("{:.1}", value) };
+            clay.text(arena.push(val_str), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(color).end());
         });
 
-        let mut track = Declaration::<Texture2D, ()>::new();
-        track.id(slider_id).layout().width(grow!()).height(fixed!(6.0 * font_scale)).end()
-            .background_color(COLOR_BG_DARK)
-            .corner_radius().all(3.0 * font_scale).end();
+        let mut slider_row = Declaration::<Texture2D, ()>::new();
+        slider_row.layout().width(grow!()).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).child_gap(8).end();
         
-        if clay.pointer_over(slider_id) || clay.pointer_over(container_id) {
-            if mouse_down {
+        clay.with(&slider_row, |clay| {
+            // Minus Button
+            let mut minus_box = Declaration::<Texture2D, ()>::new();
+            let mut minus_bg = COLOR_BG_DARK;
+            if clay.pointer_over(btn_minus_id) {
+                minus_bg = COLOR_PRIMARY_HOVER;
+                if unsafe { raylib::ffi::IsMouseButtonPressed(raylib::ffi::MouseButton::MOUSE_BUTTON_LEFT as i32) } {
+                    let mut nv = value - step;
+                    if max - min > 10.0 { nv = nv.round(); } else { nv = (nv * 10.0).round() / 10.0; }
+                    next_val = Some(nv.clamp(min, max));
+                }
+            }
+            minus_box.id(btn_minus_id).layout().width(fixed!(16.0 * font_scale)).height(fixed!(16.0 * font_scale)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                .background_color(minus_bg).corner_radius().all(4.0 * font_scale).end();
+            clay.with(&minus_box, |clay| {
+                clay.text("-", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
+            });
+
+            // Track
+            let mut track = Declaration::<Texture2D, ()>::new();
+            track.id(slider_id).layout().width(grow!()).height(fixed!(6.0 * font_scale)).end()
+                .background_color(COLOR_BG_DARK)
+                .corner_radius().all(3.0 * font_scale).end();
+            
+            if clay.pointer_over(slider_id) && mouse_down {
                 let data = unsafe { clay_layout::bindings::Clay_GetElementData(slider_id.id) };
                 if data.found {
                     let rect = data.boundingBox;
                     let mouse_x = mouse_pos.x;
                     let percent = ((mouse_x - rect.x) / rect.width).clamp(0.0, 1.0);
-                    let next = min + percent * (max - min);
-                    let mut guard = state.lock().unwrap();
-                    update(&mut guard, next);
+                    let raw_val = min + percent * (max - min);
+                    // Intelligent rounding: round to integer if range is large, else 1 decimal
+                    if max - min > 10.0 {
+                        next_val = Some(raw_val.round());
+                    } else {
+                        next_val = Some((raw_val * 10.0).round() / 10.0);
+                    }
                 }
-            } else if scroll_y != 0.0 {
-                let step = (max - min) * 0.05;
-                let next = (value + scroll_y * step).clamp(min, max);
-                let mut guard = state.lock().unwrap();
-                update(&mut guard, next);
             }
-        }
 
-        clay.with(&track, |clay| {
-            let mut bar = Declaration::<Texture2D, ()>::new();
-            let percent = (value - min) / (max - min);
-            bar.layout().width(fixed!(percent * 180.0 * font_scale)).height(grow!()).end()
-                .background_color(color)
-                .corner_radius().all(3.0 * font_scale).end();
-            clay.with(&bar, |_| {});
+            clay.with(&track, |clay| {
+                let mut bar = Declaration::<Texture2D, ()>::new();
+                let percent = (value - min) / (max - min);
+                bar.layout().width(fixed!(percent * 130.0 * font_scale)).height(grow!()).end()
+                    .background_color(color)
+                    .corner_radius().all(3.0 * font_scale).end();
+                clay.with(&bar, |_| {});
+            });
+
+            // Plus Button
+            let mut plus_box = Declaration::<Texture2D, ()>::new();
+            let mut plus_bg = COLOR_BG_DARK;
+            if clay.pointer_over(btn_plus_id) {
+                plus_bg = COLOR_PRIMARY_HOVER;
+                if unsafe { raylib::ffi::IsMouseButtonPressed(raylib::ffi::MouseButton::MOUSE_BUTTON_LEFT as i32) } {
+                    let mut nv = value + step;
+                    if max - min > 10.0 { nv = nv.round(); } else { nv = (nv * 10.0).round() / 10.0; }
+                    next_val = Some(nv.clamp(min, max));
+                }
+            }
+            plus_box.id(btn_plus_id).layout().width(fixed!(16.0 * font_scale)).height(fixed!(16.0 * font_scale)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end()
+                .background_color(plus_bg).corner_radius().all(4.0 * font_scale).end();
+            clay.with(&plus_box, |clay| {
+                clay.text("+", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
+            });
         });
     });
+
+    if let Some(nv) = next_val {
+        let mut guard = state.lock().unwrap();
+        update(&mut guard, nv);
+    }
 }
