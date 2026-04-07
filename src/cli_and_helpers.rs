@@ -47,7 +47,7 @@ fn parse_dimension(s: &str) -> Result<f32, Box<dyn std::error::Error + Send + Sy
     }
 }
 
-pub fn run_cli_mode(target_label: &str, sections: &[Section]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub fn run_cli_mode(target_label: &str, _sections: &[Section]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (tx, _rx) = mpsc::channel::<String>();
     let _guard = SafetyGuard { tx: tx.clone() };
     
@@ -86,7 +86,7 @@ fn parse_pair(s: &str) -> Result<(f32, f32), Box<dyn std::error::Error + Send + 
     Ok((parse_dimension(parts[0])?, parse_dimension(parts[1])?))
 }
 
-pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, passes: &str, fit: Option<String>, center: &str) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, passes: &str, _fit: Option<String>, center: &str) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
     let pwr_val = pwr.trim_end_matches('%').parse::<f32>()?;
     let spd_val = spd.trim_end_matches('%').parse::<f32>()?;
     let scl_val = scale.trim_end_matches('x').parse::<f32>()?;
@@ -303,11 +303,11 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
     };
 
     let font = font.ok_or("Could not load font")?;
-    let font_size = 64.0; // Base size for rasterization
+    let font_size = 64.0; 
     let units_per_em = font.metrics().units_per_em as f32;
-    let font_scale = font_size / units_per_em;
+    let design_to_px = font_size / units_per_em;
 
-    // First pass: measure text
+    // First pass: measure text in DESIGN UNITS (unscaled)
     let mut current_x = 0.0;
     let mut min_x = f32::MAX;
     let mut max_x = f32::MIN;
@@ -322,13 +322,13 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
 
     for c in text.chars() {
         if let Some(glyph_id) = font.glyph_for_char(c) {
-            let advance = font.advance(glyph_id).unwrap_or(Vector2F::new(0.0, 0.0)).x() * font_scale;
+            let advance = font.advance(glyph_id).unwrap_or(Vector2F::new(0.0, 0.0)).x();
             let bounds = font.typographic_bounds(glyph_id).unwrap_or(RectF::new(Vector2F::new(0.0, 0.0), Vector2F::new(0.0, 0.0)));
             
-            let gx = current_x + bounds.origin().x() * font_scale;
-            let gy = bounds.origin().y() * font_scale;
-            let gw = bounds.size().x() * font_scale;
-            let gh = bounds.size().y() * font_scale;
+            let gx = current_x + bounds.origin().x();
+            let gy = bounds.origin().y();
+            let gw = bounds.size().x();
+            let gh = bounds.size().y();
 
             min_x = min_x.min(gx);
             max_x = max_x.max(gx + gw);
@@ -339,7 +339,8 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
                 glyph_id,
                 offset: Vector2F::new(current_x, 0.0),
             });
-            current_x += advance + letter_spacing;
+            // letter_spacing is user units, scale it back to design units
+            current_x += advance + (letter_spacing / (design_to_px * scale)).max(0.0);
         }
     }
 
@@ -347,14 +348,15 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
         return Ok((String::new(), "Empty text".to_string()));
     }
 
-    if outline {
-        let mut final_scale = scale;
-        let w = max_x - min_x;
-        let h = max_y - min_y;
-        if let Some((fw, fh)) = fit {
-            final_scale = (fw / w).min(fh / h);
-        }
+    let mut final_user_scale = scale;
+    if let Some((fw, fh)) = fit {
+        let sw = fw / ((max_x - min_x) * design_to_px);
+        let sh = fh / ((max_y - min_y) * design_to_px);
+        final_user_scale = sw.min(sh);
+    }
+    let total_scale = design_to_px * final_user_scale;
 
+    if outline {
         let mut gcode = String::new();
         gcode.push_str("G90\n$H\n");
 
@@ -367,8 +369,8 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
             for glyph in &glyphs {
                 let mut builder = VectorGCodeBuilder {
                     gcode: String::new(),
-                    offset: glyph.offset - box_center + (center_vec / final_scale),
-                    scale: final_scale,
+                    offset: glyph.offset - box_center + (center_vec / total_scale),
+                    scale: total_scale,
                     current_pos: Vector2F::new(0.0, 0.0),
                     start_pos: Vector2F::new(0.0, 0.0),
                     power: pwr_max,
@@ -383,14 +385,13 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
         return Ok((gcode, format!("Text Outline \"{}\"", text)));
     }
 
-    let width = (max_x - min_x).max(1.0).ceil() as u32;
-    let height = (max_y - min_y).max(1.0).ceil() as u32;
+    // Raster path
+    let width = ((max_x - min_x) * design_to_px).max(1.0).ceil() as u32;
+    let height = ((max_y - min_y) * design_to_px).max(1.0).ceil() as u32;
     let mut canvas = Canvas::new(Vector2I::new(width as i32, height as i32), Format::A8);
 
     for glyph in glyphs {
-        // In font-kit, the origin passed to rasterize_glyph is the baseline.
-        // We use max_y (the top bound relative to baseline) to align to the top of the canvas.
-        let origin = Vector2F::new(glyph.offset.x() - min_x, max_y);
+        let origin = Vector2F::new((glyph.offset.x() - min_x) * design_to_px, max_y * design_to_px);
         font.rasterize_glyph(
             &mut canvas,
             glyph.glyph_id,
@@ -422,7 +423,7 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
     let temp_path = "temp_text_render.png";
     img.export_image(temp_path);
 
-    let result = generate_image_gcode(temp_path, pwr_max, speed, scale, passes, fit, center, 0.0, 1.0, is_preview);
+    let result = generate_image_gcode(temp_path, pwr_max, speed, final_user_scale, passes, None, center, 0.0, 1.0, is_preview);
     let _ = std::fs::remove_file(temp_path);
     result
 }
