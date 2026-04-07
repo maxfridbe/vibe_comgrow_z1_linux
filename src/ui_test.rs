@@ -161,32 +161,75 @@ pub fn render_test_controls<'a, 'render>(
                         row.layout().width(grow!()).child_gap(12).end();
                         clay.with(&row, |clay| {
                             for cmd in row_chunk {
-                                if render_burn_btn(clay, arena.push(format!("test_{}", cmd.label)), cmd.label, state, 0.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle) {
-                                    let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = {
-                                        let g = state.lock().unwrap();
-                                        (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
-                                    };
-                                    
-                                    let fit = if b_enabled { Some(format!("{}x{}", bw, bh)) } else { None };
-                                    let center = if b_enabled { format!("{},{}", bx + bw/2.0, by + bh/2.0) } else { "200,200".to_string() };
+                                let mut btn_row = Declaration::<Texture2D, ()>::new();
+                                btn_row.layout().child_gap(4).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+                                clay.with(&btn_row, |clay| {
+                                    if render_burn_btn(clay, arena.push(format!("test_{}", cmd.label)), cmd.label, state, 0.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle) {
+                                        let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = {
+                                            let g = state.lock().unwrap();
+                                            (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
+                                        };
+                                        
+                                        let fit = if b_enabled { Some(format!("{}x{}", bw, bh)) } else { None };
+                                        let center = if b_enabled { format!("{},{}", bx + bw/2.0, by + bh/2.0) } else { "200,200".to_string() };
 
-                                    match generate_pattern_gcode(
-                                        cmd.label, 
-                                        &format!("{}%", pwr), 
-                                        &format!("{}%", spd), 
-                                        &format!("{}x", scl), 
-                                        &pas.to_string(),
-                                        fit,
-                                        &center 
-                                    ) {
-                                        Ok((gcode, _)) => {
-                                            state.lock().unwrap().send_command(gcode);
-                                        }
-                                        Err(e) => {
-                                            println!("Error generating G-code: {}", e);
+                                        match generate_pattern_gcode(
+                                            cmd.label, 
+                                            &format!("{}%", pwr), 
+                                            &format!("{}%", spd), 
+                                            &format!("{}x", scl), 
+                                            &pas.to_string(),
+                                            fit,
+                                            &center 
+                                        ) {
+                                            Ok((gcode, _)) => {
+                                                state.lock().unwrap().send_command(gcode);
+                                            }
+                                            Err(e) => {
+                                                println!("Error generating G-code: {}", e);
+                                            }
                                         }
                                     }
-                                }
+
+                                    // Preview Eyeball
+                                    let eye_id = clay.id(arena.push(format!("eye_{}", cmd.label)));
+                                    let is_previewing = { state.lock().unwrap().preview_pattern.as_deref() == Some(cmd.label) };
+                                    let mut eye_color = if is_previewing { COLOR_SUCCESS } else { COLOR_TEXT_MUTED };
+                                    if clay.pointer_over(eye_id) {
+                                        eye_color = COLOR_TEXT_WHITE;
+                                        if mouse_pressed {
+                                            let mut g = state.lock().unwrap();
+                                            if is_previewing {
+                                                g.preview_pattern = None;
+                                                g.preview_paths.clear();
+                                            } else {
+                                                g.preview_pattern = Some(cmd.label.to_string());
+                                                g.preview_paths.clear();
+                                                let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h);
+                                                let fit = if b_enabled { Some(format!("{}x{}", bw, bh)) } else { None };
+                                                let center = if b_enabled { format!("{},{}", bx + bw/2.0, by + bh/2.0) } else { "200,200".to_string() };
+                                                
+                                                // 10x speed for preview
+                                                let preview_spd = (spd * 10.0).min(1000.0);
+
+                                                if let Ok((gcode, _)) = generate_pattern_gcode(cmd.label, &format!("{}%", pwr), &format!("{}%", preview_spd), &format!("{}x", scl), &pas.to_string(), fit, &center) {
+                                                    let original_v_pos = g.v_pos;
+                                                    let original_is_abs = g.is_absolute;
+                                                    for line in gcode.lines() {
+                                                        g.process_command_for_preview(line);
+                                                    }
+                                                    g.v_pos = original_v_pos;
+                                                    g.is_absolute = original_is_abs;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    let mut eye_btn = Declaration::<Texture2D, ()>::new();
+                                    eye_btn.id(eye_id).layout().padding(Padding::all(4)).end();
+                                    clay.with(&eye_btn, |clay| {
+                                        clay.text(ICON_EYE, clay_layout::text::TextConfig::new().font_size((20.0 * font_scale) as u16).color(eye_color).end());
+                                    });
+                                });
                             }
                         });
                     }

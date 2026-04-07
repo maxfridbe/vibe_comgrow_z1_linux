@@ -22,4 +22,5 @@ pub const ICON_LAYERS: &str = "\u{f0c9}";    // fa-bars (or fa-layers if availab
 pub const ICON_COPY: &str = "\u{f0c5}";      // fa-copy
 pub const ICON_SWEEP: &str = "\u{f518}";     // fa-broom
 pub const ICON_FILE: &str = "\u{f15b}";      // fa-file
+pub const ICON_EYE: &str = "\u{f06e}";       // fa-eye
 pub const ICON_SERIAL: &str = "\u{f120}";    // fa-terminal (using same as terminal for now)

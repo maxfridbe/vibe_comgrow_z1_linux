@@ -51,6 +51,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         machine_pos: Vector2::new(0.0, 0.0),
         machine_state: "Idle".to_string(),
         paths: Vec::new(),
+        preview_paths: Vec::new(),
+        preview_pattern: None,
         last_command: String::new(),
         copied_at: None,
         serial_logs: std::collections::VecDeque::new(),
@@ -82,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ICON_REFRESH, ICON_SETTINGS, ICON_LAYERS, ICON_GAUGE, ICON_LASER,
         ICON_ARROW_UP, ICON_ARROW_DOWN, ICON_ARROW_LEFT, ICON_ARROW_RIGHT,
         ICON_CROSSHAIR, ICON_FLAME, ICON_USB, ICON_SHIELD, ICON_CPU, ICON_TRASH,
-        ICON_COPY, ICON_SWEEP, ICON_SERIAL, ICON_CHECK, ICON_FILE,
+        ICON_COPY, ICON_SWEEP, ICON_SERIAL, ICON_CHECK, ICON_FILE, ICON_EYE,
     ];
     for &icon in icons_list {
         for c in icon.chars() {
@@ -180,6 +182,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     ];
 
     while !rl.window_should_close() {
+        if rl.is_key_pressed(KeyboardKey::KEY_F11) {
+            let curr = rl.is_window_fullscreen();
+            if curr {
+                rl.toggle_fullscreen();
+                rl.set_window_size(1280, 800);
+            } else {
+                let m = raylib::prelude::get_current_monitor();
+                rl.set_window_size(raylib::prelude::get_monitor_width(m), raylib::prelude::get_monitor_height(m));
+                rl.toggle_fullscreen();
+            }
+        }
         arena.clear();
 
         if rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL) {
@@ -479,6 +492,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let start = raylib::math::Vector2::new(draw_area.x + (p.x1 / 400.0) * side, draw_area.y + draw_area.height - (p.y1 / 400.0) * side);
                 let end = raylib::math::Vector2::new(draw_area.x + (p.x2 / 400.0) * side, draw_area.y + draw_area.height - (p.y2 / 400.0) * side);
                 d.draw_line_ex(start, end, 2.0, raylib::color::Color::new(255, 71, 87, (p.s / 1000.0 * 255.0) as u8));
+            }
+            for p in &guard.preview_paths {
+                let start = raylib::math::Vector2::new(draw_area.x + (p.x1 / 400.0) * side, draw_area.y + draw_area.height - (p.y1 / 400.0) * side);
+                let end = raylib::math::Vector2::new(draw_area.x + (p.x2 / 400.0) * side, draw_area.y + draw_area.height - (p.y2 / 400.0) * side);
+                d.draw_line_ex(start, end, 2.0, raylib::color::Color::GREEN);
             }
             let head_pos = raylib::math::Vector2::new(draw_area.x + (guard.machine_pos.x / 400.0) * side, draw_area.y + draw_area.height - (guard.machine_pos.y / 400.0) * side);
             d.draw_circle_v(head_pos, 5.0 * font_scale, raylib::color::Color::new(59, 130, 246, 100));
