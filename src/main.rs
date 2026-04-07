@@ -53,6 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         paths: Vec::new(),
         preview_paths: Vec::new(),
         preview_pattern: None,
+        custom_svg_path: None,
         last_command: String::new(),
         copied_at: None,
         serial_logs: std::collections::VecDeque::new(),

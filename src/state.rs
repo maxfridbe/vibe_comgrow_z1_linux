@@ -56,6 +56,7 @@ pub struct AppState {
     pub paths: Vec<PathSegment>,
     pub preview_paths: Vec<PathSegment>,
     pub preview_pattern: Option<String>,
+    pub custom_svg_path: Option<String>,
     pub last_command: String,
     pub copied_at: Option<std::time::Instant>,
     pub serial_logs: VecDeque<LogEntry>,

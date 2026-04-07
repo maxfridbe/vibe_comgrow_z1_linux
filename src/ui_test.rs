@@ -2,6 +2,7 @@ use clay_layout::layout::{Padding, LayoutAlignmentX, LayoutAlignmentY, Alignment
 use clay_layout::{Declaration, grow};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
+use std::path::Path;
 use arboard::Clipboard;
 use crate::state::{AppState, StringArena};
 use crate::ui::{Section, render_burn_btn, render_slider, render_checkbox};
@@ -69,49 +70,93 @@ pub fn render_test_controls<'a, 'render>(
         clay_scope.with(&svg_box, |clay_scope| {
             clay_scope.text("SVG LOADING", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_MUTED).end());
             
-            let load_id = clay_scope.id("load_svg_btn");
-            let mut load_color = if !is_idle { COLOR_BG_DISABLED } else { COLOR_PRIMARY_HOVER };
-            if is_idle && clay_scope.pointer_over(load_id) {
-                load_color = COLOR_PRIMARY;
-                if mouse_pressed {
-                    if let Some(path_buf) = FileDialog::new()
-                        .add_filter("Scalable Vector Graphics", &["svg"])
-                        .pick_file() 
-                    {
-                        let path_str = path_buf.to_string_lossy().to_string();
-                        let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = {
-                            let g = state.lock().unwrap();
-                            (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
-                        };
-                        
-                        let fit = if b_enabled { Some(format!("{}x{}", bw, bh)) } else { None };
-                        let center = if b_enabled { format!("{},{}", bx + bw/2.0, by + bh/2.0) } else { "200,200".to_string() };
-
-                        match generate_pattern_gcode(
-                            &path_str, 
-                            &format!("{}%", pwr), 
-                            &format!("{}%", spd), 
-                            &format!("{}x", scl), 
-                            &pas.to_string(),
-                            fit,
-                            &center
-                        ) {
-                            Ok((gcode, _)) => {
-                                state.lock().unwrap().send_command(gcode);
-                            }
-                            Err(e) => { println!("Error loading SVG: {}", e); }
+            let mut pick_row = Declaration::<Texture2D, ()>::new();
+            pick_row.layout().direction(LayoutDirection::LeftToRight).child_gap(12).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+            
+            clay_scope.with(&pick_row, |clay_scope| {
+                let load_id = clay_scope.id("pick_svg_btn");
+                let mut load_color = if !is_idle { COLOR_BG_DISABLED } else { COLOR_PRIMARY_HOVER };
+                if is_idle && clay_scope.pointer_over(load_id) {
+                    load_color = COLOR_PRIMARY;
+                    if mouse_pressed {
+                        if let Some(path_buf) = FileDialog::new()
+                            .add_filter("Scalable Vector Graphics", &["svg"])
+                            .pick_file() 
+                        {
+                            state.lock().unwrap().custom_svg_path = Some(path_buf.to_string_lossy().to_string());
                         }
                     }
                 }
-            }
-            
-            let mut load_btn = Declaration::<Texture2D, ()>::new();
-            load_btn.id(load_id).layout().padding(Padding::all(10)).direction(LayoutDirection::LeftToRight).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(load_color).corner_radius().all(8.0 * font_scale).end();
-            
-            let load_text_color = if !is_idle { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
-            clay_scope.with(&load_btn, |clay| {
-                clay.text(ICON_FILE, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
-                clay.text("LOAD CUSTOM SVG", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
+                
+                let mut load_btn = Declaration::<Texture2D, ()>::new();
+                load_btn.id(load_id).layout().padding(Padding::all(10)).direction(LayoutDirection::LeftToRight).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(load_color).corner_radius().all(8.0 * font_scale).end();
+                
+                let load_text_color = if !is_idle { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
+                clay_scope.with(&load_btn, |clay| {
+                    clay.text(ICON_FILE, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
+                    clay.text("Pick Custom SVG", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
+                });
+
+                let custom_path = { state.lock().unwrap().custom_svg_path.clone() };
+                if let Some(p) = custom_path {
+                    let filename = Path::new(&p).file_name().and_then(|f| f.to_str()).unwrap_or("unknown");
+                    clay_scope.text(arena.push(filename.to_string()), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
+                    
+                    // Burn and Eye buttons
+                    let mut action_row = Declaration::<Texture2D, ()>::new();
+                    action_row.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+                    clay_scope.with(&action_row, |clay| {
+                        if render_burn_btn(clay, "burn_custom_svg", "BURN", state, 0.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle) {
+                            let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = {
+                                let g = state.lock().unwrap();
+                                (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
+                            };
+                            let fit = if b_enabled { Some(format!("{}x{}", bw, bh)) } else { None };
+                            let center = if b_enabled { format!("{},{}", bx + bw/2.0, by + bh/2.0) } else { "200,200".to_string() };
+
+                            if let Ok((gcode, _)) = generate_pattern_gcode(&p, &format!("{}%", pwr), &format!("{}%", spd), &format!("{}x", scl), &pas.to_string(), fit, &center) {
+                                state.lock().unwrap().send_command(gcode);
+                            }
+                        }
+
+                        // Preview Eyeball
+                        let eye_id = clay.id("eye_custom_svg");
+                        let is_previewing = { state.lock().unwrap().preview_pattern.as_deref() == Some("custom_svg") };
+                        let mut eye_color = if is_previewing { COLOR_SUCCESS } else { COLOR_TEXT_MUTED };
+                        if clay.pointer_over(eye_id) {
+                            eye_color = COLOR_TEXT_WHITE;
+                            if mouse_pressed {
+                                let mut g = state.lock().unwrap();
+                                if is_previewing {
+                                    g.preview_pattern = None;
+                                    g.preview_paths.clear();
+                                } else {
+                                    g.preview_pattern = Some("custom_svg".to_string());
+                                    g.preview_paths.clear();
+                                    let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h);
+                                    let fit = if b_enabled { Some(format!("{}x{}", bw, bh)) } else { None };
+                                    let center = if b_enabled { format!("{},{}", bx + bw/2.0, by + bh/2.0) } else { "200,200".to_string() };
+                                    let preview_spd = (spd * 10.0).min(1000.0);
+
+                                    if let Ok((gcode, _)) = generate_pattern_gcode(&p, &format!("{}%", pwr), &format!("{}%", preview_spd), &format!("{}x", scl), &pas.to_string(), fit, &center) {
+                                        let original_v_pos = g.v_pos;
+                                        let original_is_abs = g.is_absolute;
+                                        for line in gcode.lines() {
+                                            g.process_command_for_preview(line);
+                                        }
+                                        g.v_pos = original_v_pos;
+                                        g.is_absolute = original_is_abs;
+                                    }
+                                }
+                            }
+                        }
+                        let mut eye_btn = Declaration::<Texture2D, ()>::new();
+                        eye_btn.id(eye_id).layout().padding(Padding::all(4)).end();
+                        clay.with(&eye_btn, |clay| {
+                            clay.text(ICON_EYE, clay_layout::text::TextConfig::new().font_size((20.0 * font_scale) as u16).color(eye_color).end());
+                        });
+                    });
+                }
             });
         });
 
