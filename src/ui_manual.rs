@@ -4,7 +4,7 @@ use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
 use arboard::Clipboard;
 use crate::state::{AppState, StringArena};
-use crate::ui::{Section, render_jog_btn, render_slider};
+use crate::ui::{Section, render_jog_btn, render_slider, render_burn_btn, render_outline_btn};
 use crate::icons::*;
 use crate::styles::*;
 
@@ -101,30 +101,51 @@ pub fn render_manual_right_col<'a, 'render>(
         clay_scope.with(&burn_box, |clay_scope| {
             clay_scope.text("BURN JOG", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(COLOR_TEXT_LABEL).end());
             
-            let mut r1 = Declaration::<Texture2D, ()>::new(); r1.layout().child_gap(8).end();
+            let mut r1 = Declaration::<Texture2D, ()>::new(); r1.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
             clay_scope.with(&r1, |clay_scope| {
-                crate::ui::render_burn_btn(clay_scope, "b_ul", "NW", state, -1.0, 1.0, mouse_pressed, clipboard, font_scale, !is_idle);
-                crate::ui::render_burn_btn(clay_scope, "b_up", "NORTH", state, 0.0, 1.0, mouse_pressed, clipboard, font_scale, !is_idle);
-                crate::ui::render_burn_btn(clay_scope, "b_ur", "NE", state, 1.0, 1.0, mouse_pressed, clipboard, font_scale, !is_idle);
+                let mut btn_box = Declaration::<Texture2D, ()>::new(); btn_box.layout().direction(LayoutDirection::LeftToRight).child_gap(2).end();
+                clay_scope.with(&btn_box, |clay_scope| {
+                    render_burn_btn(clay_scope, "b_ul", "NW", state, -1.0, 1.0, mouse_pressed, clipboard, font_scale, !is_idle);
+                    render_outline_btn(clay_scope, "o_ul", state, || {
+                        let g = state.lock().unwrap();
+                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", -1.0 * g.distance, 1.0 * g.distance, g.feed_rate, g.power))
+                    }, mouse_pressed, font_scale, !is_idle);
+                });
+
+                let mut btn_box = Declaration::<Texture2D, ()>::new(); btn_box.layout().direction(LayoutDirection::LeftToRight).child_gap(2).end();
+                clay_scope.with(&btn_box, |clay_scope| {
+                    render_burn_btn(clay_scope, "b_up", "NORTH", state, 0.0, 1.0, mouse_pressed, clipboard, font_scale, !is_idle);
+                    render_outline_btn(clay_scope, "o_up", state, || {
+                        let g = state.lock().unwrap();
+                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", 0.0, 1.0 * g.distance, g.feed_rate, g.power))
+                    }, mouse_pressed, font_scale, !is_idle);
+                });
+
+                let mut btn_box = Declaration::<Texture2D, ()>::new(); btn_box.layout().direction(LayoutDirection::LeftToRight).child_gap(2).end();
+                clay_scope.with(&btn_box, |clay_scope| {
+                    render_burn_btn(clay_scope, "b_ur", "NE", state, 1.0, 1.0, mouse_pressed, clipboard, font_scale, !is_idle);
+                    render_outline_btn(clay_scope, "o_ur", state, || {
+                        let g = state.lock().unwrap();
+                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", 1.0 * g.distance, 1.0 * g.distance, g.feed_rate, g.power))
+                    }, mouse_pressed, font_scale, !is_idle);
+                });
             });
-            let mut r2 = Declaration::<Texture2D, ()>::new(); r2.layout().child_gap(8).end();
+            let mut r2 = Declaration::<Texture2D, ()>::new(); r2.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
             clay_scope.with(&r2, |clay_scope| {
-                crate::ui::render_burn_btn(clay_scope, "b_l", "WEST", state, -1.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle);
+                let mut btn_box = Declaration::<Texture2D, ()>::new(); btn_box.layout().direction(LayoutDirection::LeftToRight).child_gap(2).end();
+                clay_scope.with(&btn_box, |clay_scope| {
+                    render_burn_btn(clay_scope, "b_l", "WEST", state, -1.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle);
+                    render_outline_btn(clay_scope, "o_l", state, || {
+                        let g = state.lock().unwrap();
+                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", -1.0 * g.distance, 0.0, g.feed_rate, g.power))
+                    }, mouse_pressed, font_scale, !is_idle);
+                });
                 
                 let mut fire_box = Declaration::<Texture2D, ()>::new();
                 fire_box.layout().child_gap(4).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
                 clay_scope.with(&fire_box, |clay_scope| {
                     let btn_id = clay_scope.id("fire_btn");
                     let mut btn_color = if !is_idle { COLOR_BG_DISABLED } else { COLOR_DANGER };
-                    if is_idle && clay_scope.pointer_over(btn_id) {
-                        btn_color = COLOR_DANGER_BRIGHT;
-                        if mouse_pressed {
-                            let mut guard = state.lock().unwrap();
-                            let s = guard.power;
-                            guard.send_command(format!("M3 S{}", s));
-                        }
-                    }
-                    let mut fire_btn = Declaration::<Texture2D, ()>::new();
                     let mut fire_text_color = if !is_idle { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
                     if is_idle && clay_scope.pointer_over(btn_id) {
                         btn_color = COLOR_DANGER_BRIGHT;
@@ -135,6 +156,7 @@ pub fn render_manual_right_col<'a, 'render>(
                             guard.send_command(format!("M3 S{}", s));
                         }
                     }
+                    let mut fire_btn = Declaration::<Texture2D, ()>::new();
                     fire_btn.id(btn_id).layout().width(fixed!(50.0 * font_scale)).padding(Padding::all(4)).direction(LayoutDirection::LeftToRight).child_gap(4).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
                     
                     clay_scope.with(&fire_btn, |clay| { 
@@ -158,13 +180,43 @@ pub fn render_manual_right_col<'a, 'render>(
                     });
                 });
 
-                crate::ui::render_burn_btn(clay_scope, "b_r", "EAST", state, 1.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle);
+                let mut btn_box = Declaration::<Texture2D, ()>::new(); btn_box.layout().direction(LayoutDirection::LeftToRight).child_gap(2).end();
+                clay_scope.with(&btn_box, |clay_scope| {
+                    render_burn_btn(clay_scope, "b_r", "EAST", state, 1.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle);
+                    render_outline_btn(clay_scope, "o_r", state, || {
+                        let g = state.lock().unwrap();
+                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", 1.0 * g.distance, 0.0, g.feed_rate, g.power))
+                    }, mouse_pressed, font_scale, !is_idle);
+                });
             });
-            let mut r3 = Declaration::<Texture2D, ()>::new(); r3.layout().child_gap(8).end();
+            let mut r3 = Declaration::<Texture2D, ()>::new(); r3.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end();
             clay_scope.with(&r3, |clay_scope| {
-                crate::ui::render_burn_btn(clay_scope, "b_dl", "SW", state, -1.0, -1.0, mouse_pressed, clipboard, font_scale, !is_idle);
-                crate::ui::render_burn_btn(clay_scope, "b_dn", "SOUTH", state, 0.0, -1.0, mouse_pressed, clipboard, font_scale, !is_idle);
-                crate::ui::render_burn_btn(clay_scope, "b_dr", "SE", state, 1.0, -1.0, mouse_pressed, clipboard, font_scale, !is_idle);
+                let mut btn_box = Declaration::<Texture2D, ()>::new(); btn_box.layout().direction(LayoutDirection::LeftToRight).child_gap(2).end();
+                clay_scope.with(&btn_box, |clay_scope| {
+                    render_burn_btn(clay_scope, "b_dl", "SW", state, -1.0, -1.0, mouse_pressed, clipboard, font_scale, !is_idle);
+                    render_outline_btn(clay_scope, "o_dl", state, || {
+                        let g = state.lock().unwrap();
+                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", -1.0 * g.distance, -1.0 * g.distance, g.feed_rate, g.power))
+                    }, mouse_pressed, font_scale, !is_idle);
+                });
+
+                let mut btn_box = Declaration::<Texture2D, ()>::new(); btn_box.layout().direction(LayoutDirection::LeftToRight).child_gap(2).end();
+                clay_scope.with(&btn_box, |clay_scope| {
+                    render_burn_btn(clay_scope, "b_dn", "SOUTH", state, 0.0, -1.0, mouse_pressed, clipboard, font_scale, !is_idle);
+                    render_outline_btn(clay_scope, "o_dn", state, || {
+                        let g = state.lock().unwrap();
+                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", 0.0, -1.0 * g.distance, g.feed_rate, g.power))
+                    }, mouse_pressed, font_scale, !is_idle);
+                });
+
+                let mut btn_box = Declaration::<Texture2D, ()>::new(); btn_box.layout().direction(LayoutDirection::LeftToRight).child_gap(2).end();
+                clay_scope.with(&btn_box, |clay_scope| {
+                    render_burn_btn(clay_scope, "b_dr", "SE", state, 1.0, -1.0, mouse_pressed, clipboard, font_scale, !is_idle);
+                    render_outline_btn(clay_scope, "o_dr", state, || {
+                        let g = state.lock().unwrap();
+                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", 1.0 * g.distance, -1.0 * g.distance, g.feed_rate, g.power))
+                    }, mouse_pressed, font_scale, !is_idle);
+                });
             });
 
             // Descriptive Laser Mode Buttons

@@ -25,3 +25,4 @@ pub const ICON_FILE: &str = "\u{f15b}";      // fa-file
 pub const ICON_IMAGE: &str = "\u{f03e}";     // fa-image
 pub const ICON_EYE: &str = "\u{f06e}";       // fa-eye
 pub const ICON_SERIAL: &str = "\u{f120}";    // fa-terminal (using same as terminal for now)
+pub const ICON_SQUARE: &str = "\u{f096}";    // fa-square-o

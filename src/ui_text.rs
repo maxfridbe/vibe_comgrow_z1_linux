@@ -5,7 +5,7 @@ use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
 use arboard::Clipboard;
 use crate::state::{AppState, StringArena};
-use crate::ui::{Section, render_burn_btn, render_slider, render_checkbox};
+use crate::ui::{Section, render_burn_btn, render_outline_btn, render_slider, render_checkbox};
 use crate::cli_and_helpers::generate_text_gcode;
 use crate::icons::*;
 use crate::styles::*;
@@ -26,6 +26,10 @@ pub fn render_text_controls<'a, 'render>(
     left_col.layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
     
     let is_idle = { state.lock().unwrap().machine_state == "Idle" };
+    let (enabled, bx, by, bw, bh) = {
+        let g = state.lock().unwrap();
+        (g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
+    };
 
     clay.with(&left_col, |clay_scope| {
         // 1. Boundary Settings
@@ -37,11 +41,6 @@ pub fn render_text_controls<'a, 'render>(
         clay_scope.with(&boundary_box, |clay_scope| {
             clay_scope.text("BOUNDARY SETTINGS", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_MUTED).end());
             
-            let (enabled, bx, by, bw, bh) = {
-                let g = state.lock().unwrap();
-                (g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
-            };
-
             render_checkbox(clay_scope, "txt_boundary_enabled", "Enable Boundary Clipping", enabled, state, |s, v| s.boundary_enabled = v, mouse_pressed, font_scale);
             
             let mut grid = Declaration::<Texture2D, ()>::new();
@@ -269,6 +268,12 @@ pub fn render_text_controls<'a, 'render>(
                         state_clone.lock().unwrap().is_processing = false;
                     });
                 }
+                render_outline_btn(clay_scope, "outline_text", state, || {
+                    let g = state.lock().unwrap();
+                    let fit = if g.boundary_enabled { Some((g.boundary_w, g.boundary_h)) } else { None };
+                    let center = if g.boundary_enabled { (g.boundary_x + g.boundary_w/2.0, g.boundary_y + g.boundary_h/2.0) } else { (200.0, 200.0) };
+                    generate_text_gcode(&g.text_content, g.power, g.feed_rate, g.scale, g.passes, fit, center, g.text_is_bold, g.text_is_outline, g.text_letter_spacing, g.text_line_spacing, &g.text_font, false).ok().map(|(g, _)| g)
+                }, mouse_pressed, font_scale, !is_idle);
             });
         });
 

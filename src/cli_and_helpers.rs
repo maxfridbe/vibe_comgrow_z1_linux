@@ -436,6 +436,56 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
     result
 }
 
+pub fn generate_outline_gcode(x: f32, y: f32, w: f32, h: f32, speed: f32) -> String {
+    format!(
+        "$H\nG90\nM5\nG0 X{:.2} Y{:.2} F3000\nG0 X{:.2} Y{:.2} F{:.0}\nG0 X{:.2} Y{:.2}\nG0 X{:.2} Y{:.2}\nG0 X{:.2} Y{:.2}\nM5\n$H",
+        x, y,
+        x + w, y, speed,
+        x + w, y + h,
+        x, y + h,
+        x, y
+    )
+}
+
+pub fn get_gcode_bounds(gcode: &str) -> Option<(f32, f32, f32, f32)> {
+    let mut min_x = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut min_y = f32::MAX;
+    let mut max_y = f32::MIN;
+    let mut curr_x = 0.0;
+    let mut curr_y = 0.0;
+    let mut found = false;
+
+    for line in gcode.lines() {
+        let line = line.trim().to_uppercase();
+        if line.starts_with('G') {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            let mut x = None;
+            let mut y = None;
+            for p in parts {
+                if p.starts_with('X') { x = p[1..].parse::<f32>().ok(); }
+                if p.starts_with('Y') { y = p[1..].parse::<f32>().ok(); }
+            }
+            if let Some(val) = x { curr_x = val; }
+            if let Some(val) = y { curr_y = val; }
+            
+            if x.is_some() || y.is_some() {
+                min_x = min_x.min(curr_x);
+                max_x = max_x.max(curr_x);
+                min_y = min_y.min(curr_y);
+                max_y = max_y.max(curr_y);
+                found = true;
+            }
+        }
+    }
+
+    if found {
+        Some((min_x, min_y, max_x - min_x, max_y - min_y))
+    } else {
+        None
+    }
+}
+
 pub fn run_serial_cmd(cmd_str: &str, label: &str, _tx: mpsc::Sender<String>, use_virtual: bool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use std::io::{Write, Read};
     use crate::gcode::{decode_response, decode_gcode};

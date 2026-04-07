@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::path::Path;
 use arboard::Clipboard;
 use crate::state::{AppState, StringArena};
-use crate::ui::{Section, render_burn_btn, render_slider, render_checkbox};
+use crate::ui::{Section, render_burn_btn, render_outline_btn, render_slider, render_checkbox};
 use crate::cli_and_helpers::generate_pattern_gcode;
 use rfd::FileDialog;
 use crate::icons::*;
@@ -27,6 +27,10 @@ pub fn render_test_controls<'a, 'render>(
     left_col.layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
     
     let is_idle = { state.lock().unwrap().machine_state == "Idle" };
+    let (enabled, bx, by, bw, bh) = {
+        let g = state.lock().unwrap();
+        (g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
+    };
 
     clay.with(&left_col, |clay_scope| {
         // 1. Boundary Settings (At the top)
@@ -38,11 +42,6 @@ pub fn render_test_controls<'a, 'render>(
         clay_scope.with(&boundary_box, |clay_scope| {
             clay_scope.text("BOUNDARY SETTINGS", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_MUTED).end());
             
-            let (enabled, bx, by, bw, bh) = {
-                let g = state.lock().unwrap();
-                (g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
-            };
-
             render_checkbox(clay_scope, "boundary_enabled", "Enable Boundary Clipping", enabled, state, |s, v| s.boundary_enabled = v, mouse_pressed, font_scale);
             
             let mut grid = Declaration::<Texture2D, ()>::new();
@@ -119,6 +118,14 @@ pub fn render_test_controls<'a, 'render>(
                                 state.lock().unwrap().send_command(gcode);
                             }
                         }
+                        let path_clone = p.clone();
+                        render_outline_btn(clay, "outline_custom_svg", state, move || {
+                            let g = state.lock().unwrap();
+                            let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h);
+                            let fit = if b_enabled { Some(format!("{}x{}", bw, bh)) } else { None };
+                            let center = if b_enabled { format!("{},{}", bx + bw/2.0, by + bh/2.0) } else { "200,200".to_string() };
+                            generate_pattern_gcode(&path_clone, &format!("{}%", pwr), &format!("{}%", spd), &format!("{}x", scl), &pas.to_string(), fit, &center).ok().map(|(g, _)| g)
+                        }, mouse_pressed, font_scale, !is_idle);
 
                         // Preview Eyeball
                         let eye_id = clay.id("eye_custom_svg");
@@ -237,6 +244,14 @@ pub fn render_test_controls<'a, 'render>(
                                             }
                                         }
                                     }
+                                    let label_clone = cmd.label.to_string();
+                                    render_outline_btn(clay, arena.push(format!("outline_test_{}", cmd.label)), state, move || {
+                                        let g = state.lock().unwrap();
+                                        let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = (g.power / 10.0, g.feed_rate / 10.0, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h);
+                                        let fit = if b_enabled { Some(format!("{}x{}", bw, bh)) } else { None };
+                                        let center = if b_enabled { format!("{},{}", bx + bw/2.0, by + bh/2.0) } else { "200,200".to_string() };
+                                        generate_pattern_gcode(&label_clone, &format!("{}%", pwr), &format!("{}%", spd), &format!("{}x", scl), &pas.to_string(), fit, &center).ok().map(|(g, _)| g)
+                                    }, mouse_pressed, font_scale, !is_idle);
 
                                     // Preview Eyeball
                                     let eye_id = clay.id(arena.push(format!("eye_{}", cmd.label)));

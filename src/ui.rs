@@ -6,6 +6,7 @@ use arboard::Clipboard;
 use crate::state::{AppState, StringArena};
 use crate::icons::*;
 use crate::styles::*;
+use crate::cli_and_helpers;
 
 pub fn render_tab_btn<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
@@ -156,6 +157,50 @@ pub fn render_burn_btn<'a, 'render>(
     clay.with(&btn, |clay| {
         clay.text(ICON_FLAME, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(text_color).end());
         clay.text(label, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(text_color).end());
+    });
+    clicked
+}
+
+pub fn render_outline_btn<'a, 'render, F>(
+    clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
+    id: &str,
+    state: &Arc<Mutex<AppState>>,
+    action: F,
+    mouse_pressed: bool,
+    font_scale: f32,
+    disabled: bool,
+) -> bool where F: FnOnce() -> Option<String>, 'a: 'render {
+    let btn_id = clay.id(id);
+    let mut color = if disabled { COLOR_BG_DISABLED } else { COLOR_BG_DARK }; 
+    let mut clicked = false;
+    if !disabled && clay.pointer_over(btn_id) {
+        color = COLOR_PRIMARY_HOVER; 
+        if mouse_pressed {
+            clicked = true;
+            if let Some(gcode) = action() {
+                if let Some((x, y, w, h)) = cli_and_helpers::get_gcode_bounds(&gcode) {
+                    let mut guard = state.lock().unwrap();
+                    let speed = guard.feed_rate;
+                    let outline_gcode = cli_and_helpers::generate_outline_gcode(x, y, w, h, speed);
+                    guard.send_command(outline_gcode);
+                }
+            }
+        }
+    }
+    let mut btn = Declaration::<Texture2D, ()>::new();
+    btn.id(btn_id)
+        .layout()
+            .width(fixed!(35.0 * font_scale))
+            .padding(Padding::all(4))
+            .direction(LayoutDirection::TopToBottom)
+            .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+        .end()
+        .background_color(color)
+        .corner_radius().all(8.0 * font_scale).end();
+
+    let text_color = if disabled { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
+    clay.with(&btn, |clay| {
+        clay.text("[]", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(text_color).end());
     });
     clicked
 }

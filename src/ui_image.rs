@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::path::Path;
 use arboard::Clipboard;
 use crate::state::{AppState, StringArena};
-use crate::ui::{Section, render_burn_btn, render_slider, render_checkbox};
+use crate::ui::{Section, render_burn_btn, render_outline_btn, render_slider, render_checkbox};
 use crate::cli_and_helpers::generate_image_gcode;
 use rfd::FileDialog;
 use crate::icons::*;
@@ -27,6 +27,10 @@ pub fn render_image_controls<'a, 'render>(
     left_col.layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
     
     let is_idle = { state.lock().unwrap().machine_state == "Idle" };
+    let (enabled, bx, by, bw, bh) = {
+        let g = state.lock().unwrap();
+        (g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
+    };
 
     clay.with(&left_col, |clay_scope| {
         // 1. Boundary Settings
@@ -38,11 +42,6 @@ pub fn render_image_controls<'a, 'render>(
         clay_scope.with(&boundary_box, |clay_scope| {
             clay_scope.text("BOUNDARY SETTINGS", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_MUTED).end());
             
-            let (enabled, bx, by, bw, bh) = {
-                let g = state.lock().unwrap();
-                (g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
-            };
-
             render_checkbox(clay_scope, "img_boundary_enabled", "Enable Boundary Clipping", enabled, state, |s, v| s.boundary_enabled = v, mouse_pressed, font_scale);
             
             let mut grid = Declaration::<Texture2D, ()>::new();
@@ -165,6 +164,13 @@ pub fn render_image_controls<'a, 'render>(
                             state_clone.lock().unwrap().is_processing = false;
                         });
                     }
+                    let path_clone = p.clone();
+                    render_outline_btn(clay_scope, "outline_custom_image", state, move || {
+                        let g = state.lock().unwrap();
+                        let fit = if g.boundary_enabled { Some((g.boundary_w, g.boundary_h)) } else { None };
+                        let center = if g.boundary_enabled { (g.boundary_x + g.boundary_w/2.0, g.boundary_y + g.boundary_h/2.0) } else { (200.0, 200.0) };
+                        generate_image_gcode(&path_clone, g.power, g.feed_rate, g.scale, g.passes, fit, center, g.img_low_fidelity, g.img_high_fidelity, false).ok().map(|(g, _)| g)
+                    }, mouse_pressed, font_scale, !is_idle);
                 });
             }
         });
