@@ -17,6 +17,9 @@ A custom engineering tool for the Comgrow Z1 Laser engraver, featuring a high-fi
     - Efficient zigzag raster paths for text and images.
     - Drastically reduced travel time between lines.
 - **Automatic Homing**: Every job automatically begins and ends with a `$H` sequence for perfect calibration.
+- **Advanced SVG Processing**:
+    - Recursive path extraction supports deeply nested SVG groups.
+    - Automatic bounding box computation for precise boundary clipping and centering.
 
 ## Core Features
 - **Tabbed Interface**: 

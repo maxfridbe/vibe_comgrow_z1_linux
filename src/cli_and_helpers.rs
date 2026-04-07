@@ -87,6 +87,7 @@ fn parse_pair(s: &str) -> Result<(f32, f32), Box<dyn std::error::Error + Send + 
 }
 
 pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, passes: &str, _fit: Option<String>, center: &str) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+    // println!("GENERATE PATTERN: {} at {}", shape, center);
     let pwr_val = pwr.trim_end_matches('%').parse::<f32>()?;
     let spd_val = spd.trim_end_matches('%').parse::<f32>()?;
     let scl_val = scale.trim_end_matches('x').parse::<f32>()?;
@@ -97,15 +98,29 @@ pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, pa
     final_gcode.push_str("G90\n$H\n");
 
     for _ in 0..pas_val {
-        final_gcode.push_str(&format!("M4 S{} F{}\n", pwr_val, spd_val));
-        match shape {
+        let shape_lower = shape.to_lowercase();
+        match shape_lower.as_str() {
+            "square" => {
+                let s = 20.0 * scl_val;
+                final_gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2}\n", cx - s, cy - s));
+                final_gcode.push_str(&format!("M4 S{} F{}\n", pwr_val * 10.0, spd_val * 10.0));
+                final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx + s, cy - s));
+                final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx + s, cy + s));
+                final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx - s, cy + s));
+                final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx - s, cy - s));
+            }
             "heart" => {
                 let pts = 100;
                 for i in 0..=pts {
                     let t = (i as f32 / pts as f32) * 2.0 * std::f32::consts::PI;
                     let x = 16.0 * t.sin().powi(3);
                     let y = 13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos();
-                    final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx + x * scl_val, cy + y * scl_val));
+                    if i == 0 {
+                        final_gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2}\n", cx + x * scl_val, cy + y * scl_val));
+                        final_gcode.push_str(&format!("M4 S{} F{}\n", pwr_val * 10.0, spd_val * 10.0));
+                    } else {
+                        final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx + x * scl_val, cy + y * scl_val));
+                    }
                 }
             }
             "star" => {
@@ -115,10 +130,48 @@ pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, pa
                     let r = if i % 2 == 0 { 20.0 } else { 8.0 };
                     let x = r * angle.cos();
                     let y = r * angle.sin();
-                    final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx + x * scl_val, cy + y * scl_val));
+                    if i == 0 {
+                        final_gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2}\n", cx + x * scl_val, cy + y * scl_val));
+                        final_gcode.push_str(&format!("M4 S{} F{}\n", pwr_val * 10.0, spd_val * 10.0));
+                    } else {
+                        final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx + x * scl_val, cy + y * scl_val));
+                    }
                 }
             }
-            _ => {}
+            _ => {
+                // Try asset files
+                let mut filename = if shape.to_lowercase().starts_with("assets/") {
+                    shape[7..].to_string()
+                } else {
+                    shape.to_string()
+                };
+
+                if !filename.to_lowercase().ends_with(".svg") {
+                    filename.push_str(".svg");
+                }
+                
+                let asset_path = format!("assets/{}", filename);
+                let final_path = if std::path::Path::new(&filename).exists() {
+                    Some(filename)
+                } else if std::path::Path::new(&asset_path).exists() {
+                    Some(asset_path)
+                } else {
+                    None
+                };
+
+                if let Some(p) = final_path {
+                    let mut parsed_fit = None;
+                    if let Some(ref f) = _fit {
+                        if let Ok(pair) = parse_pair(f) {
+                            parsed_fit = Some(pair);
+                        }
+                    }
+
+                    if let Ok((svg_gcode, _, _, _, _)) = svg_helper::load_svg_as_gcode(&p, scl_val, parsed_fit, cx, cy, (pwr_val * 10.0) as i32, (spd_val * 10.0) as i32) {
+                        final_gcode.push_str(&svg_gcode);
+                    }
+                }
+            }
         }
         final_gcode.push_str("M5\n");
     }

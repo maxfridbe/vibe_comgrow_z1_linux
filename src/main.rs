@@ -86,6 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         text_font_dropdown_open: false,
         text_font_scroll_offset: 0.0,
         is_text_input_active: false,
+        current_preview_power: 1000.0,
     }));
 
     let (tx, rx) = mpsc::channel();

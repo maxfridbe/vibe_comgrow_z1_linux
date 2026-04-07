@@ -82,10 +82,12 @@ pub struct AppState {
     pub text_font_dropdown_open: bool,
     pub text_font_scroll_offset: f32,
     pub is_text_input_active: bool,
+    pub current_preview_power: f32,
 }
 
 impl AppState {
     pub fn process_command_for_preview(&mut self, cmd: &str) {
+        // println!("PREVIEW CMD: {} (Power: {})", cmd, self.current_preview_power);
         let parts: Vec<&str> = cmd.split_whitespace().collect();
         let mut has_g0 = false;
         let mut has_g1 = false;
@@ -96,18 +98,33 @@ impl AppState {
         let mut y_val = None;
         let mut s_val = None;
         let mut r_val = None;
+        let mut has_m5 = false;
 
         for part in &parts {
             if *part == "G90" { self.is_absolute = true; }
             else if *part == "G91" { self.is_absolute = false; }
+            else if *part == "$H" {
+                self.v_pos = raylib::prelude::Vector2 { x: 0.0, y: 0.0 };
+            }
             else if *part == "G0" { has_g0 = true; }
             else if *part == "G1" { has_g1 = true; }
             else if *part == "G2" { has_g2 = true; }
             else if *part == "G3" { has_g3 = true; }
+            else if *part == "M3" || *part == "M4" { /* power updated via S */ }
+            else if *part == "M5" { has_m5 = true; }
             else if part.starts_with('X') { x_val = part[1..].parse::<f32>().ok(); }
             else if part.starts_with('Y') { y_val = part[1..].parse::<f32>().ok(); }
-            else if part.starts_with('S') { s_val = part[1..].parse::<f32>().ok(); }
+            else if part.starts_with('S') { 
+                if let Ok(val) = part[1..].parse::<f32>() {
+                    self.current_preview_power = val;
+                    s_val = Some(val);
+                }
+            }
             else if part.starts_with('R') { r_val = part[1..].parse::<f32>().ok(); }
+        }
+
+        if has_m5 {
+            self.current_preview_power = 0.0;
         }
 
         if has_g0 || has_g1 || has_g2 || has_g3 {
@@ -122,8 +139,10 @@ impl AppState {
             }
 
             if has_g1 {
-                let intensity = (s_val.unwrap_or(self.power) / 1000.0).clamp(0.0, 1.0);
-                self.preview_paths.push(PathSegment { x1: old_pos.x, y1: old_pos.y, x2: target.x, y2: target.y, s: s_val.unwrap_or(self.power), intensity });
+                let intensity = (self.current_preview_power / 1000.0).clamp(0.0, 1.0);
+                if intensity > 0.01 {
+                    self.preview_paths.push(PathSegment { x1: old_pos.x, y1: old_pos.y, x2: target.x, y2: target.y, s: self.current_preview_power, intensity });
+                }
                 self.v_pos = target;
             } else if (has_g2 || has_g3) && r_val.is_some() {
                 let r = r_val.unwrap();
