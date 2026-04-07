@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use arboard::Clipboard;
 use crate::state::{AppState, StringArena};
 use crate::ui::{Section, render_jog_btn, render_slider};
+use crate::icons::*;
 use crate::styles::*;
 
 pub fn render_manual_left_subcol<'a, 'render>(
@@ -44,21 +45,27 @@ pub fn render_manual_left_subcol<'a, 'render>(
                             let disabled = !is_idle && cmd.label != "Status" && cmd.label != "Hold" && cmd.label != "Reset" && cmd.label != "Unlock" && cmd.label != "Resume";
                             let btn_id = clay_scope.id(cmd.label);
                             let mut btn_color = if disabled { COLOR_BG_DISABLED } else { COLOR_BG_DARK };
+                            let mut text_color = if disabled { COLOR_TEXT_DISABLED } else { COLOR_TEXT_MUTED };
                             if !disabled && clay_scope.pointer_over(btn_id) {
-                                btn_color = COLOR_BG_SECTION;
+                                btn_color = COLOR_PRIMARY_HOVER;
+                                text_color = COLOR_TEXT_WHITE;
                                 if mouse_pressed {
                                     let mut guard = state.lock().unwrap();
                                     guard.send_command(cmd.cmd.to_string());
                                 }
                             }
                             let mut btn = Declaration::<Texture2D, ()>::new();
-                            btn.id(btn_id).layout().width(fixed!(110.0 * font_scale)).padding(Padding::all(6)).direction(LayoutDirection::TopToBottom).child_gap(4).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
+                            btn.id(btn_id).layout().width(fixed!(110.0 * font_scale)).padding(Padding::all(6)).direction(LayoutDirection::LeftToRight).child_gap(6).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
                             
-                            let text_color = if disabled { COLOR_TEXT_DISABLED } else { COLOR_TEXT_MUTED };
-                            let subtext_color = if disabled { COLOR_BG_SECTION } else { COLOR_TEXT_DISABLED };
+                            let subtext_color = if disabled { COLOR_BG_SECTION } else if btn_color == COLOR_PRIMARY_HOVER { COLOR_TEXT_WHITE } else { COLOR_TEXT_DISABLED };
                             clay_scope.with(&btn, |clay_scope| {
-                                clay_scope.text(cmd.label, clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(text_color).end());
-                                clay_scope.text(arena.push(format!("({})", cmd.cmd)), clay_layout::text::TextConfig::new().font_size((9.0 * font_scale) as u16).color(subtext_color).end());
+                                clay_scope.text(section.icon, clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(text_color).end());
+                                let mut text_stack = Declaration::<Texture2D, ()>::new();
+                                text_stack.layout().direction(LayoutDirection::TopToBottom).child_gap(2).end();
+                                clay_scope.with(&text_stack, |clay_scope| {
+                                    clay_scope.text(cmd.label, clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(text_color).end());
+                                    clay_scope.text(arena.push(format!("({})", cmd.cmd)), clay_layout::text::TextConfig::new().font_size((9.0 * font_scale) as u16).color(subtext_color).end());
+                                });
                             });
                         }
                     });
@@ -118,20 +125,37 @@ pub fn render_manual_right_col<'a, 'render>(
                         }
                     }
                     let mut fire_btn = Declaration::<Texture2D, ()>::new();
-                    fire_btn.id(btn_id).layout().width(fixed!(35.0 * font_scale)).padding(Padding::all(4)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
+                    let mut fire_text_color = if !is_idle { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
+                    if is_idle && clay_scope.pointer_over(btn_id) {
+                        btn_color = COLOR_DANGER_BRIGHT;
+                        fire_text_color = COLOR_TEXT_WHITE;
+                        if mouse_pressed {
+                            let mut guard = state.lock().unwrap();
+                            let s = guard.power;
+                            guard.send_command(format!("M3 S{}", s));
+                        }
+                    }
+                    fire_btn.id(btn_id).layout().width(fixed!(50.0 * font_scale)).padding(Padding::all(4)).direction(LayoutDirection::LeftToRight).child_gap(4).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
                     
-                    let text_color = if !is_idle { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
-                    clay_scope.with(&fire_btn, |clay| { clay.text("FIRE", clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(text_color).end()); });
+                    clay_scope.with(&fire_btn, |clay| { 
+                        clay.text(ICON_FLAME, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(fire_text_color).end());
+                        clay.text("FIRE", clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(fire_text_color).end()); 
+                    });
 
                     let off_id = clay_scope.id("burn_off_btn");
                     let mut off_color = COLOR_BG_DARK;
+                    let mut off_text_color = COLOR_TEXT_WHITE;
                     if clay_scope.pointer_over(off_id) {
-                        off_color = COLOR_BG_SECTION;
+                        off_color = COLOR_PRIMARY_HOVER;
+                        off_text_color = COLOR_TEXT_WHITE;
                         if mouse_pressed { state.lock().unwrap().send_command("M5".to_string()); }
                     }
                     let mut off_btn = Declaration::<Texture2D, ()>::new();
-                    off_btn.id(off_id).layout().width(fixed!(35.0 * font_scale)).padding(Padding::all(4)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(off_color).corner_radius().all(8.0 * font_scale).end();
-                    clay_scope.with(&off_btn, |clay| { clay.text("OFF", clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end()); });
+                    off_btn.id(off_id).layout().width(fixed!(50.0 * font_scale)).padding(Padding::all(4)).direction(LayoutDirection::LeftToRight).child_gap(4).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(off_color).corner_radius().all(8.0 * font_scale).end();
+                    clay_scope.with(&off_btn, |clay| { 
+                        clay.text(ICON_POWER, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(off_text_color).end());
+                        clay.text("OFF", clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(off_text_color).end()); 
+                    });
                 });
 
                 crate::ui::render_burn_btn(clay_scope, "b_r", "EAST", state, 1.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle);
@@ -147,21 +171,23 @@ pub fn render_manual_right_col<'a, 'render>(
             let mut mode_row = Declaration::<Texture2D, ()>::new();
             mode_row.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).padding(Padding::vertical(8)).end();
             clay_scope.with(&mode_row, |clay| {
-                let modes = [("LASER CONST", "M3"), ("LASER DYN", "M4"), ("LASER OFF", "M5")];
-                for (label, cmd) in modes {
+                let modes: [(&str, &str, &str); 3] = [("LASER CONST", "M3", ICON_FLAME), ("LASER DYN", "M4", ICON_REFRESH), ("LASER OFF", "M5", ICON_POWER)];
+                for (label, cmd, icon) in modes {
                     let disabled = !is_idle && label != "LASER OFF";
                     let btn_id = clay.id(label);
                     let mut btn_color = if disabled { COLOR_BG_DISABLED } else { COLOR_BG_DARK };
+                    let mut btn_text_color = if disabled { COLOR_TEXT_DISABLED } else { COLOR_TEXT_MUTED };
                     if !disabled && clay.pointer_over(btn_id) {
-                        btn_color = COLOR_BG_SECTION;
+                        btn_color = COLOR_PRIMARY_HOVER;
+                        btn_text_color = COLOR_TEXT_WHITE;
                         if mouse_pressed { state.lock().unwrap().send_command(cmd.to_string()); }
                     }
                     let mut btn = Declaration::<Texture2D, ()>::new();
-                    btn.id(btn_id).layout().width(fixed!(80.0 * font_scale)).padding(Padding::all(6)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
+                    btn.id(btn_id).layout().width(fixed!(90.0 * font_scale)).padding(Padding::all(6)).direction(LayoutDirection::LeftToRight).child_gap(4).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(btn_color).corner_radius().all(8.0 * font_scale).end();
                     
-                    let text_color = if disabled { COLOR_TEXT_DISABLED } else { COLOR_TEXT_MUTED };
                     clay.with(&btn, |clay| {
-                        clay.text(label, clay_layout::text::TextConfig::new().font_size((9.0 * font_scale) as u16).color(text_color).end());
+                        clay.text(icon, clay_layout::text::TextConfig::new().font_size((9.0 * font_scale) as u16).color(btn_text_color).end());
+                        clay.text(label, clay_layout::text::TextConfig::new().font_size((9.0 * font_scale) as u16).color(btn_text_color).end());
                     });
                 }
             });

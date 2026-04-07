@@ -14,13 +14,28 @@ pub fn render_tab_btn<'a, 'render>(
     active: bool,
     font_scale: f32,
 ) -> bool where 'a: 'render {
-    let color = if active { COLOR_PRIMARY } else { COLOR_BG_SECTION };
-    let text_color = if active { COLOR_TEXT_WHITE } else { COLOR_TEXT_MUTED };
-    
+    let icon = match label {
+        "Manual" => ICON_MOVE,
+        "Pattern" => ICON_GAUGE,
+        _ => ICON_TERMINAL,
+    };
+
     let btn_id = clay.id(id);
+    let mut color = if active { COLOR_PRIMARY } else { COLOR_BG_SECTION };
+    let mut text_color = if active { COLOR_TEXT_WHITE } else { COLOR_TEXT_MUTED };
+    
+    if !active && clay.pointer_over(btn_id) {
+        color = COLOR_PRIMARY_HOVER;
+        text_color = COLOR_TEXT_WHITE;
+    }
+
     let mut btn = Declaration::<Texture2D, ()>::new();
     btn.id(btn_id).layout()
-        .padding(Padding::new(16, 16, 10, 10)).end()
+        .padding(Padding::new(16, 16, 10, 10))
+        .direction(LayoutDirection::LeftToRight)
+        .child_gap(8)
+        .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+        .end()
         .background_color(color)
         .corner_radius()
             .top_left(8.0 * font_scale)
@@ -28,6 +43,7 @@ pub fn render_tab_btn<'a, 'render>(
     
     let mut clicked = false;
     clay.with(&btn, |clay_scope| {
+        clay_scope.text(icon, clay_layout::text::TextConfig::new().font_size((16.0 * font_scale) as u16).color(text_color).end());
         clay_scope.text(label, clay_layout::text::TextConfig::new().font_size((16.0 * font_scale) as u16).color(text_color).end());
         if unsafe { raylib::ffi::IsMouseButtonPressed(raylib::ffi::MouseButton::MOUSE_BUTTON_LEFT as i32) } && clay_scope.pointer_over(btn_id) {
             clicked = true;
@@ -128,7 +144,8 @@ pub fn render_burn_btn<'a, 'render>(
         .layout()
             .width(fixed!(65.0 * font_scale))
             .padding(Padding::all(4))
-            .direction(LayoutDirection::TopToBottom)
+            .direction(LayoutDirection::LeftToRight)
+            .child_gap(4)
             .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
         .end()
         .background_color(color)
@@ -136,6 +153,7 @@ pub fn render_burn_btn<'a, 'render>(
 
     let text_color = if disabled { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
     clay.with(&btn, |clay| {
+        clay.text(ICON_FLAME, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(text_color).end());
         clay.text(label, clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(text_color).end());
     });
     clicked

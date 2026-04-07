@@ -7,6 +7,7 @@ use crate::state::{AppState, StringArena};
 use crate::ui::{Section, render_burn_btn, render_slider, render_checkbox};
 use crate::cli_and_helpers::generate_pattern_gcode;
 use rfd::FileDialog;
+use crate::icons::*;
 use crate::styles::*;
 
 pub fn render_test_controls<'a, 'render>(
@@ -105,30 +106,43 @@ pub fn render_test_controls<'a, 'render>(
             }
             
             let mut load_btn = Declaration::<Texture2D, ()>::new();
-            load_btn.id(load_id).layout().padding(Padding::all(10)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(load_color).corner_radius().all(8.0 * font_scale).end();
+            load_btn.id(load_id).layout().padding(Padding::all(10)).direction(LayoutDirection::LeftToRight).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(load_color).corner_radius().all(8.0 * font_scale).end();
             
             let load_text_color = if !is_idle { COLOR_TEXT_DISABLED } else { COLOR_TEXT_WHITE };
             clay_scope.with(&load_btn, |clay| {
+                clay.text(ICON_FILE, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
                 clay.text("LOAD CUSTOM SVG", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
             });
         });
 
-        // 3. Sliders
+        // 3. Sliders (TROGDOR)
         let mut controls_box = Declaration::<Texture2D, ()>::new();
         controls_box.layout().width(grow!()).direction(LayoutDirection::TopToBottom).padding(Padding::all(12)).child_gap(16).end()
             .background_color(COLOR_BG_SECTION)
             .corner_radius().all(16.0 * font_scale).end();
         
         clay_scope.with(&controls_box, |clay_scope| {
+            clay_scope.text("TROGDOR", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_MUTED).end());
+
             let (pwr, spd, scl, pas) = {
                 let g = state.lock().unwrap();
                 (g.power, g.feed_rate, g.scale, g.passes)
             };
             
-            render_slider(clay_scope, "test_power", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
-            render_slider(clay_scope, "test_speed", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
-            render_slider(clay_scope, "test_scale", "Scale", scl, 0.1, 5.0, COLOR_SLIDER_STEP, state, |s, v| s.scale = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
-            render_slider(clay_scope, "test_passes", "Passes", pas as f32, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| s.passes = v as u32, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+            let mut grid = Declaration::<Texture2D, ()>::new();
+            grid.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(16).end();
+            clay_scope.with(&grid, |clay_scope| {
+                let mut col1 = Declaration::<Texture2D, ()>::new(); col1.layout().direction(LayoutDirection::TopToBottom).child_gap(8).end();
+                clay_scope.with(&col1, |clay_scope| {
+                    render_slider(clay_scope, "test_power", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+                    render_slider(clay_scope, "test_scale", "Scale", scl, 0.1, 5.0, COLOR_SLIDER_STEP, state, |s, v| s.scale = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+                });
+                let mut col2 = Declaration::<Texture2D, ()>::new(); col2.layout().direction(LayoutDirection::TopToBottom).child_gap(8).end();
+                clay_scope.with(&col2, |clay_scope| {
+                    render_slider(clay_scope, "test_speed", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+                    render_slider(clay_scope, "test_passes", "Passes", pas as f32, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| s.passes = v as u32, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+                });
+            });
         });
 
         // 4. Test Patterns (2 Column Layout)

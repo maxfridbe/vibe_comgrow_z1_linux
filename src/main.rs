@@ -82,7 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ICON_REFRESH, ICON_SETTINGS, ICON_LAYERS, ICON_GAUGE, ICON_LASER,
         ICON_ARROW_UP, ICON_ARROW_DOWN, ICON_ARROW_LEFT, ICON_ARROW_RIGHT,
         ICON_CROSSHAIR, ICON_FLAME, ICON_USB, ICON_SHIELD, ICON_CPU, ICON_TRASH,
-        ICON_COPY, ICON_SWEEP, ICON_SERIAL, ICON_CHECK,
+        ICON_COPY, ICON_SWEEP, ICON_SERIAL, ICON_CHECK, ICON_FILE,
     ];
     for &icon in icons_list {
         for c in icon.chars() {
@@ -330,9 +330,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             }
                         }
                         let mut tidy_btn = Declaration::<Texture2D, ()>::new();
-                        tidy_btn.id(tidy_id).layout().padding(Padding::horizontal(8)).end();
+                        tidy_btn.id(tidy_id).layout().padding(Padding::all(6)).direction(LayoutDirection::LeftToRight).child_gap(6).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(COLOR_BG_DARK).corner_radius().all(6.0 * font_scale).end();
                         clay_scope.with(&tidy_btn, |clay| {
-                            clay.text(ICON_SWEEP, clay_layout::text::TextConfig::new().font_size((20.0 * font_scale) as u16).color(tidy_color).end());
+                            clay.text(ICON_SWEEP, clay_layout::text::TextConfig::new().font_size((16.0 * font_scale) as u16).color(tidy_color).end());
+                            clay.text("TIDY", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(tidy_color).end());
                         });
                     });
                 });
