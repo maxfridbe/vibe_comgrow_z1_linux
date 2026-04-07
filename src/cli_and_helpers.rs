@@ -163,7 +163,8 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
 
     for _ in 0..effective_passes {
         for y in 0..img.height() {
-            let actual_y = offset_y + (img.height() as f32 - 1.0 - y as f32) * final_scale;
+            // Use 0.5 offset to center the laser on the pixel row
+            let actual_y = offset_y + (img.height() as f32 - 0.5 - y as f32) * final_scale;
 
             // Find first and last non-zero pixels in this row to avoid crossing the whole canvas
             let mut first_x = None;
@@ -185,8 +186,10 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
                 let left_to_right = y % 2 == 0;
                 
                 // Move to start of relevant content
-                let start_x = if left_to_right { fx } else { lx };
-                gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2} F3000\n", offset_x + start_x as f32 * final_scale, actual_y));
+                // If LTR, start at the LEFT edge of the first pixel (fx)
+                // If RTL, start at the RIGHT edge of the last pixel (lx + 1)
+                let start_x_coord = if left_to_right { fx as f32 } else { lx as f32 + 1.0 };
+                gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2} F3000\n", offset_x + start_x_coord * final_scale, actual_y));
                 gcode.push_str(&format!("M4 F{}\n", f_val));
 
                 let range: Vec<u32> = if left_to_right {
@@ -202,7 +205,12 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
                     let remapped = ((intensity - low_fid) / (high_fid - low_fid).max(0.001)).clamp(0.0, 1.0);
                     let s_val = (remapped * pwr_max * 10.0) as i32;
 
-                    let actual_x = offset_x + x as f32 * final_scale;
+                    // The destination coordinate
+                    // If LTR, we move to the RIGHT edge of pixel x (x + 1)
+                    // If RTL, we move to the LEFT edge of pixel x (x)
+                    let dest_x_coord = if left_to_right { x as f32 + 1.0 } else { x as f32 };
+                    let actual_x = offset_x + dest_x_coord * final_scale;
+
                     if s_val > 0 {
                         gcode.push_str(&format!("G1 X{:.2} S{}\n", actual_x, s_val));
                     } else {

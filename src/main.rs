@@ -341,9 +341,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     });
 
                     let estop_h_id = clay_scope.id("estop_header");
-                    let mut estop_h_color = COLOR_DANGER_DARK; 
+                    let mstate = { state.lock().unwrap().machine_state.clone() };
+                    let is_emergency = mstate == "Alarm" || mstate == "Hold";
+                    let mut estop_h_color = if is_emergency { COLOR_SUCCESS } else { COLOR_DANGER_DARK }; 
                     if clay_scope.pointer_over(estop_h_id) {
-                        estop_h_color = COLOR_DANGER_HOVER;
+                        estop_h_color = if is_emergency { COLOR_SUCCESS_LIGHT } else { COLOR_DANGER_HOVER };
                         if mouse_pressed {
                             let mut guard = state.lock().unwrap();
                             guard.send_command("!".to_string());
@@ -453,15 +455,23 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             bottom_area.layout().width(grow!()).height(fixed!(bottom_bar_height)).direction(LayoutDirection::LeftToRight).child_gap(16).end();
 
             clay_scope.with(&bottom_area, |clay_scope| {
-                let mut estop_b = Declaration::<Texture2D, ()>::new();
+                let mstate = { state.lock().unwrap().machine_state.clone() };
+                let is_emergency = mstate == "Alarm" || mstate == "Hold";
+                let mut estop_b_color = if is_emergency { COLOR_SUCCESS } else { COLOR_DANGER };
                 let estop_b_id = clay_scope.id("estop_bottom");
-                let estop_size = 140.0 * font_scale;
-                estop_b.id(estop_b_id).layout().width(fixed!(estop_size)).height(fixed!(estop_size)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(COLOR_DANGER).corner_radius().all(estop_size / 2.0).end();
-                clay_scope.with(&estop_b, |clay_scope| {
-                    clay_scope.text("E-STOP", clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
-                    if clay_scope.pointer_over(estop_b_id) && mouse_pressed {
+
+                if clay_scope.pointer_over(estop_b_id) {
+                    estop_b_color = if is_emergency { COLOR_SUCCESS_LIGHT } else { COLOR_DANGER_HOVER };
+                    if mouse_pressed {
                         let mut g = state.lock().unwrap(); g.send_command("!".to_string()); g.send_command("M5".to_string()); g.send_command("0x18".to_string());
                     }
+                }
+
+                let mut estop_b = Declaration::<Texture2D, ()>::new();
+                let estop_size = 140.0 * font_scale;
+                estop_b.id(estop_b_id).layout().width(fixed!(estop_size)).height(fixed!(estop_size)).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(estop_b_color).corner_radius().all(estop_size / 2.0).end();
+                clay_scope.with(&estop_b, |clay_scope| {
+                    clay_scope.text("E-STOP", clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
                 });
 
                 let mut log_box = Declaration::<Texture2D, ()>::new();
