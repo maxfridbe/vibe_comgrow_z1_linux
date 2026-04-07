@@ -114,7 +114,8 @@ pub fn render_test_controls<'a, 'render>(
                             let fit = if b_enabled { Some(format!("{}x{}", bw, bh)) } else { None };
                             let center = if b_enabled { format!("{},{}", bx + bw/2.0, by + bh/2.0) } else { "200,200".to_string() };
 
-                            if let Ok((gcode, _)) = generate_pattern_gcode(&p, &format!("{}%", pwr), &format!("{}%", spd), &format!("{}x", scl), &pas.to_string(), fit, &center) {
+                            let result: Result<(String, String), Box<dyn std::error::Error + Send + Sync>> = generate_pattern_gcode(&p, &format!("{}%", pwr), &format!("{}%", spd), &format!("{}x", scl), &pas.to_string(), fit, &center);
+                            if let Ok((gcode, _)) = result {
                                 state.lock().unwrap().send_command(gcode);
                             }
                         }
@@ -138,7 +139,8 @@ pub fn render_test_controls<'a, 'render>(
                                     let center = if b_enabled { format!("{},{}", bx + bw/2.0, by + bh/2.0) } else { "200,200".to_string() };
                                     let preview_spd = (spd * 10.0).min(1000.0);
 
-                                    if let Ok((gcode, _)) = generate_pattern_gcode(&p, &format!("{}%", pwr), &format!("{}%", preview_spd), &format!("{}x", scl), &pas.to_string(), fit, &center) {
+                                    let result: Result<(String, String), Box<dyn std::error::Error + Send + Sync>> = generate_pattern_gcode(&p, &format!("{}%", pwr), &format!("{}%", preview_spd), &format!("{}x", scl), &pas.to_string(), fit, &center);
+                                    if let Ok((gcode, _)) = result {
                                         let original_v_pos = g.v_pos;
                                         let original_is_abs = g.is_absolute;
                                         for line in gcode.lines() {

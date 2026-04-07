@@ -1,4 +1,5 @@
 use clay_layout::layout::{Padding, LayoutAlignmentX, LayoutAlignmentY, Alignment, LayoutDirection};
+use clay_layout::math::{Vector2 as ClayVector2};
 use clay_layout::{Declaration, grow, fixed};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -68,21 +69,121 @@ pub fn render_text_controls<'a, 'render>(
         clay_scope.with(&text_box, |clay_scope| {
             clay_scope.text("TEXT OPTIONS", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_MUTED).end());
             
-            let (content, font_name, is_bold, is_outline, l_space, line_space) = {
+            let (content, font_name, is_bold, is_outline, l_space, line_space, available_fonts, dropdown_open) = {
                 let g = state.lock().unwrap();
-                (g.text_content.clone(), g.text_font.clone(), g.text_is_bold, g.text_is_outline, g.text_letter_spacing, g.text_line_spacing)
+                (g.text_content.clone(), g.text_font.clone(), g.text_is_bold, g.text_is_outline, g.text_letter_spacing, g.text_line_spacing, g.available_fonts.clone(), g.text_font_dropdown_open)
             };
 
-            // Text content (Simplified textbox for now - in a real app would use raylib input)
+            // Font selection dropdown
+            let mut font_row = Declaration::<Texture2D, ()>::new();
+            font_row.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+            clay_scope.with(&font_row, |clay_scope| {
+                clay_scope.text("Font:", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(COLOR_TEXT_LABEL).end());
+                
+                let dropdown_id = clay_scope.id("font_dropdown");
+                let mut dropdown_color = if dropdown_open { COLOR_PRIMARY } else { COLOR_BG_DARK };
+                if clay_scope.pointer_over(dropdown_id) {
+                    dropdown_color = COLOR_PRIMARY_HOVER;
+                    if mouse_pressed {
+                        let mut g = state.lock().unwrap();
+                        g.text_font_dropdown_open = !g.text_font_dropdown_open;
+                    }
+                }
+
+                let mut dropdown_box = Declaration::<Texture2D, ()>::new();
+                dropdown_box.id(dropdown_id).layout().width(grow!()).padding(Padding::all(8)).direction(LayoutDirection::LeftToRight).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end()
+                    .background_color(dropdown_color).corner_radius().all(4.0 * font_scale).end();
+                
+                clay_scope.with(&dropdown_box, |clay_scope| {
+                    clay_scope.text(arena.push(font_name.clone()), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
+                    let mut spacer = Declaration::<Texture2D, ()>::new(); spacer.layout().width(grow!()).end(); clay_scope.with(&spacer, |_| {});
+                    clay_scope.text(if dropdown_open { ICON_ARROW_UP } else { ICON_ARROW_DOWN }, clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
+                });
+            });
+
+            if dropdown_open {
+                let (fonts_count, scroll_offset) = {
+                    let g = state.lock().unwrap();
+                    (g.available_fonts.len(), g.text_font_scroll_offset)
+                };
+
+                let mut dropdown_list = Declaration::<Texture2D, ()>::new();
+                let dropdown_list_id = clay_scope.id("font_dropdown_list");
+                dropdown_list.id(dropdown_list_id).layout().width(grow!()).height(fixed!(200.0 * font_scale)).direction(LayoutDirection::TopToBottom).end()
+                    .background_color(COLOR_BG_DARK).corner_radius().all(4.0 * font_scale).end()
+                    .clip(false, true, ClayVector2 { x: 0.0, y: scroll_offset });
+                
+                if clay_scope.pointer_over(dropdown_list_id) {
+                    let mut g = state.lock().unwrap();
+                    g.text_font_scroll_offset += scroll_y * 40.0;
+                    if g.text_font_scroll_offset > 0.0 { g.text_font_scroll_offset = 0.0; }
+                    let max_scroll = -((fonts_count as f32 * 32.0 * font_scale) - (200.0 * font_scale)).max(0.0);
+                    if g.text_font_scroll_offset < max_scroll { g.text_font_scroll_offset = max_scroll; }
+                }
+
+                clay_scope.with(&dropdown_list, |clay_scope| {
+                    for font in available_fonts.iter() {
+                        let item_id = clay_scope.id(arena.push(format!("font_item_{}", font)));
+                        let mut item_color = COLOR_BG_DARK;
+                        if clay_scope.pointer_over(item_id) {
+                            item_color = COLOR_BG_SECTION;
+                            if mouse_pressed {
+                                let mut g = state.lock().unwrap();
+                                g.text_font = font.clone();
+                                g.text_font_dropdown_open = false;
+                            }
+                        }
+                        let mut item_box = Declaration::<Texture2D, ()>::new();
+                        item_box.id(item_id).layout().width(grow!()).padding(Padding::all(8)).end().background_color(item_color);
+                        clay_scope.with(&item_box, |clay_scope| {
+                            clay_scope.text(arena.push(font.clone()), clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
+                        });
+                    }
+                });
+            }
+
+            // Text content
             let mut input_row = Declaration::<Texture2D, ()>::new();
             input_row.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
             clay_scope.with(&input_row, |clay_scope| {
                 clay_scope.text("Content:", clay_layout::text::TextConfig::new().font_size((12.0 * font_scale) as u16).color(COLOR_TEXT_LABEL).end());
-                // Dummy textbox visual
+                
+                let input_id = clay_scope.id("text_input");
+                let is_active = { state.lock().unwrap().is_text_input_active };
+                let mut input_color = if is_active { COLOR_BG_SECTION } else { COLOR_BG_DARK };
+                let border_color = if is_active { COLOR_PRIMARY } else { COLOR_BG_DARK };
+
+                if clay_scope.pointer_over(input_id) {
+                    if !is_active { input_color = COLOR_PRIMARY_HOVER; }
+                    if mouse_pressed {
+                        let mut g = state.lock().unwrap();
+                        g.is_text_input_active = true;
+                        g.text_font_dropdown_open = false; // Close font list if typing
+                    }
+                } else if mouse_pressed {
+                    let mut g = state.lock().unwrap();
+                    g.is_text_input_active = false;
+                }
+
                 let mut box_decl = Declaration::<Texture2D, ()>::new();
-                box_decl.layout().width(grow!()).padding(Padding::all(8)).end().background_color(COLOR_BG_DARK).corner_radius().all(4.0 * font_scale).end();
+                box_decl.id(input_id).layout().width(grow!()).padding(Padding::all(8)).end()
+                    .background_color(input_color)
+                    .corner_radius().all(4.0 * font_scale).end()
+                    .border()
+                        .top((1.0 * font_scale) as u16)
+                        .bottom((1.0 * font_scale) as u16)
+                        .left((1.0 * font_scale) as u16)
+                        .right((1.0 * font_scale) as u16)
+                        .color(border_color)
+                    .end();
+                
                 clay_scope.with(&box_decl, |clay_scope| {
-                    clay_scope.text(arena.push(content.clone()), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
+                    let display_text = if is_active {
+                        arena.push(format!("{}{}", content, if (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() / 500) % 2 == 0 { "|" } else { " " }))
+                    } else {
+                        arena.push(content.clone())
+                    };
+                    clay_scope.text(display_text, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
                 });
             });
 
@@ -124,14 +225,14 @@ pub fn render_text_controls<'a, 'render>(
                             g.preview_pattern = Some("text".to_string());
                             g.preview_paths.clear();
                             g.is_processing = true;
-                            let state_data = (g.text_content.clone(), g.power, g.feed_rate, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h, g.text_is_bold, g.text_is_outline, g.text_letter_spacing, g.text_line_spacing);
+                            let state_data = (g.text_content.clone(), g.power, g.feed_rate, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h, g.text_is_bold, g.text_is_outline, g.text_letter_spacing, g.text_line_spacing, g.text_font.clone());
                             let state_clone = Arc::clone(state);
                             std::thread::spawn(move || {
-                                let (txt, pwr, spd, scl, pas, b_enabled, bx, by, bw, bh, bold, outline, l_space, line_space) = state_data;
+                                let (txt, pwr, spd, scl, pas, b_enabled, bx, by, bw, bh, bold, outline, l_space, line_space, f_name) = state_data;
                                 let fit = if b_enabled { Some((bw, bh)) } else { None };
                                 let center = if b_enabled { (bx + bw/2.0, by + bh/2.0) } else { (200.0, 200.0) };
                                 
-                                if let Ok((gcode, _)) = generate_text_gcode(&txt, pwr, spd * 10.0, scl, pas, fit, center, bold, outline, l_space, line_space) {
+                                if let Ok((gcode, _)) = generate_text_gcode(&txt, pwr, spd * 10.0, scl, pas, fit, center, bold, outline, l_space, line_space, &f_name, true) {
                                     let mut g = state_clone.lock().unwrap();
                                     let original_v_pos = g.v_pos;
                                     let original_is_abs = g.is_absolute;
@@ -154,15 +255,15 @@ pub fn render_text_controls<'a, 'render>(
                     let state_data = {
                         let mut g = state.lock().unwrap();
                         g.is_processing = true;
-                        (g.text_content.clone(), g.power, g.feed_rate, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h, g.text_is_bold, g.text_is_outline, g.text_letter_spacing, g.text_line_spacing)
+                        (g.text_content.clone(), g.power, g.feed_rate, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h, g.text_is_bold, g.text_is_outline, g.text_letter_spacing, g.text_line_spacing, g.text_font.clone())
                     };
                     let state_clone = Arc::clone(state);
                     std::thread::spawn(move || {
-                        let (txt, pwr, spd, scl, pas, b_enabled, bx, by, bw, bh, bold, outline, l_space, line_space) = state_data;
+                        let (txt, pwr, spd, scl, pas, b_enabled, bx, by, bw, bh, bold, outline, l_space, line_space, f_name) = state_data;
                         let fit = if b_enabled { Some((bw, bh)) } else { None };
                         let center = if b_enabled { (bx + bw/2.0, by + bh/2.0) } else { (200.0, 200.0) };
                         
-                        if let Ok((gcode, _)) = generate_text_gcode(&txt, pwr, spd, scl, pas, fit, center, bold, outline, l_space, line_space) {
+                        if let Ok((gcode, _)) = generate_text_gcode(&txt, pwr, spd, scl, pas, fit, center, bold, outline, l_space, line_space, &f_name, false) {
                             state_clone.lock().unwrap().send_command(gcode);
                         }
                         state_clone.lock().unwrap().is_processing = false;

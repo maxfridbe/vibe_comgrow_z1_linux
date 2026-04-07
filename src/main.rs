@@ -22,6 +22,7 @@ use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc;
 use arboard::Clipboard;
+use font_kit::source::SystemSource;
 
 mod cli_and_helpers;
 mod virtual_device;
@@ -75,6 +76,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         text_is_outline: false,
         text_letter_spacing: 0.0,
         text_line_spacing: 1.0,
+        available_fonts: {
+            let mut fonts = SystemSource::new()
+                .all_families()
+                .unwrap_or_default();
+            fonts.sort();
+            fonts
+        },
+        text_font_dropdown_open: false,
+        text_font_scroll_offset: 0.0,
+        is_text_input_active: false,
     }));
 
     let (tx, rx) = mpsc::channel();
@@ -108,17 +119,29 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let font_chars: String = chars.iter().collect();
 
+    static mut MEASURE_FONT_PTR: *const Font = std::ptr::null();
+
     let mut clay = Clay::new(Dimensions::new(1280.0, 800.0));
     clay.set_measure_text_function(|text, config| {
         let size = config.font_size as f32;
-        let width = text.len() as f32 * (size * 0.60);
-        Dimensions::new(width, size)
+        unsafe {
+            if !MEASURE_FONT_PTR.is_null() {
+                let f = &*MEASURE_FONT_PTR;
+                let m = f.measure_text(text, size, 0.0);
+                Dimensions::new(m.x, m.y)
+            } else {
+                let width = text.len() as f32 * (size * 0.5);
+                Dimensions::new(width, size)
+            }
+        }
     });
     let arena = StringArena::new();
     let mut clipboard = Clipboard::new().ok();
     let mut zoom_size: i32 = 64; 
     let mut font = rl.load_font_from_memory(&thread, ".ttf", FONT_DATA, zoom_size, Some(&font_chars))
         .expect("Failed to load font");
+    
+    unsafe { MEASURE_FONT_PTR = &font as *const Font; }
 
     let mut sections = vec![
         Section {
@@ -216,10 +239,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             if rl.is_key_pressed(KeyboardKey::KEY_EQUAL) {
                 zoom_size = (zoom_size + 16).min(128);
                 font = rl.load_font_from_memory(&thread, ".ttf", FONT_DATA, zoom_size, Some(&font_chars)).expect("Failed to load font");
+                unsafe { MEASURE_FONT_PTR = &font as *const Font; }
             }
             if rl.is_key_pressed(KeyboardKey::KEY_MINUS) {
                 zoom_size = (zoom_size - 16).max(32);
                 font = rl.load_font_from_memory(&thread, ".ttf", FONT_DATA, zoom_size, Some(&font_chars)).expect("Failed to load font");
+                unsafe { MEASURE_FONT_PTR = &font as *const Font; }
             }
         }
         
@@ -230,7 +255,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mouse_pos = rl.get_mouse_position();
         let mouse_down = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
         let mouse_pressed = rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
-        let scroll_delta = rl.get_mouse_wheel_move_v();
+        let mut scroll_delta = rl.get_mouse_wheel_move_v();
+
+        // Handle text input
+        {
+            let mut g = state.lock().unwrap();
+            if g.is_text_input_active {
+                while let Some(c) = rl.get_char_pressed() {
+                    g.text_content.push(c);
+                }
+                if rl.is_key_pressed(KeyboardKey::KEY_BACKSPACE) {
+                    g.text_content.pop();
+                }
+                // Stop scroll from bubbling when typing
+                scroll_delta.y = 0.0;
+            }
+        }
         
         let render_width = rl.get_render_width() as f32;
         let render_height = rl.get_render_height() as f32;
@@ -380,9 +420,19 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     .clip(false, true, ClayVector2 { x: 0.0, y: c2_offset });
                 
                 if clay_scope.pointer_over(col2_id) {
-                    let mut g = state.lock().unwrap();
-                    g.col2_scroll_offset += scroll_delta.y * 40.0;
-                    if g.col2_scroll_offset > 0.0 { g.col2_scroll_offset = 0.0; }
+                    let mut skip_scroll = false;
+                    {
+                        let g = state.lock().unwrap();
+                        if g.text_font_dropdown_open && clay_scope.pointer_over(clay_scope.id("font_dropdown_list")) {
+                            skip_scroll = true;
+                        }
+                    }
+
+                    if !skip_scroll {
+                        let mut g = state.lock().unwrap();
+                        g.col2_scroll_offset += scroll_delta.y * 40.0;
+                        if g.col2_scroll_offset > 0.0 { g.col2_scroll_offset = 0.0; }
+                    }
                 }
 
                 clay_scope.with(&col2_scroll, |clay_scope| {
@@ -500,6 +550,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 RenderCommandConfig::Border(border) => {
                     let color = raylib::color::Color::new(border.color.r as u8, border.color.g as u8, border.color.b as u8, border.color.a as u8);
                     if border.width.top > 0 { d.draw_rectangle(command.bounding_box.x as i32, command.bounding_box.y as i32, command.bounding_box.width as i32, border.width.top as i32, color); }
+                    if border.width.bottom > 0 { d.draw_rectangle(command.bounding_box.x as i32, (command.bounding_box.y + command.bounding_box.height) as i32 - border.width.bottom as i32, command.bounding_box.width as i32, border.width.bottom as i32, color); }
+                    if border.width.left > 0 { d.draw_rectangle(command.bounding_box.x as i32, command.bounding_box.y as i32, border.width.left as i32, command.bounding_box.height as i32, color); }
+                    if border.width.right > 0 { d.draw_rectangle((command.bounding_box.x + command.bounding_box.width) as i32 - border.width.right as i32, command.bounding_box.y as i32, border.width.right as i32, command.bounding_box.height as i32, color); }
                 }
                 _ => {}
             }

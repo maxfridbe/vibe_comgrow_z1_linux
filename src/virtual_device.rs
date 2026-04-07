@@ -49,25 +49,6 @@ impl VirtualDevice {
     pub fn update(&mut self) {
         let now = Instant::now();
         
-        if let Some(start) = self.homing_start {
-            let elapsed = now.duration_since(start);
-            let duration = Duration::from_secs(5);
-            if elapsed >= duration {
-                self.pos = Vector2::new(0.0, 0.0);
-                self.target_pos = Vector2::new(0.0, 0.0);
-                self.state = "Idle".to_string();
-                self.homing_start = None;
-            } else {
-                self.state = "Home".to_string();
-                let t = elapsed.as_secs_f32() / duration.as_secs_f32();
-                self.pos = Vector2::new(
-                    self.homing_start_pos.x * (1.0 - t),
-                    self.homing_start_pos.y * (1.0 - t),
-                );
-            }
-            return;
-        }
-
         if let Some(start) = self.move_start {
             let elapsed = now.duration_since(start);
             if elapsed >= self.move_duration {
@@ -103,13 +84,6 @@ impl VirtualDevice {
                     self.pos.y + (self.target_pos.y - self.pos.y) * t,
                 )
             }
-        } else if let Some(start) = self.homing_start {
-            let elapsed = Instant::now().duration_since(start);
-            let t = (elapsed.as_secs_f32() / 5.0).min(1.0);
-            Vector2::new(
-                self.homing_start_pos.x * (1.0 - t),
-                self.homing_start_pos.y * (1.0 - t),
-            )
         } else {
             self.pos
         }
@@ -128,9 +102,10 @@ impl VirtualDevice {
         }
 
         if cmd == "$H" {
-            self.homing_start = Some(Instant::now());
-            self.homing_start_pos = self.pos;
-            self.state = "Home".to_string();
+            self.pos = Vector2::new(0.0, 0.0);
+            self.target_pos = Vector2::new(0.0, 0.0);
+            self.state = "Idle".to_string();
+            self.homing_start = None;
             return vec!["ok".to_string()];
         }
         if cmd == "$X" {
@@ -241,19 +216,19 @@ impl VirtualDevice {
                     let arc_len = r.abs() * (end_angle - start_angle).abs();
                     let speed_mm_per_sec = self.feed_rate / 60.0;
                     let seconds = if speed_mm_per_sec > 0.0 { arc_len / speed_mm_per_sec } else { 0.0 };
-                    self.move_duration = Duration::from_secs_f32(seconds.max(0.01));
+                    self.move_duration = Duration::from_secs_f32(seconds.max(0.001));
                 } else {
                     // Fallback to linear
                     let dist = d;
                     let speed_mm_per_sec = self.feed_rate / 60.0;
                     let seconds = if speed_mm_per_sec > 0.0 { dist / speed_mm_per_sec } else { 0.0 };
-                    self.move_duration = Duration::from_secs_f32(seconds.max(0.01));
+                    self.move_duration = Duration::from_secs_f32(seconds.max(0.001));
                 }
             } else {
                 let dist = ((self.target_pos.x - self.pos.x).powi(2) + (self.target_pos.y - self.pos.y).powi(2)).sqrt();
                 let speed_mm_per_sec = self.feed_rate / 60.0;
                 let seconds = if speed_mm_per_sec > 0.0 { dist / speed_mm_per_sec } else { 0.0 };
-                self.move_duration = Duration::from_secs_f32(seconds.max(0.01));
+                self.move_duration = Duration::from_secs_f32(seconds.max(0.001));
             }
 
             self.move_start = Some(Instant::now());

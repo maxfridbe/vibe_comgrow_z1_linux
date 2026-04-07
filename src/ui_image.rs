@@ -127,7 +127,7 @@ pub fn render_image_controls<'a, 'render>(
                                 let state_clone = Arc::clone(state);
                                 let path_clone = p.clone();
                                 std::thread::spawn(move || {
-                                    if let Ok((gcode, _)) = generate_image_gcode(&path_clone, pwr, spd * 10.0, scl, pas, fit, center, l_fid, h_fid) {
+                                    if let Ok((gcode, _)) = generate_image_gcode(&path_clone, pwr, spd * 10.0, scl, pas, fit, center, l_fid, h_fid, true) {
                                         let mut g = state_clone.lock().unwrap();
                                         let original_v_pos = g.v_pos;
                                         let original_is_abs = g.is_absolute;
@@ -159,7 +159,7 @@ pub fn render_image_controls<'a, 'render>(
                         let state_clone = Arc::clone(state);
                         let path_clone = p.clone();
                         std::thread::spawn(move || {
-                            if let Ok((gcode, _)) = generate_image_gcode(&path_clone, pwr, spd, scl, pas, fit, center, l_fid, h_fid) {
+                            if let Ok((gcode, _)) = generate_image_gcode(&path_clone, pwr, spd, scl, pas, fit, center, l_fid, h_fid, false) {
                                 state_clone.lock().unwrap().send_command(gcode);
                             }
                             state_clone.lock().unwrap().is_processing = false;
