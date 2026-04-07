@@ -65,6 +65,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         boundary_y: 0.0,
         boundary_w: 100.0,
         boundary_h: 100.0,
+        img_low_fidelity: 0.0,
+        img_high_fidelity: 1.0,
     }));
 
     let (tx, rx) = mpsc::channel();
@@ -482,11 +484,19 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let margin = 20.0;
             let side = (canvas_rect_actual.width - margin * 2.0).min(canvas_rect_actual.height - margin * 2.0);
             let draw_area = raylib::math::Rectangle::new(canvas_rect_actual.x + (canvas_rect_actual.width - side) / 2.0, canvas_rect_actual.y + (canvas_rect_actual.height - side) / 2.0, side, side);
-            for i in 0..=10 {
-                let x = draw_area.x + (i as f32 / 10.0) * side;
-                let y = draw_area.y + (i as f32 / 10.0) * side;
-                d.draw_line_v(raylib::math::Vector2::new(x, draw_area.y), raylib::math::Vector2::new(x, draw_area.y + draw_area.height), raylib::color::Color::new(255, 255, 255, 40));
-                d.draw_line_v(raylib::math::Vector2::new(draw_area.x, y), raylib::math::Vector2::new(draw_area.x + draw_area.width, y), raylib::color::Color::new(255, 255, 255, 40));
+            
+            // Draw grid lines
+            // Thin lines every 20 (400 / 20 = 20 segments)
+            for i in 0..=20 {
+                let offset = (i as f32 / 20.0) * side;
+                let is_major = i % 5 == 0; // Every 100 (5 * 20 = 100)
+                let color = if is_major { raylib::color::Color::new(255, 255, 255, 80) } else { raylib::color::Color::new(255, 255, 255, 30) };
+                let thickness = if is_major { 2.0 } else { 1.0 };
+
+                // Vertical
+                d.draw_line_ex(raylib::math::Vector2::new(draw_area.x + offset, draw_area.y), raylib::math::Vector2::new(draw_area.x + offset, draw_area.y + draw_area.height), thickness, color);
+                // Horizontal
+                d.draw_line_ex(raylib::math::Vector2::new(draw_area.x, draw_area.y + offset), raylib::math::Vector2::new(draw_area.x + draw_area.width, draw_area.y + offset), thickness, color);
             }
             let guard = state.lock().unwrap();
             if guard.boundary_enabled {
