@@ -112,7 +112,12 @@ pub fn generate_pattern_gcode(shape: &str, pwr_pct: &str, speed_pct: &str, scale
         "square" => (50.0, 50.0, 0.0, 0.0),
         "heart" => (50.0, 37.5, 0.0, 0.0),
         other => {
-            let path = format!("assets/{}.svg", other);
+            let path = if std::path::Path::new(other).exists() {
+                other.to_string()
+            } else {
+                format!("assets/{}.svg", other)
+            };
+            
             if std::path::Path::new(&path).exists() {
                 let (_, x1, y1, x2, y2) = svg_helper::load_svg_as_gcode(&path, 1.0, 0.0, 0.0, 0, 0)?;
                 (x2 - x1, y2 - y1, x1, y1)
@@ -154,7 +159,12 @@ pub fn generate_pattern_gcode(shape: &str, pwr_pct: &str, speed_pct: &str, scale
                 start_x, offset_y, s_val, f_val, x_right, y_mid, start_x, y_mid, r, offset_x, y_mid, r, start_x, offset_y), offset_x, offset_y, x_right, y_mid + r)
         },
         other => {
-            let path = format!("assets/{}.svg", other);
+            let path = if std::path::Path::new(other).exists() {
+                other.to_string()
+            } else {
+                format!("assets/{}.svg", other)
+            };
+            
             if std::path::Path::new(&path).exists() {
                 svg_helper::load_svg_as_gcode(&path, scale, offset_x, offset_y, s_val, f_val)?
             } else {
