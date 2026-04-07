@@ -253,6 +253,33 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
     Ok((gcode, format!("Image {} (Scale: {:.2}x, Center: {:.1},{:.1}, Power: {}%, Speed: {}%, LowFid: {:.2}, HighFid: {:.2})", filename, final_scale, center.0, center.1, pwr_max, speed, low_fid, high_fid)))
 }
 
+pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, passes: u32, fit: Option<(f32, f32)>, center: (f32, f32), _bold: bool, _outline: bool, _letter_spacing: f32, _line_spacing: f32) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+    // For now, we'll render text to an image and reuse generate_image_gcode
+    // In a real app we might use a dedicated library or raylib to get font glyphs
+    
+    // Create a temporary filename
+    let temp_path = "temp_text_render.png";
+    {
+        // Use raylib to render text to an image
+        // Since this runs in a background thread, we need to be careful with raylib if it's not thread-safe for image creation
+        // However, raylib Image functions are generally pure CPU functions
+        let font_size = 100;
+        let mut img = raylib::prelude::Image::gen_image_color(1000, 200, raylib::prelude::Color::WHITE);
+        img.draw_text(text, 10, 10, font_size, raylib::prelude::Color::BLACK);
+        // Crop to content
+        img.alpha_crop(0.1);
+        img.export_image(temp_path);
+    }
+
+    // Use generate_image_gcode logic (passing 0.0 for low_fid and 1.0 for high_fid for now)
+    let result = generate_image_gcode(temp_path, pwr_max, speed, scale, passes, fit, center, 0.0, 1.0);
+    
+    // Clean up
+    let _ = std::fs::remove_file(temp_path);
+    
+    result
+}
+
 pub fn run_serial_cmd(cmd_str: &str, label: &str, _tx: mpsc::Sender<String>, use_virtual: bool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use std::io::{Write, Read};
     use crate::gcode::{decode_response, decode_gcode};

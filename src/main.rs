@@ -9,6 +9,7 @@ mod ui_manual;
 mod ui_test;
 mod ui_svg;
 mod ui_image;
+mod ui_text;
 mod svg_helper;
 mod styles;
 
@@ -68,6 +69,12 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         img_low_fidelity: 0.0,
         img_high_fidelity: 1.0,
         is_processing: false,
+        text_content: "Comgrow Z1".to_string(),
+        text_font: "Default".to_string(),
+        text_is_bold: false,
+        text_is_outline: false,
+        text_letter_spacing: 0.0,
+        text_line_spacing: 1.0,
     }));
 
     let (tx, rx) = mpsc::channel();
@@ -320,6 +327,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, font_scale) { state.lock().unwrap().current_tab = UITab::Manual; }
                 if render_tab_btn(clay_scope, "tab_pattern", "Pattern", current_tab == UITab::Pattern, font_scale) { state.lock().unwrap().current_tab = UITab::Pattern; }
                 if render_tab_btn(clay_scope, "tab_image", "Image", current_tab == UITab::Image, font_scale) { state.lock().unwrap().current_tab = UITab::Image; }
+                if render_tab_btn(clay_scope, "tab_text", "Text", current_tab == UITab::Text, font_scale) { state.lock().unwrap().current_tab = UITab::Text; }
             });
 
             let mut content_area = Declaration::<Texture2D, ()>::new();
@@ -385,6 +393,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         }
                         UITab::Pattern => ui_test::render_test_controls(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale),
                         UITab::Image => ui_image::render_image_controls(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale),
+                        UITab::Text => ui_text::render_text_controls(clay_scope, &state, &sections, mouse_pos, mouse_down, mouse_pressed, scroll_delta.y, &mut clipboard, &arena, font_scale),
                     }
                 });
             });

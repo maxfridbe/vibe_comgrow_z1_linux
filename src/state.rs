@@ -36,6 +36,7 @@ pub enum UITab {
     Manual,
     Pattern,
     Image,
+    Text,
 }
 
 
@@ -71,6 +72,12 @@ pub struct AppState {
     pub img_low_fidelity: f32,
     pub img_high_fidelity: f32,
     pub is_processing: bool,
+    pub text_content: String,
+    pub text_font: String,
+    pub text_is_bold: bool,
+    pub text_is_outline: bool,
+    pub text_letter_spacing: f32,
+    pub text_line_spacing: f32,
 }
 
 impl AppState {
