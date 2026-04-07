@@ -96,67 +96,78 @@ pub fn render_image_controls<'a, 'render>(
                     clay.text(ICON_IMAGE, clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
                     clay.text("Pick Custom Image", clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(load_text_color).end());
                 });
+            });
 
-                let custom_path = { state.lock().unwrap().custom_image_path.clone() };
-                if let Some(p) = custom_path {
-                    let filename = Path::new(&p).file_name().and_then(|f| f.to_str()).unwrap_or("unknown");
-                    clay_scope.text(arena.push(filename.to_string()), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
-                    
-                    let mut action_row = Declaration::<Texture2D, ()>::new();
-                    action_row.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
-                    clay_scope.with(&action_row, |clay| {
-                        if render_burn_btn(clay, "burn_custom_image", "BURN", state, 0.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle) {
-                            let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = {
-                                let g = state.lock().unwrap();
-                                (g.power, g.feed_rate, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
-                            };
-                            let fit = if b_enabled { Some((bw, bh)) } else { None };
-                            let center = if b_enabled { (bx + bw/2.0, by + bh/2.0) } else { (200.0, 200.0) };
+            let (low_fid, high_fid) = { let g = state.lock().unwrap(); (g.img_low_fidelity, g.img_high_fidelity) };
 
-                            if let Ok((gcode, _)) = generate_image_gcode(&p, pwr, spd, scl, pas, fit, center) {
-                                state.lock().unwrap().send_command(gcode);
-                            }
-                        }
+            let mut fid_col = Declaration::<Texture2D, ()>::new();
+            fid_col.layout().width(grow!()).direction(LayoutDirection::TopToBottom).child_gap(12).end();
+            clay_scope.with(&fid_col, |clay_scope| {
+                render_slider(clay_scope, "img_low_fid", "Low Fidelity (White)", low_fid, 0.0, 1.0, COLOR_SLIDER_X, state, |s, v| s.img_low_fidelity = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+                render_slider(clay_scope, "img_high_fid", "High Fidelity (Black)", high_fid, 0.0, 1.0, COLOR_SLIDER_Y, state, |s, v| s.img_high_fidelity = v, mouse_pos, mouse_down, scroll_y, arena, font_scale);
+            });
 
-                        let eye_id = clay.id("eye_custom_image");
-                        let is_previewing = { state.lock().unwrap().preview_pattern.as_deref() == Some("custom_image") };
-                        let mut eye_color = if is_previewing { COLOR_SUCCESS } else { COLOR_TEXT_MUTED };
-                        if clay.pointer_over(eye_id) {
-                            eye_color = COLOR_TEXT_WHITE;
-                            if mouse_pressed {
-                                let mut g = state.lock().unwrap();
-                                if is_previewing {
-                                    g.preview_pattern = None;
-                                    g.preview_paths.clear();
-                                } else {
-                                    g.preview_pattern = Some("custom_image".to_string());
-                                    g.preview_paths.clear();
-                                    let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = (g.power, g.feed_rate, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h);
-                                    let fit = if b_enabled { Some((bw, bh)) } else { None };
-                                    let center = if b_enabled { (bx + bw/2.0, by + bh/2.0) } else { (200.0, 200.0) };
-                                    
-                                    // For image preview, we might just want to show the boundary or a simplified version
-                                    // But let's try to generate the full paths for the green layer
-                                    if let Ok((gcode, _)) = generate_image_gcode(&p, pwr, spd * 10.0, scl, pas, fit, center) {
-                                        let original_v_pos = g.v_pos;
-                                        let original_is_abs = g.is_absolute;
-                                        for line in gcode.lines() {
-                                            g.process_command_for_preview(line);
-                                        }
-                                        g.v_pos = original_v_pos;
-                                        g.is_absolute = original_is_abs;
-                                    }
+            let custom_path = { state.lock().unwrap().custom_image_path.clone() };
+            if let Some(p) = custom_path {
+                let filename = Path::new(&p).file_name().and_then(|f| f.to_str()).unwrap_or("unknown");
+                
+                let mut file_info_row = Declaration::<Texture2D, ()>::new();
+                file_info_row.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+                
+                clay_scope.with(&file_info_row, |clay_scope| {
+                    // Preview Eyeball
+                    let eye_id = clay_scope.id("eye_custom_image");
+                    let is_previewing = { state.lock().unwrap().preview_pattern.as_deref() == Some("custom_image") };
+                    let mut eye_color = if is_previewing { COLOR_SUCCESS } else { COLOR_TEXT_MUTED };
+                    if clay_scope.pointer_over(eye_id) {
+                        eye_color = COLOR_TEXT_WHITE;
+                        if mouse_pressed {
+                            let mut g = state.lock().unwrap();
+                            if is_previewing {
+                                g.preview_pattern = None;
+                                g.preview_paths.clear();
+                            } else {
+                                g.preview_pattern = Some("custom_image".to_string());
+                                g.preview_paths.clear();
+                                let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh, l_fid, h_fid) = (g.power, g.feed_rate, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h, g.img_low_fidelity, g.img_high_fidelity);
+                                let fit = if b_enabled { Some((bw, bh)) } else { None };
+                                let center = if b_enabled { (bx + bw/2.0, by + bh/2.0) } else { (200.0, 200.0) };
+                                if let Ok((gcode, _)) = generate_image_gcode(&p, pwr, spd * 10.0, scl, pas, fit, center, l_fid, h_fid) {
+                                    let original_v_pos = g.v_pos;
+                                    let original_is_abs = g.is_absolute;
+                                    for line in gcode.lines() { g.process_command_for_preview(line); }
+                                    g.v_pos = original_v_pos;
+                                    g.is_absolute = original_is_abs;
                                 }
                             }
                         }
-                        let mut eye_btn = Declaration::<Texture2D, ()>::new();
-                        eye_btn.id(eye_id).layout().padding(Padding::all(4)).end();
-                        clay.with(&eye_btn, |clay| {
-                            clay.text(ICON_EYE, clay_layout::text::TextConfig::new().font_size((20.0 * font_scale) as u16).color(eye_color).end());
-                        });
+                    }
+                    let mut eye_btn = Declaration::<Texture2D, ()>::new();
+                    eye_btn.id(eye_id).layout().padding(Padding::all(4)).end();
+                    clay_scope.with(&eye_btn, |clay| {
+                        clay.text(ICON_EYE, clay_layout::text::TextConfig::new().font_size((20.0 * font_scale) as u16).color(eye_color).end());
                     });
-                }
-            });
+
+                    clay_scope.text(arena.push(filename.to_string()), clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_WHITE).end());
+                });
+                
+                let mut action_row = Declaration::<Texture2D, ()>::new();
+                action_row.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+                clay_scope.with(&action_row, |clay| {
+                    if render_burn_btn(clay, "burn_custom_image", "BURN", state, 0.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle) {
+                        let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh, l_fid, h_fid) = {
+                            let g = state.lock().unwrap();
+                            (g.power, g.feed_rate, g.scale, g.passes, g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h, g.img_low_fidelity, g.img_high_fidelity)
+                        };
+                        let fit = if b_enabled { Some((bw, bh)) } else { None };
+                        let center = if b_enabled { (bx + bw/2.0, by + bh/2.0) } else { (200.0, 200.0) };
+
+                        if let Ok((gcode, _)) = generate_image_gcode(&p, pwr, spd, scl, pas, fit, center, l_fid, h_fid) {
+                            state.lock().unwrap().send_command(gcode);
+                        }
+                    }
+                });
+            }
         });
 
         // 3. Sliders (TROGDOR)
