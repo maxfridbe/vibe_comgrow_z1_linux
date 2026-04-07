@@ -181,13 +181,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         },
     ];
 
+    let mut pre_fullscreen_size = raylib::math::Vector2::new(1280.0, 800.0);
+
     while !rl.window_should_close() {
         if rl.is_key_pressed(KeyboardKey::KEY_F11) {
             let curr = rl.is_window_fullscreen();
             if curr {
                 rl.toggle_fullscreen();
-                rl.set_window_size(1280, 800);
+                rl.set_window_size(pre_fullscreen_size.x as i32, pre_fullscreen_size.y as i32);
             } else {
+                pre_fullscreen_size = raylib::math::Vector2::new(rl.get_screen_width() as f32, rl.get_screen_height() as f32);
                 let m = raylib::prelude::get_current_monitor();
                 rl.set_window_size(raylib::prelude::get_monitor_width(m), raylib::prelude::get_monitor_height(m));
                 rl.toggle_fullscreen();
