@@ -373,6 +373,7 @@ pub fn render_image_controls<'a, 'render>(
                         0.0,
                         mouse_pressed,
                         clipboard,
+                        arena,
                         font_scale,
                         !is_idle,
                     ) {

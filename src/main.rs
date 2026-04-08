@@ -639,16 +639,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .end();
             clay_scope.with(&tab_bar, |clay_scope| {
                 let current_tab = state.lock().unwrap().current_tab.clone();
-                if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, font_scale) {
+                if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, &arena, font_scale) {
                     state.lock().unwrap().current_tab = UITab::Manual;
                 }
-                if render_tab_btn(clay_scope, "tab_pattern", "Pattern", current_tab == UITab::Pattern, font_scale) {
+                if render_tab_btn(clay_scope, "tab_pattern", "Pattern", current_tab == UITab::Pattern, &arena, font_scale) {
                     state.lock().unwrap().current_tab = UITab::Pattern;
                 }
-                if render_tab_btn(clay_scope, "tab_image", "Image", current_tab == UITab::Image, font_scale) {
+                if render_tab_btn(clay_scope, "tab_image", "Image", current_tab == UITab::Image, &arena, font_scale) {
                     state.lock().unwrap().current_tab = UITab::Image;
                 }
-                if render_tab_btn(clay_scope, "tab_text", "Text", current_tab == UITab::Text, font_scale) {
+                if render_tab_btn(clay_scope, "tab_text", "Text", current_tab == UITab::Text, &arena, font_scale) {
                     state.lock().unwrap().current_tab = UITab::Text;
                 }
             });

@@ -53,6 +53,7 @@ pub fn render_svg_left_col<'a, 'render>(
                 0.0,
                 mouse_pressed,
                 clipboard,
+                _arena,
                 font_scale,
                 !is_idle,
             ) {

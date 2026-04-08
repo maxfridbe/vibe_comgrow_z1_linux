@@ -120,18 +120,11 @@ pub fn render_manual_left_subcol<'a, 'render>(
                                 COLOR_TEXT_DISABLED
                             };
                             clay_scope.with(&btn, |clay_scope| {
-                                clay_scope.text(
-                                    section.icon,
-                                    clay_layout::text::TextConfig::new()
-                                        .font_size((12.0 * font_scale) as u16)
-                                        .color(text_color)
-                                        .end(),
-                                );
                                 let mut text_stack = Declaration::<Texture2D, ()>::new();
                                 text_stack.layout().direction(LayoutDirection::TopToBottom).child_gap(2).end();
                                 clay_scope.with(&text_stack, |clay_scope| {
                                     clay_scope.text(
-                                        cmd.label,
+                                        arena.push(format!("{} {}", section.icon, cmd.label)),
                                         clay_layout::text::TextConfig::new()
                                             .font_size((12.0 * font_scale) as u16)
                                             .color(text_color)
@@ -222,6 +215,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         1.0,
                         mouse_pressed,
                         clipboard,
+                        arena,
                         font_scale,
                         !is_idle,
                     );
@@ -239,6 +233,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         1.0,
                         mouse_pressed,
                         clipboard,
+                        arena,
                         font_scale,
                         !is_idle,
                     );
@@ -256,6 +251,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         1.0,
                         mouse_pressed,
                         clipboard,
+                        arena,
                         font_scale,
                         !is_idle,
                     );
@@ -279,6 +275,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         0.0,
                         mouse_pressed,
                         clipboard,
+                        arena,
                         font_scale,
                         !is_idle,
                     );
@@ -397,6 +394,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         0.0,
                         mouse_pressed,
                         clipboard,
+                        arena,
                         font_scale,
                         !is_idle,
                     );
@@ -420,6 +418,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         -1.0,
                         mouse_pressed,
                         clipboard,
+                        arena,
                         font_scale,
                         !is_idle,
                     );
@@ -437,6 +436,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         -1.0,
                         mouse_pressed,
                         clipboard,
+                        arena,
                         font_scale,
                         !is_idle,
                     );
@@ -454,6 +454,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         -1.0,
                         mouse_pressed,
                         clipboard,
+                        arena,
                         font_scale,
                         !is_idle,
                     );

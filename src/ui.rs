@@ -13,6 +13,7 @@ pub fn render_tab_btn<'a, 'render>(
     id: &str,
     label: &str,
     active: bool,
+    arena: &StringArena,
     font_scale: f32,
 ) -> bool
 where
@@ -59,11 +60,7 @@ where
     let mut clicked = false;
     clay.with(&btn, |clay_scope| {
         clay_scope.text(
-            icon,
-            clay_layout::text::TextConfig::new().font_size((16.0 * font_scale) as u16).color(text_color).end(),
-        );
-        clay_scope.text(
-            label,
+            arena.push(format!("{} {}", icon, label)),
             clay_layout::text::TextConfig::new().font_size((16.0 * font_scale) as u16).color(text_color).end(),
         );
         if unsafe { raylib::ffi::IsMouseButtonPressed(raylib::ffi::MouseButton::MOUSE_BUTTON_LEFT as i32) }
@@ -159,6 +156,7 @@ pub fn render_burn_btn<'a, 'render>(
     dy: f32,
     mouse_pressed: bool,
     clipboard: &mut Option<Clipboard>,
+    arena: &StringArena,
     font_scale: f32,
     disabled: bool,
 ) -> bool
@@ -210,11 +208,7 @@ where
     };
     clay.with(&btn, |clay| {
         clay.text(
-            ICON_FLAME,
-            clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(text_color).end(),
-        );
-        clay.text(
-            label,
+            arena.push(format!("{} {}", ICON_FLAME, label)),
             clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(text_color).end(),
         );
     });
