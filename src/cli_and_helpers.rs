@@ -106,6 +106,12 @@ pub fn generate_pattern_gcode(
     let pas_val = passes.parse::<u32>().unwrap_or(1);
     let (cx, cy) = parse_pair(center)?;
 
+    // Embedded SVG Assets
+    let car_svg = include_str!("../assets/car.svg");
+    let stars8_svg = include_str!("../assets/stars8.svg");
+    let stars9_svg = include_str!("../assets/stars9.svg");
+    let star_svg = include_str!("../assets/star.svg");
+
     let mut final_gcode = String::new();
     final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_ABSOLUTE_POS, gcode::CMD_HOME));
 
@@ -144,32 +150,30 @@ pub fn generate_pattern_gcode(
                     }
                 }
             }
-            "star" => {
-                let pts = 5;
-                for i in 0..=(pts * 2) {
-                    let angle = (i as f32 / (pts as f32 * 2.0)) * 2.0 * std::f32::consts::PI;
-                    let r = if i % 2 == 0 {
-                        20.0
-                    } else {
-                        8.0
-                    };
-                    let x = r * angle.cos();
-                    let y = r * angle.sin();
-                    if i == 0 {
-                        final_gcode.push_str(&format!(
-                            "{}\n{}\n",
-                            gcode::CMD_LASER_OFF,
-                            gcode::move_xy(cx + x * scl_val, cy + y * scl_val)
-                        ));
-                        final_gcode.push_str(&format!(
-                            "{} F{}\n",
-                            gcode::laser_on_dynamic(pwr_val * 10.0),
-                            spd_val * 10.0
-                        ));
-                    } else {
-                        final_gcode
-                            .push_str(&format!("{}\n", gcode::move_linear_xy(cx + x * scl_val, cy + y * scl_val)));
+            "star" | "stars8" | "stars9" | "car" => {
+                let svg_data = match shape_lower.as_str() {
+                    "star" => star_svg,
+                    "stars8" => stars8_svg,
+                    "stars9" => stars9_svg,
+                    "car" => car_svg,
+                    _ => unreachable!(),
+                };
+                let mut parsed_fit = None;
+                if let Some(ref f) = _fit {
+                    if let Ok(pair) = parse_pair(f) {
+                        parsed_fit = Some(pair);
                     }
+                }
+                if let Ok((svg_gcode, _, _, _, _)) = svg_helper::load_svg_data_as_gcode(
+                    svg_data.as_bytes(),
+                    scl_val,
+                    parsed_fit,
+                    cx,
+                    cy,
+                    (pwr_val * 10.0) as i32,
+                    (spd_val * 10.0) as i32,
+                ) {
+                    final_gcode.push_str(&svg_gcode);
                 }
             }
             _ => {
@@ -779,6 +783,82 @@ mod tests {
                 assert!(label.contains("Outline"), "Label should describe the outline mode");
             }
             Err(e) => panic!("Outline G-code generation failed: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_embedded_shapes_generation() {
+        let shapes = vec!["star", "stars8", "stars9", "car", "square", "heart"];
+        for shape in shapes {
+            let result = generate_pattern_gcode(shape, "10%", "1000%", "1.0x", "1", None, "200,200");
+            match result {
+                Ok((gcode, _)) => {
+                    assert!(!gcode.is_empty(), "G-code for {} should not be empty", shape);
+                    assert!(
+                        gcode.contains("G1") || gcode.contains("G0"),
+                        "G-code for {} should contain movement",
+                        shape
+                    );
+
+                    // Test preview processing
+                    use crate::state::AppState;
+                    use std::sync::mpsc;
+                    let (tx, _) = mpsc::channel();
+                    let mut state = AppState {
+                        current_tab: crate::state::UITab::Manual,
+                        distance: 1.0,
+                        feed_rate: 1000.0,
+                        power: 100.0,
+                        passes: 1,
+                        scale: 1.0,
+                        log_scroll_offset: 0.0,
+                        col2_scroll_offset: 0.0,
+                        is_absolute: true,
+                        port: "VIRTUAL".to_string(),
+                        wattage: "10W".to_string(),
+                        v_pos: raylib::prelude::Vector2::new(0.0, 0.0),
+                        machine_pos: raylib::prelude::Vector2::new(0.0, 0.0),
+                        machine_state: "Idle".to_string(),
+                        paths: Vec::new(),
+                        preview_paths: Vec::new(),
+                        preview_pattern: None,
+                        custom_svg_path: None,
+                        custom_image_path: None,
+                        last_command: String::new(),
+                        copied_at: None,
+                        serial_logs: std::collections::VecDeque::new(),
+                        tx,
+                        boundary_enabled: false,
+                        boundary_x: 0.0,
+                        boundary_y: 0.0,
+                        boundary_w: 400.0,
+                        boundary_h: 400.0,
+                        img_low_fidelity: 0.0,
+                        img_high_fidelity: 1.0,
+                        is_processing: false,
+                        text_content: String::new(),
+                        text_font: "Default".to_string(),
+                        text_is_bold: false,
+                        text_is_outline: false,
+                        text_letter_spacing: 0.0,
+                        text_line_spacing: 1.0,
+                        available_fonts: Vec::new(),
+                        text_font_dropdown_open: false,
+                        text_font_scroll_offset: 0.0,
+                        is_text_input_active: false,
+                        current_preview_power: 0.0,
+                    };
+
+                    state.process_command_for_preview(&gcode);
+                    assert!(
+                        !state.preview_paths.is_empty(),
+                        "Preview paths for {} should not be empty. Gcode:\n{}",
+                        shape,
+                        gcode
+                    );
+                }
+                Err(e) => panic!("G-code generation failed for {}: {}", shape, e),
+            }
         }
     }
 }

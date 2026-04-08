@@ -12,9 +12,21 @@ pub fn load_svg_as_gcode(
     s_val: i32,
     f_val: i32,
 ) -> Result<(String, f32, f32, f32, f32), Box<dyn std::error::Error + Send + Sync>> {
-    let opt = usvg::Options::default();
     let data = std::fs::read(path)?;
-    let tree = usvg::Tree::from_data(&data, &opt)?;
+    load_svg_data_as_gcode(&data, scale, fit, center_x, center_y, s_val, f_val)
+}
+
+pub fn load_svg_data_as_gcode(
+    data: &[u8],
+    scale: f32,
+    fit: Option<(f32, f32)>,
+    center_x: f32,
+    center_y: f32,
+    s_val: i32,
+    f_val: i32,
+) -> Result<(String, f32, f32, f32, f32), Box<dyn std::error::Error + Send + Sync>> {
+    let opt = usvg::Options::default();
+    let tree = usvg::Tree::from_data(data, &opt)?;
 
     let mut min_orig_x: Option<f32> = None;
     let mut max_orig_x: Option<f32> = None;
