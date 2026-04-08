@@ -391,26 +391,22 @@ pub fn render_slider<'a, 'render, F>(
         header
             .layout()
             .width(grow!())
+            .child_gap(8)
             .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
             .end();
         clay.with(&header, |clay| {
+            // Intelligent rounding
+            let val_str = if value.fract() == 0.0 {
+                format!("{}: {}", label, value as i32)
+            } else {
+                format!("{}: {:.1}", label, value)
+            };
             clay.text(
-                label,
+                arena.push(val_str),
                 clay_layout::text::TextConfig::new()
                     .font_size((14.0 * font_scale) as u16)
                     .color(COLOR_TEXT_LABEL)
                     .end(),
-            );
-
-            // Intelligent rounding
-            let val_str = if value.fract() == 0.0 {
-                format!("{}", value as i32)
-            } else {
-                format!("{:.1}", value)
-            };
-            clay.text(
-                arena.push(val_str),
-                clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(color).end(),
             );
         });
 

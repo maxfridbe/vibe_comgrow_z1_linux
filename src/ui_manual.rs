@@ -49,17 +49,10 @@ pub fn render_manual_left_subcol<'a, 'render>(
                     .end();
                 clay_scope.with(&title_line, |clay_scope| {
                     clay_scope.text(
-                        section.icon,
+                        arena.push(format!("{} {}", section.icon, section.title)),
                         clay_layout::text::TextConfig::new()
-                            .font_size((16.0 * font_scale) as u16)
+                            .font_size((14.0 * font_scale) as u16)
                             .color(section.color)
-                            .end(),
-                    );
-                    clay_scope.text(
-                        section.title,
-                        clay_layout::text::TextConfig::new()
-                            .font_size((12.0 * font_scale) as u16)
-                            .color(COLOR_TEXT_LABEL)
                             .end(),
                     );
                 });
@@ -325,14 +318,7 @@ pub fn render_manual_right_col<'a, 'render>(
 
                     clay_scope.with(&fire_btn, |clay| {
                         clay.text(
-                            ICON_FLAME,
-                            clay_layout::text::TextConfig::new()
-                                .font_size((10.0 * font_scale) as u16)
-                                .color(fire_text_color)
-                                .end(),
-                        );
-                        clay.text(
-                            "FIRE",
+                            arena.push(format!("{} FIRE", ICON_FLAME)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((10.0 * font_scale) as u16)
                                 .color(fire_text_color)
@@ -366,14 +352,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         .end();
                     clay_scope.with(&off_btn, |clay| {
                         clay.text(
-                            ICON_POWER,
-                            clay_layout::text::TextConfig::new()
-                                .font_size((10.0 * font_scale) as u16)
-                                .color(off_text_color)
-                                .end(),
-                        );
-                        clay.text(
-                            "OFF",
+                            arena.push(format!("{} OFF", ICON_POWER)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((10.0 * font_scale) as u16)
                                 .color(off_text_color)
@@ -511,14 +490,7 @@ pub fn render_manual_right_col<'a, 'render>(
 
                     clay.with(&btn, |clay| {
                         clay.text(
-                            icon,
-                            clay_layout::text::TextConfig::new()
-                                .font_size((9.0 * font_scale) as u16)
-                                .color(btn_text_color)
-                                .end(),
-                        );
-                        clay.text(
-                            label,
+                            arena.push(format!("{} {}", icon, label)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((9.0 * font_scale) as u16)
                                 .color(btn_text_color)

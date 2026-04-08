@@ -539,18 +539,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .end();
                     clay_scope.with(&input_box, |clay_scope| {
                         clay_scope.text(
-                            ICON_USB,
-                            clay_layout::text::TextConfig::new()
-                                .font_size((14.0 * font_scale) as u16)
-                                .color(if port == "VIRTUAL" {
-                                    COLOR_TEXT_WHITE
-                                } else {
-                                    COLOR_USB_ICON
-                                })
-                                .end(),
-                        );
-                        clay_scope.text(
-                            arena.push(port),
+                            arena.push(format!("{} {}", ICON_USB, port)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
                                 .color(port_text_color)
@@ -570,14 +559,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .end();
                     clay_scope.with(&wattage_box, |clay_scope| {
                         clay_scope.text(
-                            ICON_CPU,
-                            clay_layout::text::TextConfig::new()
-                                .font_size((14.0 * font_scale) as u16)
-                                .color(COLOR_CPU_ICON)
-                                .end(),
-                        );
-                        clay_scope.text(
-                            arena.push(wattage),
+                            arena.push(format!("{} {}", ICON_CPU, wattage)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
                                 .color(COLOR_WATTAGE_TEXT)
@@ -740,7 +722,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             .layout()
                             .padding(Padding::all(6))
                             .direction(LayoutDirection::LeftToRight)
-                            .child_gap(6)
+                            .child_gap(8)
                             .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
                             .end()
                             .background_color(COLOR_BG_DARK)
@@ -1018,21 +1000,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             }
                             clay_scope.with(&row, |clay_scope| {
                                 clay_scope.text(
-                                    arena.push(format!("[{}]", log.timestamp)),
-                                    clay_layout::text::TextConfig::new()
-                                        .font_size((11.0 * font_scale) as u16)
-                                        .color(text_color)
-                                        .end(),
-                                );
-                                clay_scope.text(
-                                    arena.push(log.text.clone()),
-                                    clay_layout::text::TextConfig::new()
-                                        .font_size((11.0 * font_scale) as u16)
-                                        .color(text_color)
-                                        .end(),
-                                );
-                                clay_scope.text(
-                                    arena.push(log.explanation.clone()),
+                                    arena.push(format!("[{}] {} {}", log.timestamp, log.text, log.explanation)),
                                     clay_layout::text::TextConfig::new()
                                         .font_size((11.0 * font_scale) as u16)
                                         .color(text_color)
