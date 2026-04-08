@@ -35,6 +35,16 @@ use crate::ui::{Command, Section, render_tab_btn};
 
 const FONT_DATA: &[u8] = include_bytes!("../assets/font.ttf");
 
+trait FontMeasureEx {
+    fn measure_text_ex(&self, text: &str, size: f32, spacing: f32) -> raylib::math::Vector2;
+}
+
+impl FontMeasureEx for raylib::prelude::Font {
+    fn measure_text_ex(&self, text: &str, size: f32, spacing: f32) -> raylib::math::Vector2 {
+        self.measure_text(text, size, spacing)
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let _args: Vec<String> = std::env::args().collect();
 
@@ -145,7 +155,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         unsafe {
             if !MEASURE_FONT_PTR.is_null() {
                 let f = &*MEASURE_FONT_PTR;
-                let m = f.measure_text(text, size, 0.0);
+                let m = f.measure_text_ex(text, size, 0.0);
                 Dimensions::new(m.x, m.y)
             } else {
                 let width = text.len() as f32 * (size * 0.5);
@@ -1115,7 +1125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         config.color.b as u8,
                         config.color.a as u8,
                     );
-                    let text_size = font.measure_text(text_str, command.bounding_box.height, 0.0);
+                    let text_size = font.measure_text_ex(text_str, command.bounding_box.height, 0.0);
                     let pos = raylib::math::Vector2::new(
                         command.bounding_box.x + (command.bounding_box.width - text_size.x) / 2.0,
                         command.bounding_box.y + (command.bounding_box.height - text_size.y) / 2.0,
