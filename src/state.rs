@@ -452,17 +452,32 @@ impl AppState {
     }
 
     pub fn save_persistence(&self) {
-        if let Ok(json) = serde_json::to_string_pretty(&self.saved_states) {
-            let _ = std::fs::write("saved_states.json", json);
+        if let Ok(path) = self.get_config_path() {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Ok(json) = serde_json::to_string_pretty(&self.saved_states) {
+                let _ = std::fs::write(path, json);
+            }
         }
     }
 
     pub fn load_persistence(&mut self) {
-        if let Ok(json) = std::fs::read_to_string("saved_states.json") {
-            if let Ok(states) = serde_json::from_str(&json) {
-                self.saved_states = states;
+        if let Ok(path) = self.get_config_path() {
+            if let Ok(json) = std::fs::read_to_string(path) {
+                if let Ok(states) = serde_json::from_str(&json) {
+                    self.saved_states = states;
+                }
             }
         }
+    }
+
+    fn get_config_path(&self) -> Result<std::path::PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+        let home = std::env::var("HOME")?;
+        Ok(std::path::PathBuf::from(home)
+            .join(".config")
+            .join("johnny5")
+            .join("saved_states.json"))
     }
 
     fn add_path_segment(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, s: f32) {

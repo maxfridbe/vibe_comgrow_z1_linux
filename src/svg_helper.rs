@@ -187,8 +187,8 @@ pub fn load_svg_data_as_gcode(
     for op in ops {
         match op {
             Op::MoveTo(x, y) => {
-                let px = offset_x + (x * final_scale);
-                let py = offset_y + (y * final_scale);
+                let px = (offset_x + (x * final_scale)).clamp(0.0, 400.0);
+                let py = (offset_y + (y * final_scale)).clamp(0.0, 400.0);
                 gcode.push_str(&format!(
                     "{}\n{}\n{}\n",
                     crate::gcode::CMD_LASER_OFF,
@@ -198,8 +198,8 @@ pub fn load_svg_data_as_gcode(
                 update_bounds(px, py);
             }
             Op::LineTo(x, y) => {
-                let px = offset_x + (x * final_scale);
-                let py = offset_y + (y * final_scale);
+                let px = (offset_x + (x * final_scale)).clamp(0.0, 400.0);
+                let py = (offset_y + (y * final_scale)).clamp(0.0, 400.0);
                 gcode.push_str(&format!("{}\n", crate::gcode::burn_s(px, py, s_val as f32)));
                 update_bounds(px, py);
             }

@@ -120,13 +120,18 @@ pub fn generate_pattern_gcode(
         match shape_lower.as_str() {
             "square" => {
                 let s = 20.0 * scl_val;
-                final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy(cx - s, cy - s)));
+                let x1 = (cx - s).clamp(0.0, 400.0);
+                let y1 = (cy - s).clamp(0.0, 400.0);
+                let x2 = (cx + s).clamp(0.0, 400.0);
+                let y2 = (cy + s).clamp(0.0, 400.0);
+
+                final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy(x1, y1)));
                 final_gcode.push_str(&format!("{} F{}\n", gcode::laser_on_dynamic(pwr_val * 10.0), spd_val * 10.0));
                 let p_val = pwr_val * 10.0;
-                final_gcode.push_str(&format!("{}\n", gcode::burn_s(cx + s, cy - s, p_val)));
-                final_gcode.push_str(&format!("{}\n", gcode::burn_s(cx + s, cy + s, p_val)));
-                final_gcode.push_str(&format!("{}\n", gcode::burn_s(cx - s, cy + s, p_val)));
-                final_gcode.push_str(&format!("{}\n", gcode::burn_s(cx - s, cy - s, p_val)));
+                final_gcode.push_str(&format!("{}\n", gcode::burn_s(x2, y1, p_val)));
+                final_gcode.push_str(&format!("{}\n", gcode::burn_s(x2, y2, p_val)));
+                final_gcode.push_str(&format!("{}\n", gcode::burn_s(x1, y2, p_val)));
+                final_gcode.push_str(&format!("{}\n", gcode::burn_s(x1, y1, p_val)));
             }
             "heart" => {
                 let pts = 100;
@@ -135,11 +140,13 @@ pub fn generate_pattern_gcode(
                     let t = (i as f32 / pts as f32) * 2.0 * std::f32::consts::PI;
                     let x = 16.0 * t.sin().powi(3);
                     let y = 13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos();
+                    let px = (cx + x * scl_val).clamp(0.0, 400.0);
+                    let py = (cy + y * scl_val).clamp(0.0, 400.0);
                     if i == 0 {
                         final_gcode.push_str(&format!(
                             "{}\n{}\n",
                             gcode::CMD_LASER_OFF,
-                            gcode::move_xy(cx + x * scl_val, cy + y * scl_val)
+                            gcode::move_xy(px, py)
                         ));
                         final_gcode.push_str(&format!(
                             "{} F{}\n",
@@ -147,8 +154,7 @@ pub fn generate_pattern_gcode(
                             spd_val * 10.0
                         ));
                     } else {
-                        final_gcode
-                            .push_str(&format!("{}\n", gcode::burn_s(cx + x * scl_val, cy + y * scl_val, p_val)));
+                        final_gcode.push_str(&format!("{}\n", gcode::burn_s(px, py, p_val)));
                     }
                 }
             }
@@ -318,10 +324,12 @@ pub fn generate_image_gcode(
                 } else {
                     lx as f32 + 1.0
                 };
+                let px = (offset_x + start_x_coord * final_scale).clamp(0.0, 400.0);
+                let py = actual_y.clamp(0.0, 400.0);
                 gcode.push_str(&format!(
                     "{}\n{}\n",
                     gcode::CMD_LASER_OFF,
-                    gcode::move_xy_f(offset_x + start_x_coord * final_scale, actual_y, 3000.0)
+                    gcode::move_xy_f(px, py, 3000.0)
                 ));
                 gcode.push_str(&format!("M4 F{}\n", f_val));
 
@@ -346,7 +354,7 @@ pub fn generate_image_gcode(
                     } else {
                         x as f32
                     };
-                    let actual_x = offset_x + dest_x_coord * final_scale;
+                    let actual_x = (offset_x + dest_x_coord * final_scale).clamp(0.0, 400.0);
 
                     if s_val > 0 {
                         gcode.push_str(&format!("{}\n", gcode::burn_xs(actual_x, s_val as f32)));
@@ -384,7 +392,9 @@ struct VectorGCodeBuilder {
 impl OutlineSink for VectorGCodeBuilder {
     fn move_to(&mut self, to: Vector2F) {
         let p = (to + self.offset) * self.scale;
-        self.gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy_f(p.x(), p.y(), 3000.0)));
+        let px = p.x().clamp(0.0, 400.0);
+        let py = p.y().clamp(0.0, 400.0);
+        self.gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy_f(px, py, 3000.0)));
         self.gcode.push_str(&format!("{}\n", gcode::laser_on_dynamic_f(self.power * 10.0, self.speed * 10.0)));
         self.current_pos = to;
         self.start_pos = to;
@@ -392,7 +402,9 @@ impl OutlineSink for VectorGCodeBuilder {
 
     fn line_to(&mut self, to: Vector2F) {
         let p = (to + self.offset) * self.scale;
-        self.gcode.push_str(&format!("{}\n", gcode::burn_s(p.x(), p.y(), self.power * 10.0)));
+        let px = p.x().clamp(0.0, 400.0);
+        let py = p.y().clamp(0.0, 400.0);
+        self.gcode.push_str(&format!("{}\n", gcode::burn_s(px, py, self.power * 10.0)));
         self.current_pos = to;
     }
 
