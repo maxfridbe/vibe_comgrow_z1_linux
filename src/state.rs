@@ -1,8 +1,36 @@
 use crate::gcode::decode_gcode;
 use raylib::prelude::Vector2;
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::mpsc::Sender;
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct SavedState {
+    pub timestamp: String,
+    pub label: String,
+    pub text_content: String,
+    pub text_font: String,
+    pub text_is_bold: bool,
+    pub text_is_outline: bool,
+    pub text_letter_spacing: f32,
+    pub text_line_spacing: f32,
+    pub text_curve_steps: u32,
+    pub text_lines_per_mm: f32,
+    pub power: f32,
+    pub feed_rate: f32,
+    pub scale: f32,
+    pub passes: u32,
+    pub boundary_enabled: bool,
+    pub boundary_x: f32,
+    pub boundary_y: f32,
+    pub boundary_w: f32,
+    pub boundary_h: f32,
+    pub img_low_fidelity: f32,
+    pub img_high_fidelity: f32,
+    pub custom_image_path: Option<String>,
+    pub custom_svg_path: Option<String>,
+}
 
 fn get_ts() -> String {
     let now = std::time::SystemTime::now();
@@ -84,6 +112,8 @@ pub struct AppState {
     pub text_font_scroll_offset: f32,
     pub is_text_input_active: bool,
     pub current_preview_power: f32,
+    pub saved_states: Vec<SavedState>,
+    pub load_dialog_open: bool,
 }
 
 impl AppState {
@@ -365,6 +395,72 @@ impl AppState {
             });
             if self.serial_logs.len() > 1000 {
                 self.serial_logs.pop_front();
+            }
+        }
+    }
+
+    pub fn capture_state(&self, label: &str) -> SavedState {
+        SavedState {
+            timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            label: label.to_string(),
+            text_content: self.text_content.clone(),
+            text_font: self.text_font.clone(),
+            text_is_bold: self.text_is_bold,
+            text_is_outline: self.text_is_outline,
+            text_letter_spacing: self.text_letter_spacing,
+            text_line_spacing: self.text_line_spacing,
+            text_curve_steps: self.text_curve_steps,
+            text_lines_per_mm: self.text_lines_per_mm,
+            power: self.power,
+            feed_rate: self.feed_rate,
+            scale: self.scale,
+            passes: self.passes,
+            boundary_enabled: self.boundary_enabled,
+            boundary_x: self.boundary_x,
+            boundary_y: self.boundary_y,
+            boundary_w: self.boundary_w,
+            boundary_h: self.boundary_h,
+            img_low_fidelity: self.img_low_fidelity,
+            img_high_fidelity: self.img_high_fidelity,
+            custom_image_path: self.custom_image_path.clone(),
+            custom_svg_path: self.custom_svg_path.clone(),
+        }
+    }
+
+    pub fn apply_state(&mut self, state: &SavedState) {
+        self.text_content = state.text_content.clone();
+        self.text_font = state.text_font.clone();
+        self.text_is_bold = state.text_is_bold;
+        self.text_is_outline = state.text_is_outline;
+        self.text_letter_spacing = state.text_letter_spacing;
+        self.text_line_spacing = state.text_line_spacing;
+        self.text_curve_steps = state.text_curve_steps;
+        self.text_lines_per_mm = state.text_lines_per_mm;
+        self.power = state.power;
+        self.feed_rate = state.feed_rate;
+        self.scale = state.scale;
+        self.passes = state.passes;
+        self.boundary_enabled = state.boundary_enabled;
+        self.boundary_x = state.boundary_x;
+        self.boundary_y = state.boundary_y;
+        self.boundary_w = state.boundary_w;
+        self.boundary_h = state.boundary_h;
+        self.img_low_fidelity = state.img_low_fidelity;
+        self.img_high_fidelity = state.img_high_fidelity;
+        self.custom_image_path = state.custom_image_path.clone();
+        self.custom_svg_path = state.custom_svg_path.clone();
+    }
+
+    pub fn save_persistence(&self) {
+        if let Ok(json) = serde_json::to_string_pretty(&self.saved_states) {
+            let _ = std::fs::write("saved_states.json", json);
+        }
+    }
+
+    pub fn load_persistence(&mut self) {
+        if let Ok(json) = std::fs::read_to_string("saved_states.json") {
+            if let Ok(states) = serde_json::from_str(&json) {
+                self.saved_states = states;
             }
         }
     }

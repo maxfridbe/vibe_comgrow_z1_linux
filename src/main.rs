@@ -97,7 +97,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         text_font_scroll_offset: 0.0,
         is_text_input_active: false,
         current_preview_power: 1000.0,
+        saved_states: Vec::new(),
+        load_dialog_open: false,
     }));
+
+    {
+        let mut g = state.lock().unwrap();
+        g.load_persistence();
+    }
 
     let (tx, rx) = mpsc::channel();
     state.lock().unwrap().tx = tx;
@@ -615,28 +622,111 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 });
             });
 
-            let mut tab_bar = Declaration::<Texture2D, ()>::new();
-            tab_bar
+            let mut header_row = Declaration::<Texture2D, ()>::new();
+            header_row
                 .layout()
                 .width(grow!())
                 .direction(LayoutDirection::LeftToRight)
                 .padding(Padding::horizontal(standard_margin))
-                .child_gap(10)
+                .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Bottom))
                 .end();
-            clay_scope.with(&tab_bar, |clay_scope| {
-                let current_tab = state.lock().unwrap().current_tab.clone();
-                if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, &arena, font_scale) {
-                    state.lock().unwrap().current_tab = UITab::Manual;
-                }
-                if render_tab_btn(clay_scope, "tab_pattern", "Pattern", current_tab == UITab::Pattern, &arena, font_scale) {
-                    state.lock().unwrap().current_tab = UITab::Pattern;
-                }
-                if render_tab_btn(clay_scope, "tab_image", "Image", current_tab == UITab::Image, &arena, font_scale) {
-                    state.lock().unwrap().current_tab = UITab::Image;
-                }
-                if render_tab_btn(clay_scope, "tab_text", "Text", current_tab == UITab::Text, &arena, font_scale) {
-                    state.lock().unwrap().current_tab = UITab::Text;
-                }
+
+            clay_scope.with(&header_row, |clay_scope| {
+                let mut tab_bar = Declaration::<Texture2D, ()>::new();
+                tab_bar.layout().direction(LayoutDirection::LeftToRight).child_gap(10).end();
+                clay_scope.with(&tab_bar, |clay_scope| {
+                    let current_tab = state.lock().unwrap().current_tab.clone();
+                    if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, &arena, font_scale) {
+                        state.lock().unwrap().current_tab = UITab::Manual;
+                    }
+                    if render_tab_btn(clay_scope, "tab_pattern", "Pattern", current_tab == UITab::Pattern, &arena, font_scale) {
+                        state.lock().unwrap().current_tab = UITab::Pattern;
+                    }
+                    if render_tab_btn(clay_scope, "tab_image", "Image", current_tab == UITab::Image, &arena, font_scale) {
+                        state.lock().unwrap().current_tab = UITab::Image;
+                    }
+                    if render_tab_btn(clay_scope, "tab_text", "Text", current_tab == UITab::Text, &arena, font_scale) {
+                        state.lock().unwrap().current_tab = UITab::Text;
+                    }
+                });
+
+                let mut spacer = Declaration::<Texture2D, ()>::new();
+                spacer.layout().width(grow!()).end();
+                clay_scope.with(&spacer, |_| {});
+
+                let mut persist_group = Declaration::<Texture2D, ()>::new();
+                persist_group
+                    .layout()
+                    .direction(LayoutDirection::LeftToRight)
+                    .child_gap(10)
+                    .padding(Padding::new(0, 0, 0, 4))
+                    .end();
+                clay_scope.with(&persist_group, |clay_scope| {
+                    let save_id = clay_scope.id("btn_save_state");
+                    let mut save_color = COLOR_BG_SECTION;
+                    if clay_scope.pointer_over(save_id) {
+                        save_color = COLOR_PRIMARY_HOVER;
+                        if mouse_pressed {
+                            let mut g = state.lock().unwrap();
+                            let label = match g.current_tab {
+                                UITab::Text => format!("Text: {}", g.text_content),
+                                UITab::Image => g.custom_image_path.clone().unwrap_or("Image".to_string()),
+                                _ => "State".to_string(),
+                            };
+                            let new_state = g.capture_state(&label);
+                            g.saved_states.push(new_state);
+                            g.save_persistence();
+                        }
+                    }
+                    let mut save_btn = Declaration::<Texture2D, ()>::new();
+                    save_btn
+                        .id(save_id)
+                        .layout()
+                        .padding(Padding::new(12, 12, 6, 6))
+                        .end()
+                        .background_color(save_color)
+                        .corner_radius()
+                        .all(6.0 * font_scale)
+                        .end();
+                    clay_scope.with(&save_btn, |clay| {
+                        clay.text(
+                            arena.push(format!("{}   SAVE", ICON_COPY)),
+                            clay_layout::text::TextConfig::new()
+                                .font_size((14.0 * font_scale) as u16)
+                                .color(COLOR_TEXT_WHITE)
+                                .end(),
+                        );
+                    });
+
+                    let load_id = clay_scope.id("btn_load_state");
+                    let mut load_color = COLOR_BG_SECTION;
+                    if clay_scope.pointer_over(load_id) {
+                        load_color = COLOR_PRIMARY_HOVER;
+                        if mouse_pressed {
+                            let mut g = state.lock().unwrap();
+                            g.load_dialog_open = !g.load_dialog_open;
+                        }
+                    }
+                    let mut load_btn = Declaration::<Texture2D, ()>::new();
+                    load_btn
+                        .id(load_id)
+                        .layout()
+                        .padding(Padding::new(12, 12, 6, 6))
+                        .end()
+                        .background_color(load_color)
+                        .corner_radius()
+                        .all(6.0 * font_scale)
+                        .end();
+                    clay_scope.with(&load_btn, |clay| {
+                        clay.text(
+                            arena.push(format!("{}   LOAD", ICON_LAYERS)),
+                            clay_layout::text::TextConfig::new()
+                                .font_size((14.0 * font_scale) as u16)
+                                .color(COLOR_TEXT_WHITE)
+                                .end(),
+                        );
+                    });
+                });
             });
 
             let mut content_area = Declaration::<Texture2D, ()>::new();
@@ -1039,6 +1129,168 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             .color(COLOR_PRIMARY)
                             .end(),
                     );
+                });
+            });
+        }
+
+        let load_dialog_open = state.lock().unwrap().load_dialog_open;
+        if load_dialog_open {
+            let mut overlay = Declaration::<Texture2D, ()>::new();
+            overlay
+                .id(clay_scope.id("load_state_overlay"))
+                .layout()
+                .width(fixed!(render_width))
+                .height(fixed!(render_height))
+                .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+                .end()
+                .background_color(clay_layout::Color::rgba(0.0, 0.0, 0.0, 180.0));
+
+            clay_scope.with(&overlay, |clay_scope| {
+                let mut dialog_box = Declaration::<Texture2D, ()>::new();
+                dialog_box
+                    .layout()
+                    .width(fixed!(500.0 * font_scale))
+                    .height(fixed!(400.0 * font_scale))
+                    .padding(Padding::all(20))
+                    .direction(LayoutDirection::TopToBottom)
+                    .child_gap(16)
+                    .end()
+                    .background_color(COLOR_BG_SECTION)
+                    .corner_radius()
+                    .all(16.0 * font_scale)
+                    .end();
+
+                clay_scope.with(&dialog_box, |clay_scope| {
+                    let mut header = Declaration::<Texture2D, ()>::new();
+                    header.layout().width(grow!()).direction(LayoutDirection::LeftToRight).end();
+                    clay_scope.with(&header, |clay_scope| {
+                        clay_scope.text(
+                            "SAVED STATES",
+                            clay_layout::text::TextConfig::new()
+                                .font_size((18.0 * font_scale) as u16)
+                                .color(COLOR_PRIMARY)
+                                .end(),
+                        );
+                        let mut spacer = Declaration::<Texture2D, ()>::new();
+                        spacer.layout().width(grow!()).end();
+                        clay_scope.with(&spacer, |_| {});
+
+                        let close_id = clay_scope.id("btn_close_load");
+                        let mut close_color = COLOR_TEXT_MUTED;
+                        if clay_scope.pointer_over(close_id) {
+                            close_color = COLOR_TEXT_WHITE;
+                            if mouse_pressed {
+                                state.lock().unwrap().load_dialog_open = false;
+                            }
+                        }
+                        let mut close_btn = Declaration::<Texture2D, ()>::new();
+                        close_btn.id(close_id).layout().padding(Padding::all(4)).end();
+                        clay_scope.with(&close_btn, |clay| {
+                            clay.text(
+                                "CLOSE",
+                                clay_layout::text::TextConfig::new()
+                                    .font_size((14.0 * font_scale) as u16)
+                                    .color(close_color)
+                                    .end(),
+                            );
+                        });
+                    });
+
+                    let saved_states = state.lock().unwrap().saved_states.clone();
+                    let mut list_scroll = Declaration::<Texture2D, ()>::new();
+                    let scroll_id = clay_scope.id("load_list_scroll");
+                    list_scroll
+                        .id(scroll_id)
+                        .layout()
+                        .width(grow!())
+                        .height(grow!())
+                        .direction(LayoutDirection::TopToBottom)
+                        .child_gap(8)
+                        .end()
+                        .clip(false, true, ClayVector2::default());
+
+                    clay_scope.with(&list_scroll, |clay_scope| {
+                        if saved_states.is_empty() {
+                            clay_scope.text(
+                                "No saved states found.",
+                                clay_layout::text::TextConfig::new()
+                                    .font_size((14.0 * font_scale) as u16)
+                                    .color(COLOR_TEXT_DISABLED)
+                                    .end(),
+                            );
+                        }
+                        for (idx, s) in saved_states.iter().enumerate().rev() {
+                            let item_id = clay_scope.id(arena.push(format!("load_item_{}", idx)));
+                            let mut item_bg = COLOR_BG_DARK;
+                            if clay_scope.pointer_over(item_id) {
+                                item_bg = COLOR_PRIMARY_HOVER;
+                            }
+
+                            let mut item_row = Declaration::<Texture2D, ()>::new();
+                            item_row
+                                .id(item_id)
+                                .layout()
+                                .width(grow!())
+                                .padding(Padding::all(10))
+                                .direction(LayoutDirection::LeftToRight)
+                                .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
+                                .child_gap(12)
+                                .end()
+                                .background_color(item_bg)
+                                .corner_radius()
+                                .all(8.0 * font_scale)
+                                .end();
+
+                            clay_scope.with(&item_row, |clay_scope| {
+                                let mut info_col = Declaration::<Texture2D, ()>::new();
+                                info_col.layout().width(grow!()).direction(LayoutDirection::TopToBottom).end();
+                                if clay_scope.pointer_over(item_id) && mouse_pressed {
+                                    let mut g = state.lock().unwrap();
+                                    g.apply_state(s);
+                                    g.load_dialog_open = false;
+                                }
+
+                                clay_scope.with(&info_col, |clay_scope| {
+                                    clay_scope.text(
+                                        arena.push(s.label.clone()),
+                                        clay_layout::text::TextConfig::new()
+                                            .font_size((14.0 * font_scale) as u16)
+                                            .color(COLOR_TEXT_WHITE)
+                                            .end(),
+                                    );
+                                    clay_scope.text(
+                                        arena.push(s.timestamp.clone()),
+                                        clay_layout::text::TextConfig::new()
+                                            .font_size((10.0 * font_scale) as u16)
+                                            .color(COLOR_TEXT_DISABLED)
+                                            .end(),
+                                    );
+                                });
+
+                                let del_id = clay_scope.id(arena.push(format!("del_item_{}", idx)));
+                                let mut del_color = COLOR_TEXT_MUTED;
+                                if clay_scope.pointer_over(del_id) {
+                                    del_color = COLOR_DANGER;
+                                    if mouse_pressed {
+                                        let mut g = state.lock().unwrap();
+                                        g.saved_states.remove(idx);
+                                        g.save_persistence();
+                                    }
+                                }
+                                let mut del_btn = Declaration::<Texture2D, ()>::new();
+                                del_btn.id(del_id).layout().padding(Padding::all(4)).end();
+                                clay_scope.with(&del_btn, |clay| {
+                                    clay.text(
+                                        ICON_TRASH,
+                                        clay_layout::text::TextConfig::new()
+                                            .font_size((16.0 * font_scale) as u16)
+                                            .color(del_color)
+                                            .end(),
+                                    );
+                                });
+                            });
+                        }
+                    });
                 });
             });
         }

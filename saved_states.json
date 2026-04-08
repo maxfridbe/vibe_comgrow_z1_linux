@@ -1,0 +1,27 @@
+[
+  {
+    "timestamp": "2026-04-08 15:46:50",
+    "label": "State",
+    "text_content": "Comgrow Z1",
+    "text_font": "Default",
+    "text_is_bold": false,
+    "text_is_outline": false,
+    "text_letter_spacing": 0.0,
+    "text_line_spacing": 1.0,
+    "text_curve_steps": 10,
+    "text_lines_per_mm": 5.0,
+    "power": 100.0,
+    "feed_rate": 3000.0,
+    "scale": 1.0,
+    "passes": 1,
+    "boundary_enabled": false,
+    "boundary_x": 0.0,
+    "boundary_y": 0.0,
+    "boundary_w": 100.0,
+    "boundary_h": 100.0,
+    "img_low_fidelity": 0.0,
+    "img_high_fidelity": 1.0,
+    "custom_image_path": null,
+    "custom_svg_path": null
+  }
+]
