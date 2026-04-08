@@ -178,58 +178,64 @@ pub const CMD_MILLIMETERS: &str = "G21";
 pub const CMD_INCHES: &str = "G20";
 pub const CMD_SET_ORIGIN: &str = "G92 X0 Y0";
 pub const CMD_SOFT_RESET: &str = "0x18";
+pub const CMD_MOVE_RAPID: &str = "G0";
+pub const CMD_MOVE_LINEAR: &str = "G1";
+pub const CMD_ARC_CW: &str = "G2";
+pub const CMD_ARC_CCW: &str = "G3";
+pub const CMD_LASER_CONST: &str = "M3";
+pub const CMD_LASER_DYN: &str = "M4";
 
 // --- G-Code Functions ---
 pub fn move_xyz(x: f32, y: f32, z: f32) -> String {
-    format!("G0 X{:.2} Y{:.2} Z{:.2}", x, y, z)
+    format!("{} X{:.2} Y{:.2} Z{:.2}", CMD_MOVE_RAPID, x, y, z)
 }
 
 pub fn move_xy(x: f32, y: f32) -> String {
-    format!("G0 X{:.2} Y{:.2}", x, y)
+    format!("{} X{:.2} Y{:.2}", CMD_MOVE_RAPID, x, y)
 }
 
 pub fn move_xy_f(x: f32, y: f32, f: f32) -> String {
-    format!("G0 X{:.2} Y{:.2} F{:.0}", x, y, f)
+    format!("{} X{:.2} Y{:.2} F{:.0}", CMD_MOVE_RAPID, x, y, f)
 }
 
 pub fn move_z(z: f32) -> String {
-    format!("G0 Z{:.2}", z)
+    format!("{} Z{:.2}", CMD_MOVE_RAPID, z)
 }
 
 pub fn move_linear_xy(x: f32, y: f32) -> String {
-    format!("G1 X{:.2} Y{:.2}", x, y)
+    format!("{} X{:.2} Y{:.2}", CMD_MOVE_LINEAR, x, y)
 }
 
 pub fn move_linear_x(x: f32) -> String {
-    format!("G1 X{:.2}", x)
+    format!("{} X{:.2}", CMD_MOVE_LINEAR, x)
 }
 
 pub fn laser_on(power: f32) -> String {
-    format!("M3 S{}", power)
+    format!("{} S{}", CMD_LASER_CONST, power)
 }
 
 pub fn laser_on_dynamic(power: f32) -> String {
-    format!("M4 S{}", power)
+    format!("{} S{}", CMD_LASER_DYN, power)
 }
 
 pub fn laser_on_dynamic_f(power: f32, f: f32) -> String {
-    format!("M4 S{} F{:.0}", power, f)
+    format!("{} S{} F{:.0}", CMD_LASER_DYN, power, f)
 }
 
 pub fn laser_dynamic_f_only(f: f32) -> String {
-    format!("M4 F{:.0}", f)
+    format!("{} F{:.0}", CMD_LASER_DYN, f)
 }
 
 pub fn burn(x: f32, y: f32, s: f32, f: f32) -> String {
-    format!("G1 X{:.2} Y{:.2} S{} F{}", x, y, s, f)
+    format!("{} X{:.2} Y{:.2} S{} F{}", CMD_MOVE_LINEAR, x, y, s, f)
 }
 
 pub fn burn_s(x: f32, y: f32, s: f32) -> String {
-    format!("G1 X{:.2} Y{:.2} S{}", x, y, s)
+    format!("{} X{:.2} Y{:.2} S{}", CMD_MOVE_LINEAR, x, y, s)
 }
 
 pub fn burn_xs(x: f32, s: f32) -> String {
-    format!("G1 X{:.2} S{}", x, s)
+    format!("{} X{:.2} S{}", CMD_MOVE_LINEAR, x, s)
 }
 
 pub fn jog_xy(x: f32, y: f32, f: f32) -> String {
@@ -238,6 +244,10 @@ pub fn jog_xy(x: f32, y: f32, f: f32) -> String {
 
 pub fn jog_z(z: f32, f: f32) -> String {
     format!("$J={} Z{:.2} F{}", CMD_RELATIVE_POS, z, f)
+}
+
+pub fn jog_axis(axis: &str, dist: f32, f: f32) -> String {
+    format!("$J={} {} {}{:.2} F{}", CMD_RELATIVE_POS, CMD_MILLIMETERS, axis, dist, f)
 }
 
 #[cfg(test)]

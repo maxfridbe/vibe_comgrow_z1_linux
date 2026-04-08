@@ -153,13 +153,13 @@ pub fn load_svg_as_gcode(path: &str, scale: f32, fit: Option<(f32, f32)>, center
             Op::MoveTo(x, y) => {
                 let px = offset_x + (x * final_scale);
                 let py = offset_y + (y * final_scale);
-                gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2}\nM4 S{} F{}\n", px, py, s_val, f_val));
+                gcode.push_str(&format!("{}\n{}\n{}\n", crate::gcode::CMD_LASER_OFF, crate::gcode::move_xy(px, py), crate::gcode::laser_on_dynamic_f(s_val as f32, f_val as f32)));
                 update_bounds(px, py);
             }
             Op::LineTo(x, y) => {
                 let px = offset_x + (x * final_scale);
                 let py = offset_y + (y * final_scale);
-                gcode.push_str(&format!("G1 X{:.2} Y{:.2} S{}\n", px, py, s_val));
+                gcode.push_str(&format!("{}\n", crate::gcode::burn_s(px, py, s_val as f32)));
                 update_bounds(px, py);
             }
         }

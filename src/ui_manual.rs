@@ -7,6 +7,7 @@ use crate::state::{AppState, StringArena};
 use crate::ui::{Section, render_jog_btn, render_slider, render_burn_btn, render_outline_btn};
 use crate::icons::*;
 use crate::styles::*;
+use crate::gcode;
 
 pub fn render_manual_left_subcol<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
@@ -108,7 +109,7 @@ pub fn render_manual_right_col<'a, 'render>(
                     render_burn_btn(clay_scope, "b_ul", "NW", state, -1.0, 1.0, mouse_pressed, clipboard, font_scale, !is_idle);
                     render_outline_btn(clay_scope, "o_ul", state, || {
                         let g = state.lock().unwrap();
-                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", -1.0 * g.distance, 1.0 * g.distance, g.feed_rate, g.power))
+                        Some(format!("{}\n{}", gcode::CMD_RELATIVE_POS, gcode::burn(-1.0 * g.distance, 1.0 * g.distance, g.power, g.feed_rate)))
                     }, mouse_pressed, font_scale, !is_idle);
                 });
 
@@ -117,7 +118,7 @@ pub fn render_manual_right_col<'a, 'render>(
                     render_burn_btn(clay_scope, "b_up", "NORTH", state, 0.0, 1.0, mouse_pressed, clipboard, font_scale, !is_idle);
                     render_outline_btn(clay_scope, "o_up", state, || {
                         let g = state.lock().unwrap();
-                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", 0.0, 1.0 * g.distance, g.feed_rate, g.power))
+                        Some(format!("{}\n{}", gcode::CMD_RELATIVE_POS, gcode::burn(0.0, 1.0 * g.distance, g.power, g.feed_rate)))
                     }, mouse_pressed, font_scale, !is_idle);
                 });
 
@@ -126,7 +127,7 @@ pub fn render_manual_right_col<'a, 'render>(
                     render_burn_btn(clay_scope, "b_ur", "NE", state, 1.0, 1.0, mouse_pressed, clipboard, font_scale, !is_idle);
                     render_outline_btn(clay_scope, "o_ur", state, || {
                         let g = state.lock().unwrap();
-                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", 1.0 * g.distance, 1.0 * g.distance, g.feed_rate, g.power))
+                        Some(format!("{}\n{}", gcode::CMD_RELATIVE_POS, gcode::burn(1.0 * g.distance, 1.0 * g.distance, g.power, g.feed_rate)))
                     }, mouse_pressed, font_scale, !is_idle);
                 });
             });
@@ -137,7 +138,7 @@ pub fn render_manual_right_col<'a, 'render>(
                     render_burn_btn(clay_scope, "b_l", "WEST", state, -1.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle);
                     render_outline_btn(clay_scope, "o_l", state, || {
                         let g = state.lock().unwrap();
-                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", -1.0 * g.distance, 0.0, g.feed_rate, g.power))
+                        Some(format!("{}\n{}", gcode::CMD_RELATIVE_POS, gcode::burn(-1.0 * g.distance, 0.0, g.power, g.feed_rate)))
                     }, mouse_pressed, font_scale, !is_idle);
                 });
                 
@@ -153,7 +154,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         if mouse_pressed {
                             let mut guard = state.lock().unwrap();
                             let s = guard.power;
-                            guard.send_command(format!("M3 S{}", s));
+                            guard.send_command(gcode::laser_on(s));
                         }
                     }
                     let mut fire_btn = Declaration::<Texture2D, ()>::new();
@@ -170,7 +171,7 @@ pub fn render_manual_right_col<'a, 'render>(
                     if clay_scope.pointer_over(off_id) {
                         off_color = COLOR_PRIMARY_HOVER;
                         off_text_color = COLOR_TEXT_WHITE;
-                        if mouse_pressed { state.lock().unwrap().send_command("M5".to_string()); }
+                        if mouse_pressed { state.lock().unwrap().send_command(gcode::CMD_LASER_OFF.to_string()); }
                     }
                     let mut off_btn = Declaration::<Texture2D, ()>::new();
                     off_btn.id(off_id).layout().width(fixed!(50.0 * font_scale)).padding(Padding::all(4)).direction(LayoutDirection::LeftToRight).child_gap(4).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).end().background_color(off_color).corner_radius().all(8.0 * font_scale).end();
@@ -185,7 +186,7 @@ pub fn render_manual_right_col<'a, 'render>(
                     render_burn_btn(clay_scope, "b_r", "EAST", state, 1.0, 0.0, mouse_pressed, clipboard, font_scale, !is_idle);
                     render_outline_btn(clay_scope, "o_r", state, || {
                         let g = state.lock().unwrap();
-                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", 1.0 * g.distance, 0.0, g.feed_rate, g.power))
+                        Some(format!("{}\n{}", gcode::CMD_RELATIVE_POS, gcode::burn(1.0 * g.distance, 0.0, g.power, g.feed_rate)))
                     }, mouse_pressed, font_scale, !is_idle);
                 });
             });
@@ -196,7 +197,7 @@ pub fn render_manual_right_col<'a, 'render>(
                     render_burn_btn(clay_scope, "b_dl", "SW", state, -1.0, -1.0, mouse_pressed, clipboard, font_scale, !is_idle);
                     render_outline_btn(clay_scope, "o_dl", state, || {
                         let g = state.lock().unwrap();
-                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", -1.0 * g.distance, -1.0 * g.distance, g.feed_rate, g.power))
+                        Some(format!("{}\n{}", gcode::CMD_RELATIVE_POS, gcode::burn(-1.0 * g.distance, -1.0 * g.distance, g.power, g.feed_rate)))
                     }, mouse_pressed, font_scale, !is_idle);
                 });
 
@@ -205,7 +206,7 @@ pub fn render_manual_right_col<'a, 'render>(
                     render_burn_btn(clay_scope, "b_dn", "SOUTH", state, 0.0, -1.0, mouse_pressed, clipboard, font_scale, !is_idle);
                     render_outline_btn(clay_scope, "o_dn", state, || {
                         let g = state.lock().unwrap();
-                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", 0.0, -1.0 * g.distance, g.feed_rate, g.power))
+                        Some(format!("{}\n{}", gcode::CMD_RELATIVE_POS, gcode::burn(0.0, -1.0 * g.distance, g.power, g.feed_rate)))
                     }, mouse_pressed, font_scale, !is_idle);
                 });
 
@@ -214,7 +215,7 @@ pub fn render_manual_right_col<'a, 'render>(
                     render_burn_btn(clay_scope, "b_dr", "SE", state, 1.0, -1.0, mouse_pressed, clipboard, font_scale, !is_idle);
                     render_outline_btn(clay_scope, "o_dr", state, || {
                         let g = state.lock().unwrap();
-                        Some(format!("G91\nG1 X{:.2} Y{:.2} F{} S{}", 1.0 * g.distance, -1.0 * g.distance, g.feed_rate, g.power))
+                        Some(format!("{}\n{}", gcode::CMD_RELATIVE_POS, gcode::burn(1.0 * g.distance, -1.0 * g.distance, g.power, g.feed_rate)))
                     }, mouse_pressed, font_scale, !is_idle);
                 });
             });
@@ -223,7 +224,7 @@ pub fn render_manual_right_col<'a, 'render>(
             let mut mode_row = Declaration::<Texture2D, ()>::new();
             mode_row.layout().child_gap(8).child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center)).padding(Padding::vertical(8)).end();
             clay_scope.with(&mode_row, |clay| {
-                let modes: [(&str, &str, &str); 3] = [("LASER CONST", "M3", ICON_FLAME), ("LASER DYN", "M4", ICON_REFRESH), ("LASER OFF", "M5", ICON_POWER)];
+                let modes: [(&str, &str, &str); 3] = [("LASER CONST", gcode::CMD_LASER_CONST, ICON_FLAME), ("LASER DYN", gcode::CMD_LASER_DYN, ICON_REFRESH), ("LASER OFF", gcode::CMD_LASER_OFF, ICON_POWER)];
                 for (label, cmd, icon) in modes {
                     let disabled = !is_idle && label != "LASER OFF";
                     let btn_id = clay.id(label);
@@ -269,8 +270,8 @@ pub fn render_manual_right_col<'a, 'render>(
                         if mouse_pressed {
                             let mut guard = state.lock().unwrap();
                             guard.v_pos = raylib::prelude::Vector2::new(0.0, 0.0);
-                            guard.send_command("G92 X0 Y0".to_string());
-                            if let Some(cb) = clipboard { let _ = cb.set_text("G92 X0 Y0".to_string()); }
+                            guard.send_command(gcode::CMD_SET_ORIGIN.to_string());
+                            if let Some(cb) = clipboard { let _ = cb.set_text(gcode::CMD_SET_ORIGIN.to_string()); }
                         }
                     }
                     let mut center_btn = Declaration::<Texture2D, ()>::new();
@@ -289,8 +290,9 @@ pub fn render_manual_right_col<'a, 'render>(
                         if mouse_pressed {
                             let mut guard = state.lock().unwrap();
                             guard.v_pos = raylib::prelude::Vector2::new(0.0, 0.0);
-                            guard.send_command("G90 G0 X0 Y0".to_string());
-                            if let Some(cb) = clipboard { let _ = cb.set_text("G90 G0 X0 Y0".to_string()); }
+                            let cmd = format!("{} {}", gcode::CMD_ABSOLUTE_POS, gcode::move_xy(0.0, 0.0));
+                            guard.send_command(cmd.clone());
+                            if let Some(cb) = clipboard { let _ = cb.set_text(cmd); }
                         }
                     }
                     let mut home_zero_btn = Declaration::<Texture2D, ()>::new();

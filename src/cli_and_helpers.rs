@@ -12,6 +12,7 @@ use font_kit::font::Font;
 use font_kit::outline::OutlineSink;
 use pathfinder_geometry::vector::Vector2F;
 use pathfinder_geometry::line_segment::LineSegment2F;
+use crate::gcode;
 
 pub struct SafetyGuard {
     pub tx: mpsc::Sender<String>,
@@ -20,9 +21,9 @@ pub struct SafetyGuard {
 impl SafetyGuard {
     pub fn send_estop(&self) {
         println!("\n--- SAFETY: Sending Emergency Stop Sequence ---");
-        let _ = self.tx.send("!".to_string());
-        let _ = self.tx.send("M5".to_string());
-        let _ = self.tx.send("0x18".to_string());
+        let _ = self.tx.send(gcode::CMD_FEED_HOLD.to_string());
+        let _ = self.tx.send(gcode::CMD_LASER_OFF.to_string());
+        let _ = self.tx.send(gcode::CMD_SOFT_RESET.to_string());
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }
@@ -54,9 +55,9 @@ pub fn run_cli_mode(target_label: &str, _sections: &[Section]) -> Result<(), Box
     let tx_ctrlc = tx.clone();
     ctrlc::set_handler(move || {
         println!("\n[CTRL-C] Detected.");
-        let _ = tx_ctrlc.send("!".to_string());
-        let _ = tx_ctrlc.send("M5".to_string());
-        let _ = tx_ctrlc.send("0x18".to_string());
+        let _ = tx_ctrlc.send(gcode::CMD_FEED_HOLD.to_string());
+        let _ = tx_ctrlc.send(gcode::CMD_LASER_OFF.to_string());
+        let _ = tx_ctrlc.send(gcode::CMD_SOFT_RESET.to_string());
         std::thread::sleep(std::time::Duration::from_millis(500));
         std::process::exit(0);
     })?;
@@ -87,7 +88,6 @@ fn parse_pair(s: &str) -> Result<(f32, f32), Box<dyn std::error::Error + Send + 
 }
 
 pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, passes: &str, _fit: Option<String>, center: &str) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
-    // println!("GENERATE PATTERN: {} at {}", shape, center);
     let pwr_val = pwr.trim_end_matches('%').parse::<f32>()?;
     let spd_val = spd.trim_end_matches('%').parse::<f32>()?;
     let scl_val = scale.trim_end_matches('x').parse::<f32>()?;
@@ -95,19 +95,19 @@ pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, pa
     let (cx, cy) = parse_pair(center)?;
     
     let mut final_gcode = String::new();
-    final_gcode.push_str("G90\n$H\n");
+    final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_ABSOLUTE_POS, gcode::CMD_HOME));
 
     for _ in 0..pas_val {
         let shape_lower = shape.to_lowercase();
         match shape_lower.as_str() {
             "square" => {
                 let s = 20.0 * scl_val;
-                final_gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2}\n", cx - s, cy - s));
-                final_gcode.push_str(&format!("M4 S{} F{}\n", pwr_val * 10.0, spd_val * 10.0));
-                final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx + s, cy - s));
-                final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx + s, cy + s));
-                final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx - s, cy + s));
-                final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx - s, cy - s));
+                final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy(cx - s, cy - s)));
+                final_gcode.push_str(&format!("{} F{}\n", gcode::laser_on_dynamic(pwr_val * 10.0), spd_val * 10.0));
+                final_gcode.push_str(&format!("{}\n", gcode::move_linear_xy(cx + s, cy - s)));
+                final_gcode.push_str(&format!("{}\n", gcode::move_linear_xy(cx + s, cy + s)));
+                final_gcode.push_str(&format!("{}\n", gcode::move_linear_xy(cx - s, cy + s)));
+                final_gcode.push_str(&format!("{}\n", gcode::move_linear_xy(cx - s, cy - s)));
             }
             "heart" => {
                 let pts = 100;
@@ -116,10 +116,10 @@ pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, pa
                     let x = 16.0 * t.sin().powi(3);
                     let y = 13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos();
                     if i == 0 {
-                        final_gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2}\n", cx + x * scl_val, cy + y * scl_val));
-                        final_gcode.push_str(&format!("M4 S{} F{}\n", pwr_val * 10.0, spd_val * 10.0));
+                        final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy(cx + x * scl_val, cy + y * scl_val)));
+                        final_gcode.push_str(&format!("{} F{}\n", gcode::laser_on_dynamic(pwr_val * 10.0), spd_val * 10.0));
                     } else {
-                        final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx + x * scl_val, cy + y * scl_val));
+                        final_gcode.push_str(&format!("{}\n", gcode::move_linear_xy(cx + x * scl_val, cy + y * scl_val)));
                     }
                 }
             }
@@ -131,10 +131,10 @@ pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, pa
                     let x = r * angle.cos();
                     let y = r * angle.sin();
                     if i == 0 {
-                        final_gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2}\n", cx + x * scl_val, cy + y * scl_val));
-                        final_gcode.push_str(&format!("M4 S{} F{}\n", pwr_val * 10.0, spd_val * 10.0));
+                        final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy(cx + x * scl_val, cy + y * scl_val)));
+                        final_gcode.push_str(&format!("{} F{}\n", gcode::laser_on_dynamic(pwr_val * 10.0), spd_val * 10.0));
                     } else {
-                        final_gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", cx + x * scl_val, cy + y * scl_val));
+                        final_gcode.push_str(&format!("{}\n", gcode::move_linear_xy(cx + x * scl_val, cy + y * scl_val)));
                     }
                 }
             }
@@ -173,9 +173,9 @@ pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, pa
                 }
             }
         }
-        final_gcode.push_str("M5\n");
+        final_gcode.push_str(&format!("{}\n", gcode::CMD_LASER_OFF));
     }
-    final_gcode.push_str("$H\n");
+    final_gcode.push_str(&format!("{}\n", gcode::CMD_HOME));
 
     Ok((final_gcode, format!("Pattern {} (Scale: {}x, Center: {}, Power: {}%, Speed: {}%)", shape, scl_val, center, pwr_val, spd_val)))
 }
@@ -208,7 +208,7 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
 
     // Pre-allocate a large string to avoid reallocations
     let mut gcode = String::with_capacity(img.width() as usize * img.height() as usize * 40);
-    gcode.push_str("G90\n$H\n");
+    gcode.push_str(&format!("{}\n{}\n", gcode::CMD_ABSOLUTE_POS, gcode::CMD_HOME));
     
     let f_val = (speed * 10.0) as i32;
 
@@ -242,7 +242,7 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
                 // If LTR, start at the LEFT edge of the first pixel (fx)
                 // If RTL, start at the RIGHT edge of the last pixel (lx + 1)
                 let start_x_coord = if left_to_right { fx as f32 } else { lx as f32 + 1.0 };
-                gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2} F3000\n", offset_x + start_x_coord * final_scale, actual_y));
+                gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy_f(offset_x + start_x_coord * final_scale, actual_y, 3000.0)));
                 gcode.push_str(&format!("M4 F{}\n", f_val));
 
                 let range: Vec<u32> = if left_to_right {
@@ -265,16 +265,16 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
                     let actual_x = offset_x + dest_x_coord * final_scale;
 
                     if s_val > 0 {
-                        gcode.push_str(&format!("G1 X{:.2} S{}\n", actual_x, s_val));
+                        gcode.push_str(&format!("{}\n", gcode::burn_xs(actual_x, s_val as f32)));
                     } else {
                         // Internal jump over empty pixel
-                        gcode.push_str(&format!("G0 X{:.2}\n", actual_x));
+                        gcode.push_str(&format!("{}\n", gcode::move_linear_x(actual_x)));
                     }
                 }
             }
         }
     }
-    gcode.push_str("M5\n$H\n");
+    gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::CMD_HOME));
 
     let filename = std::path::Path::new(path).file_name().and_then(|f| f.to_str()).unwrap_or("image");
     Ok((gcode, format!("Image {} (Scale: {:.2}x, Center: {:.1},{:.1}, Power: {}%, Speed: {}%, LowFid: {:.2}, HighFid: {:.2})", filename, final_scale, center.0, center.1, pwr_max, speed, low_fid, high_fid)))
@@ -293,15 +293,15 @@ struct VectorGCodeBuilder {
 impl OutlineSink for VectorGCodeBuilder {
     fn move_to(&mut self, to: Vector2F) {
         let p = (to + self.offset) * self.scale;
-        self.gcode.push_str(&format!("M5\nG0 X{:.2} Y{:.2} F3000\n", p.x(), p.y()));
-        self.gcode.push_str(&format!("M4 S{} F{:.0}\n", self.power * 10.0, self.speed * 10.0));
+        self.gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy_f(p.x(), p.y(), 3000.0)));
+        self.gcode.push_str(&format!("{}\n", gcode::laser_on_dynamic_f(self.power * 10.0, self.speed * 10.0)));
         self.current_pos = to;
         self.start_pos = to;
     }
 
     fn line_to(&mut self, to: Vector2F) {
         let p = (to + self.offset) * self.scale;
-        self.gcode.push_str(&format!("G1 X{:.2} Y{:.2}\n", p.x(), p.y()));
+        self.gcode.push_str(&format!("{}\n", gcode::move_linear_xy(p.x(), p.y())));
         self.current_pos = to;
     }
 
@@ -328,7 +328,7 @@ impl OutlineSink for VectorGCodeBuilder {
         if d > 0.01 {
             self.line_to(self.start_pos);
         }
-        self.gcode.push_str("M5\n");
+        self.gcode.push_str(&format!("{}\n", gcode::CMD_LASER_OFF));
     }
 }
 
@@ -419,7 +419,7 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
 
     if outline {
         let mut gcode = String::new();
-        gcode.push_str("G90\n$H\n");
+        gcode.push_str(&format!("{}\n{}\n", gcode::CMD_ABSOLUTE_POS, gcode::CMD_HOME));
 
         let effective_passes = if is_preview { 1 } else { passes };
         
@@ -442,7 +442,7 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
                 gcode.push_str(&builder.gcode);
             }
         }
-        gcode.push_str("$H\n");
+        gcode.push_str(&format!("{}\n", gcode::CMD_HOME));
         return Ok((gcode, format!("Text Outline \"{}\"", text)));
     }
 
@@ -491,12 +491,17 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
 
 pub fn generate_outline_gcode(x: f32, y: f32, w: f32, h: f32, speed: f32) -> String {
     format!(
-        "$H\nG90\nM5\nG0 X{:.2} Y{:.2} F3000\nG0 X{:.2} Y{:.2} F{:.0}\nG0 X{:.2} Y{:.2}\nG0 X{:.2} Y{:.2}\nG0 X{:.2} Y{:.2}\nM5\n$H",
-        x, y,
-        x + w, y, speed,
-        x + w, y + h,
-        x, y + h,
-        x, y
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        gcode::CMD_HOME,
+        gcode::CMD_ABSOLUTE_POS,
+        gcode::CMD_LASER_OFF,
+        gcode::move_xy_f(x, y, 3000.0),
+        gcode::move_xy_f(x + w, y, speed),
+        gcode::move_linear_xy(x + w, y + h),
+        gcode::move_linear_xy(x, y + h),
+        gcode::move_linear_xy(x, y),
+        gcode::CMD_LASER_OFF,
+        gcode::CMD_HOME
     )
 }
 

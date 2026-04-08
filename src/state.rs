@@ -101,9 +101,9 @@ impl AppState {
         let mut has_m5 = false;
 
         for part in &parts {
-            if *part == "G90" { self.is_absolute = true; }
-            else if *part == "G91" { self.is_absolute = false; }
-            else if *part == "$H" {
+            if *part == crate::gcode::CMD_ABSOLUTE_POS { self.is_absolute = true; }
+            else if *part == crate::gcode::CMD_RELATIVE_POS { self.is_absolute = false; }
+            else if *part == crate::gcode::CMD_HOME {
                 self.v_pos = raylib::prelude::Vector2 { x: 0.0, y: 0.0 };
             }
             else if *part == "G0" { has_g0 = true; }
@@ -111,7 +111,7 @@ impl AppState {
             else if *part == "G2" { has_g2 = true; }
             else if *part == "G3" { has_g3 = true; }
             else if *part == "M3" || *part == "M4" { /* power updated via S */ }
-            else if *part == "M5" { has_m5 = true; }
+            else if *part == crate::gcode::CMD_LASER_OFF { has_m5 = true; }
             else if part.starts_with('X') { x_val = part[1..].parse::<f32>().ok(); }
             else if part.starts_with('Y') { y_val = part[1..].parse::<f32>().ok(); }
             else if part.starts_with('S') { 
@@ -208,8 +208,8 @@ impl AppState {
 
         for part in &parts {
             let p = if part.starts_with("$J=") { &part[3..] } else { *part };
-            if p == "G90" { self.is_absolute = true; }
-            else if p == "G91" { self.is_absolute = false; }
+            if p == crate::gcode::CMD_ABSOLUTE_POS { self.is_absolute = true; }
+            else if p == crate::gcode::CMD_RELATIVE_POS { self.is_absolute = false; }
             else if p == "G0" { has_g0 = true; }
             else if p == "G1" { has_g1 = true; }
             else if p == "G2" { has_g2 = true; }
@@ -267,7 +267,7 @@ impl AppState {
             } else {
                 self.v_pos = target;
             }
-        } else if cmd == "G92 X0 Y0" || cmd == "$H" {
+        } else if cmd == crate::gcode::CMD_SET_ORIGIN || cmd == crate::gcode::CMD_HOME {
             self.v_pos = Vector2::new(0.0, 0.0);
         }
 
@@ -278,7 +278,7 @@ impl AppState {
                 is_response: false,
                 timestamp: get_ts(),
             });
-            if self.serial_logs.len() > 500 {
+            if self.serial_logs.len() > 1000 {
                 self.serial_logs.pop_front();
             }
         }

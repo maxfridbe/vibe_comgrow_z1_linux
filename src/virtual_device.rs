@@ -145,17 +145,17 @@ impl VirtualDevice {
 
         for p in parts {
             match p {
-                "G0" | "G1" => is_move = true,
-                "G2" => { is_move = true; is_arc = true; is_clockwise = true; },
-                "G3" => { is_move = true; is_arc = true; is_clockwise = false; },
-                "G90" => self.is_absolute = true,
-                "G91" => self.is_absolute = false,
-                "G21" => self.is_metric = true,
-                "G20" => self.is_metric = false,
-                "M3" | "M4" => { /* laser on handled by S */ },
-                "M5" => self.power = 0.0,
-                "M8" => self.air_assist = true,
-                "M9" => self.air_assist = false,
+                crate::gcode::CMD_MOVE_RAPID | crate::gcode::CMD_MOVE_LINEAR => is_move = true,
+                crate::gcode::CMD_ARC_CW => { is_move = true; is_arc = true; is_clockwise = true; },
+                crate::gcode::CMD_ARC_CCW => { is_move = true; is_arc = true; is_clockwise = false; },
+                crate::gcode::CMD_ABSOLUTE_POS => self.is_absolute = true,
+                crate::gcode::CMD_RELATIVE_POS => self.is_absolute = false,
+                crate::gcode::CMD_MILLIMETERS => self.is_metric = true,
+                crate::gcode::CMD_INCHES => self.is_metric = false,
+                crate::gcode::CMD_LASER_CONST | crate::gcode::CMD_LASER_DYN => { /* laser on handled by S */ },
+                crate::gcode::CMD_LASER_OFF => self.power = 0.0,
+                crate::gcode::CMD_AIR_ASSIST_ON => self.air_assist = true,
+                crate::gcode::CMD_AIR_ASSIST_OFF => self.air_assist = false,
                 _ => {
                     if p.starts_with('X') { new_x = p[1..].parse::<f32>().ok(); }
                     else if p.starts_with('Y') { new_y = p[1..].parse::<f32>().ok(); }

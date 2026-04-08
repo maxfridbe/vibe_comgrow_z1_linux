@@ -150,13 +150,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             icon: ICON_REFRESH,
             color: COLOR_USB_ICON,
             commands: vec![
-                Command { label: "Status", cmd: "?" },
-                Command { label: "Home", cmd: "$H" },
+                Command { label: "Status", cmd: gcode::CMD_STATUS_REPORT },
+                Command { label: "Home", cmd: gcode::CMD_HOME },
                 Command { label: "Settings", cmd: "$$" },
-                Command { label: "Hold", cmd: "!" },
-                Command { label: "Resume", cmd: "~" },
-                Command { label: "Unlock", cmd: "$X" },
-                Command { label: "Reset", cmd: "0x18" },
+                Command { label: "Hold", cmd: gcode::CMD_FEED_HOLD },
+                Command { label: "Resume", cmd: gcode::CMD_CYCLE_START },
+                Command { label: "Unlock", cmd: gcode::CMD_UNLOCK },
+                Command { label: "Reset", cmd: gcode::CMD_SOFT_RESET },
             ],
         },
         Section {
@@ -164,9 +164,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             icon: ICON_FLAME,
             color: COLOR_WARNING,
             commands: vec![
-                Command { label: "Dynamic", cmd: "M4" },
-                Command { label: "Air On", cmd: "M8" },
-                Command { label: "Air Off", cmd: "M9" },
+                Command { label: "Dynamic", cmd: gcode::CMD_LASER_DYN },
+                Command { label: "Air On", cmd: gcode::CMD_AIR_ASSIST_ON },
+                Command { label: "Air Off", cmd: gcode::CMD_AIR_ASSIST_OFF },
             ],
         },
         Section {
@@ -198,10 +198,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             icon: ICON_LAYERS,
             color: COLOR_ACCENT_PURPLE_VIRTUAL,
             commands: vec![
-                Command { label: "Abs", cmd: "G90" },
-                Command { label: "Inc", cmd: "G91" },
-                Command { label: "mm", cmd: "G21" },
-                Command { label: "inch", cmd: "G20" },
+                Command { label: "Abs", cmd: gcode::CMD_ABSOLUTE_POS },
+                Command { label: "Inc", cmd: gcode::CMD_RELATIVE_POS },
+                Command { label: "mm", cmd: gcode::CMD_MILLIMETERS },
+                Command { label: "inch", cmd: gcode::CMD_INCHES },
             ],
         },
         Section {
@@ -349,9 +349,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         estop_h_color = if is_emergency { COLOR_SUCCESS_LIGHT } else { COLOR_DANGER_HOVER };
                         if mouse_pressed {
                             let mut guard = state.lock().unwrap();
-                            guard.send_command("!".to_string());
-                            guard.send_command("M5".to_string());
-                            guard.send_command("0x18".to_string());
+                            guard.send_command(crate::gcode::CMD_FEED_HOLD.to_string());
+                            guard.send_command(crate::gcode::CMD_LASER_OFF.to_string());
+                            guard.send_command(crate::gcode::CMD_SOFT_RESET.to_string());
                             guard.paths.clear();
                         }
                     }
@@ -464,7 +464,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 if clay_scope.pointer_over(estop_b_id) {
                     estop_b_color = if is_emergency { COLOR_SUCCESS_LIGHT } else { COLOR_DANGER_HOVER };
                     if mouse_pressed {
-                        let mut g = state.lock().unwrap(); g.send_command("!".to_string()); g.send_command("M5".to_string()); g.send_command("0x18".to_string());
+                        let mut g = state.lock().unwrap(); g.send_command(crate::gcode::CMD_FEED_HOLD.to_string()); g.send_command(crate::gcode::CMD_LASER_OFF.to_string()); g.send_command(crate::gcode::CMD_SOFT_RESET.to_string());
                     }
                 }
 
@@ -502,7 +502,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     }
 
                     clay_scope.with(&log_scroll, |clay_scope| {
-                        for (i, log) in logs.iter().rev().take(100).enumerate() {
+                        for (i, log) in logs.iter().rev().take(1000).enumerate() {
                             let text_color = if log.is_response { COLOR_TEXT_BLACK } else if i == 0 { COLOR_TEXT_WHITE } else { COLOR_TEXT_MUTED };
                             let mut row = Declaration::<Texture2D, ()>::new();
                             row.layout().width(grow!()).padding(Padding::horizontal(8)).padding(Padding::vertical(2)).child_gap(10).end();

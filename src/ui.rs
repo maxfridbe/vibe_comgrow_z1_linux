@@ -87,7 +87,7 @@ pub fn render_jog_btn<'a, 'render>(
             clicked = true;
             let mut guard = state.lock().unwrap();
             let d = guard.distance;
-            let cmd = format!("$J=G91 G21 {}{} F{}", axis, direction * d, guard.feed_rate);
+            let cmd = crate::gcode::jog_axis(axis, direction * d, guard.feed_rate);
             guard.send_command(cmd.clone());
             if let Some(cb) = clipboard { let _ = cb.set_text(cmd); }
         }
@@ -136,7 +136,7 @@ pub fn render_burn_btn<'a, 'render>(
             let s = guard.power;
             let dx_scaled = dx * d;
             let dy_scaled = dy * d;
-            let cmd = format!("G91 G1 X{:.2} Y{:.2} F{} S{}", dx_scaled, dy_scaled, f, s);
+            let cmd = format!("{}\n{}", crate::gcode::CMD_RELATIVE_POS, crate::gcode::burn(dx_scaled, dy_scaled, s, f));
             guard.send_command(cmd.clone());
             if let Some(cb) = clipboard { let _ = cb.set_text(cmd); }
         }
