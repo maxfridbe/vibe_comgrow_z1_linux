@@ -169,7 +169,18 @@ pub fn render_text_controls<'a, 'render>(
                     .end(),
             );
 
-            let (content, font_name, is_bold, is_outline, l_space, line_space, available_fonts, dropdown_open) = {
+            let (
+                content,
+                font_name,
+                is_bold,
+                is_outline,
+                l_space,
+                line_space,
+                curve_steps,
+                lines_per_mm,
+                available_fonts,
+                dropdown_open,
+            ) = {
                 let g = state.lock().unwrap();
                 (
                     g.text_content.clone(),
@@ -178,6 +189,8 @@ pub fn render_text_controls<'a, 'render>(
                     g.text_is_outline,
                     g.text_letter_spacing,
                     g.text_line_spacing,
+                    g.text_curve_steps,
+                    g.text_lines_per_mm,
                     g.available_fonts.clone(),
                     g.text_font_dropdown_open,
                 )
@@ -490,6 +503,51 @@ pub fn render_text_controls<'a, 'render>(
                 });
             });
 
+            let mut quality_grid = Declaration::<Texture2D, ()>::new();
+            quality_grid.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(16).end();
+            clay_scope.with(&quality_grid, |clay_scope| {
+                let mut col1 = Declaration::<Texture2D, ()>::new();
+                col1.layout().direction(LayoutDirection::TopToBottom).child_gap(8).end();
+                clay_scope.with(&col1, |clay_scope| {
+                    render_slider(
+                        clay_scope,
+                        "txt_curve_steps",
+                        "Curve Smoothness",
+                        curve_steps as f32,
+                        1.0,
+                        50.0,
+                        COLOR_SLIDER_X,
+                        state,
+                        |s, v| s.text_curve_steps = v as u32,
+                        mouse_pos,
+                        mouse_down,
+                        scroll_y,
+                        arena,
+                        font_scale,
+                    );
+                });
+                let mut col2 = Declaration::<Texture2D, ()>::new();
+                col2.layout().direction(LayoutDirection::TopToBottom).child_gap(8).end();
+                clay_scope.with(&col2, |clay_scope| {
+                    render_slider(
+                        clay_scope,
+                        "txt_lines_per_mm",
+                        "Lines Per MM",
+                        lines_per_mm,
+                        1.0,
+                        20.0,
+                        COLOR_SLIDER_Y,
+                        state,
+                        |s, v| s.text_lines_per_mm = v,
+                        mouse_pos,
+                        mouse_down,
+                        scroll_y,
+                        arena,
+                        font_scale,
+                    );
+                });
+            });
+
             let mut action_row = Declaration::<Texture2D, ()>::new();
             action_row
                 .layout()
@@ -531,6 +589,8 @@ pub fn render_text_controls<'a, 'render>(
                                 g.text_is_outline,
                                 g.text_letter_spacing,
                                 g.text_line_spacing,
+                                g.text_curve_steps,
+                                g.text_lines_per_mm,
                                 g.text_font.clone(),
                             );
                             let state_clone = Arc::clone(state);
@@ -550,6 +610,8 @@ pub fn render_text_controls<'a, 'render>(
                                     outline,
                                     l_space,
                                     line_space,
+                                    c_steps,
+                                    l_per_mm,
                                     f_name,
                                 ) = state_data;
                                 let fit = if b_enabled {
@@ -575,6 +637,8 @@ pub fn render_text_controls<'a, 'render>(
                                     outline,
                                     l_space,
                                     line_space,
+                                    c_steps,
+                                    l_per_mm,
                                     &f_name,
                                     true,
                                 ) {
@@ -635,6 +699,8 @@ pub fn render_text_controls<'a, 'render>(
                             g.text_is_outline,
                             g.text_letter_spacing,
                             g.text_line_spacing,
+                            g.text_curve_steps,
+                            g.text_lines_per_mm,
                             g.text_font.clone(),
                         )
                     };
@@ -655,6 +721,8 @@ pub fn render_text_controls<'a, 'render>(
                             outline,
                             l_space,
                             line_space,
+                            c_steps,
+                            l_per_mm,
                             f_name,
                         ) = state_data;
                         let fit = if b_enabled {
@@ -669,7 +737,8 @@ pub fn render_text_controls<'a, 'render>(
                         };
 
                         if let Ok((gcode, _)) = generate_text_gcode(
-                            &txt, pwr, spd, scl, pas, fit, center, bold, outline, l_space, line_space, &f_name, false,
+                            &txt, pwr, spd, scl, pas, fit, center, bold, outline, l_space, line_space, c_steps, l_per_mm,
+                            &f_name, false,
                         ) {
                             state_clone.lock().unwrap().send_command(gcode);
                         }
@@ -704,6 +773,8 @@ pub fn render_text_controls<'a, 'render>(
                             g.text_is_outline,
                             g.text_letter_spacing,
                             g.text_line_spacing,
+                            g.text_curve_steps,
+                            g.text_lines_per_mm,
                             &g.text_font,
                             false,
                         )

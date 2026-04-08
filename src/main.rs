@@ -86,6 +86,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         text_is_outline: false,
         text_letter_spacing: 0.0,
         text_line_spacing: 1.0,
+        text_curve_steps: 10,
+        text_lines_per_mm: 5.0,
         available_fonts: {
             let mut fonts = SystemSource::new().all_families().unwrap_or_default();
             fonts.sort();

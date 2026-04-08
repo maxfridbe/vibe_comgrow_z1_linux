@@ -378,6 +378,7 @@ struct VectorGCodeBuilder {
     start_pos: Vector2F,
     power: f32,
     speed: f32,
+    curve_steps: u32,
 }
 
 impl OutlineSink for VectorGCodeBuilder {
@@ -396,7 +397,7 @@ impl OutlineSink for VectorGCodeBuilder {
     }
 
     fn quadratic_curve_to(&mut self, control: Vector2F, to: Vector2F) {
-        let segments = 10;
+        let segments = self.curve_steps;
         for i in 1..=segments {
             let t = i as f32 / segments as f32;
             let p = self.current_pos * (1.0 - t).powi(2) + control * 2.0 * (1.0 - t) * t + to * t.powi(2);
@@ -405,7 +406,7 @@ impl OutlineSink for VectorGCodeBuilder {
     }
 
     fn cubic_curve_to(&mut self, control: LineSegment2F, to: Vector2F) {
-        let segments = 10;
+        let segments = self.curve_steps;
         for i in 1..=segments {
             let t = i as f32 / segments as f32;
             let p = self.current_pos * (1.0 - t).powi(3)
@@ -437,6 +438,8 @@ pub fn generate_text_gcode(
     outline: bool,
     letter_spacing: f32,
     _line_spacing: f32,
+    curve_steps: u32,
+    lines_per_mm: f32,
     font_family: &str,
     is_preview: bool,
 ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
@@ -477,7 +480,11 @@ pub fn generate_text_gcode(
     };
 
     let font = font.ok_or("Could not load font")?;
-    let font_size = 64.0;
+    // lines_per_mm = DPI / 25.4. We want font_size such that units_per_em corresponds to our desired resolution.
+    // If we rasterize at font_size = 100, and our output height is 10mm, we get 10 pixels per mm.
+    // So font_size should be roughly (output_height_in_mm * lines_per_mm).
+    // Let's use a base font size that gives us the requested resolution.
+    let font_size = 100.0; // Base rasterization size
     let units_per_em = font.metrics().units_per_em as f32;
     let design_to_px = font_size / units_per_em;
 
@@ -555,6 +562,7 @@ pub fn generate_text_gcode(
                     start_pos: Vector2F::new(0.0, 0.0),
                     power: pwr_max,
                     speed: speed,
+                    curve_steps,
                 };
 
                 font.outline(glyph.glyph_id, HintingOptions::None, &mut builder).ok();
@@ -565,17 +573,25 @@ pub fn generate_text_gcode(
         return Ok((gcode, format!("Text Outline \"{}\"", text)));
     }
 
-    // Raster path
-    let width = ((max_x - min_x) * design_to_px).max(1.0).ceil() as u32;
-    let height = ((max_y - min_y) * design_to_px).max(1.0).ceil() as u32;
+    // Raster path - calculate width/height based on desired resolution
+    // out_h = (max_y - min_y) * total_scale
+    // target_pixels_h = out_h * lines_per_mm
+    let out_h = (max_y - min_y) * total_scale;
+    let target_pixels_h = (out_h * lines_per_mm).max(1.0).ceil() as u32;
+    // target_font_size = target_pixels_h / ((max_y - min_y) / units_per_em)
+    let target_font_size = (target_pixels_h as f32) / ((max_y - min_y) / units_per_em);
+    let target_design_to_px = target_font_size / units_per_em;
+
+    let width = ((max_x - min_x) * target_design_to_px).max(1.0).ceil() as u32;
+    let height = target_pixels_h;
     let mut canvas = Canvas::new(Vector2I::new(width as i32, height as i32), Format::A8);
 
     for glyph in glyphs {
-        let origin = Vector2F::new((glyph.offset.x() - min_x) * design_to_px, max_y * design_to_px);
+        let origin = Vector2F::new((glyph.offset.x() - min_x) * target_design_to_px, max_y * target_design_to_px);
         font.rasterize_glyph(
             &mut canvas,
             glyph.glyph_id,
-            font_size,
+            target_font_size,
             Transform2F::from_translation(origin),
             HintingOptions::None,
             RasterizationOptions::GrayscaleAa,
@@ -731,6 +747,8 @@ mod tests {
             _outline,
             letter_spacing,
             _line_spacing,
+            10,
+            5.0,
             font_family,
             true,
         );
@@ -773,6 +791,8 @@ mod tests {
             outline,
             letter_spacing,
             _line_spacing,
+            10,
+            5.0,
             font_family,
             true,
         );
@@ -844,6 +864,8 @@ mod tests {
                         text_is_outline: false,
                         text_letter_spacing: 0.0,
                         text_line_spacing: 1.0,
+                        text_curve_steps: 10,
+                        text_lines_per_mm: 5.0,
                         available_fonts: Vec::new(),
                         text_font_dropdown_open: false,
                         text_font_scroll_offset: 0.0,

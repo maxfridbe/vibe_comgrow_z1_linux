@@ -77,6 +77,8 @@ pub struct AppState {
     pub text_is_outline: bool,
     pub text_letter_spacing: f32,
     pub text_line_spacing: f32,
+    pub text_curve_steps: u32,
+    pub text_lines_per_mm: f32,
     pub available_fonts: Vec<String>,
     pub text_font_dropdown_open: bool,
     pub text_font_scroll_offset: f32,
