@@ -9,20 +9,35 @@ pub fn decode_gcode(cmd: &str) -> String {
     }
 
     let parts: Vec<&str> = cmd.split_whitespace().collect();
-    
+
     let decoded = if cmd.starts_with("$J=") {
         let mut x = None;
         let mut y = None;
         for part in &parts {
-            let p = if part.starts_with("$J=") { &part[3..] } else { *part };
-            if p.starts_with('X') { x = Some(&p[1..]); }
-            else if p.starts_with('Y') { y = Some(&p[1..]); }
+            let p = if part.starts_with("$J=") {
+                &part[3..]
+            } else {
+                *part
+            };
+            if p.starts_with('X') {
+                x = Some(&p[1..]);
+            } else if p.starts_with('Y') {
+                y = Some(&p[1..]);
+            }
         }
         if let Some(val) = x {
-            let sign = if val.starts_with('-') { "" } else { "+" };
+            let sign = if val.starts_with('-') {
+                ""
+            } else {
+                "+"
+            };
             format!("Jog X {}{}mm", sign, val)
         } else if let Some(val) = y {
-            let sign = if val.starts_with('-') { "" } else { "+" };
+            let sign = if val.starts_with('-') {
+                ""
+            } else {
+                "+"
+            };
             format!("Jog Y {}{}mm", sign, val)
         } else {
             "Jog Move".to_string()
@@ -58,41 +73,79 @@ pub fn decode_gcode(cmd: &str) -> String {
         let mut f = None;
         let mut s = None;
         for part in &parts {
-            if part.starts_with('X') { x = Some(&part[1..]); }
-            else if part.starts_with('Y') { y = Some(&part[1..]); }
-            else if part.starts_with('F') { f = Some(&part[1..]); }
-            else if part.starts_with('S') { s = Some(&part[1..]); }
+            if part.starts_with('X') {
+                x = Some(&part[1..]);
+            } else if part.starts_with('Y') {
+                y = Some(&part[1..]);
+            } else if part.starts_with('F') {
+                f = Some(&part[1..]);
+            } else if part.starts_with('S') {
+                s = Some(&part[1..]);
+            }
         }
         let mut pos = Vec::new();
-        if let Some(xv) = x { pos.push(format!("X{}", xv)); }
-        if let Some(yv) = y { pos.push(format!("Y{}", yv)); }
-        let pos_str = if pos.is_empty() { "".to_string() } else { format!("to {}", pos.join(" ")) };
-        
+        if let Some(xv) = x {
+            pos.push(format!("X{}", xv));
+        }
+        if let Some(yv) = y {
+            pos.push(format!("Y{}", yv));
+        }
+        let pos_str = if pos.is_empty() {
+            "".to_string()
+        } else {
+            format!("to {}", pos.join(" "))
+        };
+
         let mut params = Vec::new();
-        if let Some(fv) = f { params.push(format!("F{}", fv)); }
-        if let Some(sv) = s { params.push(format!("S{}", sv)); }
-        let params_str = if params.is_empty() { "".to_string() } else { format!("({})", params.join(", ")) };
-        
+        if let Some(fv) = f {
+            params.push(format!("F{}", fv));
+        }
+        if let Some(sv) = s {
+            params.push(format!("S{}", sv));
+        }
+        let params_str = if params.is_empty() {
+            "".to_string()
+        } else {
+            format!("({})", params.join(", "))
+        };
+
         format!("Burn Linear {} {}", pos_str, params_str)
     } else if parts.iter().any(|p| p.starts_with("G0")) {
         let mut x = None;
         let mut y = None;
         for part in &parts {
-            if part.starts_with('X') { x = Some(&part[1..]); }
-            else if part.starts_with('Y') { y = Some(&part[1..]); }
+            if part.starts_with('X') {
+                x = Some(&part[1..]);
+            } else if part.starts_with('Y') {
+                y = Some(&part[1..]);
+            }
         }
         let mut pos = Vec::new();
-        if let Some(xv) = x { pos.push(format!("X{}", xv)); }
-        if let Some(yv) = y { pos.push(format!("Y{}", yv)); }
-        let pos_str = if pos.is_empty() { "".to_string() } else { format!("to {}", pos.join(" ")) };
-        
+        if let Some(xv) = x {
+            pos.push(format!("X{}", xv));
+        }
+        if let Some(yv) = y {
+            pos.push(format!("Y{}", yv));
+        }
+        let pos_str = if pos.is_empty() {
+            "".to_string()
+        } else {
+            format!("to {}", pos.join(" "))
+        };
+
         format!("Jump {}", pos_str)
     } else if parts.iter().any(|p| p.starts_with("M3")) || parts.iter().any(|p| p.starts_with("M4")) {
         let is_m3 = parts.iter().any(|p| p.starts_with("M3"));
-        let label = if is_m3 { "Laser Constant On" } else { "Laser Dynamic On" };
+        let label = if is_m3 {
+            "Laser Constant On"
+        } else {
+            "Laser Dynamic On"
+        };
         let mut s = None;
         for part in &parts {
-            if part.starts_with('S') { s = Some(&part[1..]); }
+            if part.starts_with('S') {
+                s = Some(&part[1..]);
+            }
         }
         if let Some(sv) = s {
             format!("{} (Power: {})", label, sv)
@@ -115,7 +168,8 @@ pub fn decode_gcode(cmd: &str) -> String {
             "M9" => "Air Assist Off",
             c if c.starts_with("$") => "Settings Change",
             _ => "G-Code Command",
-        }.to_string()
+        }
+        .to_string()
     };
 
     decoded.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -125,14 +179,16 @@ pub fn decode_response(resp: &str) -> String {
     let trimmed = resp.trim();
     match trimmed {
         "ok" => "Success / OK".to_string(),
-        l if l.starts_with("error:15") => "Jog target exceeds machine travel. (Check limits or Home machine)".to_string(),
+        l if l.starts_with("error:15") => {
+            "Jog target exceeds machine travel. (Check limits or Home machine)".to_string()
+        }
         l if l.starts_with("error:") => format!("Machine Error [{}]", &l[6..]),
         l if l.starts_with("ALARM:") => format!("Safety Alarm [{}]. You must Reset or Unlock.", &l[6..]),
         l if l.starts_with('<') && l.ends_with('>') => {
             let content = &l[1..l.len() - 1];
             let parts: Vec<&str> = content.split('|').collect();
             let state = parts.get(0).cloned().unwrap_or("Unknown");
-            
+
             let mut info = match state {
                 "Idle" => "Machine is IDLE and ready for commands.".to_string(),
                 "Run" => "Machine is MOVING / EXECUTING commands.".to_string(),
@@ -140,7 +196,7 @@ pub fn decode_response(resp: &str) -> String {
                 "Hold" => "Machine is in HOLD (Resume Required).".to_string(),
                 _ => format!("Machine State: {}", state),
             };
-            
+
             for part in &parts[1..] {
                 if part.starts_with("MPos:") {
                     let coords: Vec<&str> = part[5..].split(',').collect();
@@ -155,7 +211,7 @@ pub fn decode_response(resp: &str) -> String {
                 }
             }
             info
-        },
+        }
         l if l.contains("Caution: Unlocked") => "Machine has been safely UNLOCKED.".to_string(),
         l if l.contains("Homing cycle") => "Machine is performing a HOMING cycle...".to_string(),
         l if l.starts_with("Grbl") => "Firmware Greeting".to_string(),

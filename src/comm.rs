@@ -1,10 +1,10 @@
-use std::sync::{Arc, Mutex};
-use std::sync::mpsc::Receiver;
-use std::collections::VecDeque;
-use std::io::{Write, Read};
-use crate::state::{AppState, LogEntry};
 use crate::gcode::decode_response;
+use crate::state::{AppState, LogEntry};
 use crate::virtual_device::VirtualDevice;
+use std::collections::VecDeque;
+use std::io::{Read, Write};
+use std::sync::mpsc::Receiver;
+use std::sync::{Arc, Mutex};
 
 fn get_timestamp() -> String {
     let now = std::time::SystemTime::now();
@@ -35,7 +35,9 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                     // Check if port changed back to real
                     {
                         let guard = state.lock().unwrap();
-                        if guard.port != "VIRTUAL" { break; }
+                        if guard.port != "VIRTUAL" {
+                            break;
+                        }
                     }
 
                     virtual_machine.update();
@@ -95,9 +97,8 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                     std::thread::sleep(std::time::Duration::from_millis(10));
                 }
             } else {
-                if let Ok(mut port) = serialport::new(&port_name, baud_rate)
-                    .timeout(std::time::Duration::from_millis(10))
-                    .open()
+                if let Ok(mut port) =
+                    serialport::new(&port_name, baud_rate).timeout(std::time::Duration::from_millis(10)).open()
                 {
                     println!("[{}] SERIAL: Connected to {}", get_timestamp(), port_name);
                     {
@@ -113,12 +114,14 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                     let mut serial_buf: Vec<u8> = vec![0; 1024];
                     let mut line_accumulator = String::new();
                     let mut last_status_query = std::time::Instant::now();
-                    
+
                     loop {
                         // Check if port changed to virtual
                         {
                             let guard = state.lock().unwrap();
-                            if guard.port != port_name { break; }
+                            if guard.port != port_name {
+                                break;
+                            }
                         }
 
                         // Periodic Status Query (every 500ms)
@@ -127,35 +130,39 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                             last_status_query = std::time::Instant::now();
                         }
 
-                    // Receive from rx
-                    while let Ok(cmd) = rx.try_recv() {
-                        if cmd == "!" || cmd == "~" || cmd == "?" || cmd == "\x18" || cmd == "0x18" {
-                            {
-                                let mut guard = state.lock().unwrap();
-                                guard.process_command_for_state(&cmd, true);
+                        // Receive from rx
+                        while let Ok(cmd) = rx.try_recv() {
+                            if cmd == "!" || cmd == "~" || cmd == "?" || cmd == "\x18" || cmd == "0x18" {
+                                {
+                                    let mut guard = state.lock().unwrap();
+                                    guard.process_command_for_state(&cmd, true);
+                                }
+                                let actual_cmd = if cmd == "0x18" {
+                                    "\x18"
+                                } else {
+                                    &cmd
+                                };
+                                let _ = port.write_all(actual_cmd.as_bytes());
+                                if actual_cmd == "\x18" {
+                                    wait_for_ok = false;
+                                    queue.clear();
+                                }
+                            } else {
+                                queue.push_back(cmd);
                             }
-                            let actual_cmd = if cmd == "0x18" { "\x18" } else { &cmd };
-                            let _ = port.write_all(actual_cmd.as_bytes());
-                            if actual_cmd == "\x18" {
-                                wait_for_ok = false;
-                                queue.clear();
-                            }
-                        } else {
-                            queue.push_back(cmd);
                         }
-                    }
 
-                    if !wait_for_ok {
-                        if let Some(cmd) = queue.pop_front() {
-                            {
-                                let mut guard = state.lock().unwrap();
-                                guard.process_command_for_state(&cmd, false);
+                        if !wait_for_ok {
+                            if let Some(cmd) = queue.pop_front() {
+                                {
+                                    let mut guard = state.lock().unwrap();
+                                    guard.process_command_for_state(&cmd, false);
+                                }
+                                let full_cmd = format!("{}\n", cmd);
+                                let _ = port.write_all(full_cmd.as_bytes());
+                                wait_for_ok = true;
                             }
-                            let full_cmd = format!("{}\n", cmd);
-                            let _ = port.write_all(full_cmd.as_bytes());
-                            wait_for_ok = true;
                         }
-                    }
 
                         // Read responses
                         match port.read(serial_buf.as_mut_slice()) {
@@ -172,34 +179,40 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                             }
                             Ok(_) => (),
                             Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => (),
-                            Err(_) => break, 
+                            Err(_) => break,
                         }
                         std::thread::sleep(std::time::Duration::from_millis(5));
                     }
                 }
             }
-            std::thread::sleep(std::time::Duration::from_secs(1)); 
+            std::thread::sleep(std::time::Duration::from_secs(1));
         }
     });
 }
 
 fn handle_responses(state: &Arc<Mutex<AppState>>, responses: Vec<String>, wait_for_ok: &mut bool, force_log: bool) {
     for line in responses {
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         if line == "ok" || line.starts_with("error") || line.starts_with("Grbl") {
             *wait_for_ok = false;
         }
 
         let explanation = decode_response(&line);
         let mut guard = state.lock().unwrap();
-        
+
         if line.starts_with('<') && line.contains('|') {
-            let content = if line.ends_with('>') { &line[1..line.len()-1] } else { &line[1..] };
+            let content = if line.ends_with('>') {
+                &line[1..line.len() - 1]
+            } else {
+                &line[1..]
+            };
             let parts: Vec<&str> = content.split('|').collect();
             if let Some(state_name) = parts.get(0) {
                 guard.machine_state = state_name.to_string();
             }
-            
+
             for part in &parts[1..] {
                 if part.starts_with("MPos:") || part.starts_with("WPos:") {
                     let coords: Vec<&str> = part[5..].split(',').collect();

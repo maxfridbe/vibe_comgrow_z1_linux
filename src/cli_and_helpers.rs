@@ -1,18 +1,18 @@
-use std::sync::mpsc;
+use crate::gcode;
+use crate::svg_helper;
+use crate::ui::Section;
+use crate::virtual_device::VirtualDevice;
+use font_kit::family_name::FamilyName;
+use font_kit::font::Font;
+use font_kit::handle::Handle;
+use font_kit::outline::OutlineSink;
+use font_kit::properties::{Properties, Weight};
+use font_kit::source::SystemSource;
+use pathfinder_geometry::line_segment::LineSegment2F;
+use pathfinder_geometry::vector::Vector2F;
 use std::ffi::OsString;
 use std::sync::Arc;
-use crate::ui::Section;
-use crate::svg_helper;
-use crate::virtual_device::VirtualDevice;
-use font_kit::source::SystemSource;
-use font_kit::family_name::FamilyName;
-use font_kit::properties::{Properties, Weight};
-use font_kit::handle::Handle;
-use font_kit::font::Font;
-use font_kit::outline::OutlineSink;
-use pathfinder_geometry::vector::Vector2F;
-use pathfinder_geometry::line_segment::LineSegment2F;
-use crate::gcode;
+use std::sync::mpsc;
 
 pub struct SafetyGuard {
     pub tx: mpsc::Sender<String>,
@@ -50,8 +50,10 @@ fn parse_dimension(s: &str) -> Result<f32, Box<dyn std::error::Error + Send + Sy
 
 pub fn run_cli_mode(target_label: &str, _sections: &[Section]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (tx, _rx) = mpsc::channel::<String>();
-    let _guard = SafetyGuard { tx: tx.clone() };
-    
+    let _guard = SafetyGuard {
+        tx: tx.clone(),
+    };
+
     let tx_ctrlc = tx.clone();
     ctrlc::set_handler(move || {
         println!("\n[CTRL-C] Detected.");
@@ -83,17 +85,27 @@ pub fn run_dynamic_pattern_cli(args: &[OsString]) -> Result<(), Box<dyn std::err
 
 fn parse_pair(s: &str) -> Result<(f32, f32), Box<dyn std::error::Error + Send + Sync>> {
     let parts: Vec<&str> = s.split(|c| c == ',' || c == 'x').collect();
-    if parts.len() < 2 { return Err("Invalid pair".into()); }
+    if parts.len() < 2 {
+        return Err("Invalid pair".into());
+    }
     Ok((parse_dimension(parts[0])?, parse_dimension(parts[1])?))
 }
 
-pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, passes: &str, _fit: Option<String>, center: &str) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+pub fn generate_pattern_gcode(
+    shape: &str,
+    pwr: &str,
+    spd: &str,
+    scale: &str,
+    passes: &str,
+    _fit: Option<String>,
+    center: &str,
+) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
     let pwr_val = pwr.trim_end_matches('%').parse::<f32>()?;
     let spd_val = spd.trim_end_matches('%').parse::<f32>()?;
     let scl_val = scale.trim_end_matches('x').parse::<f32>()?;
     let pas_val = passes.parse::<u32>().unwrap_or(1);
     let (cx, cy) = parse_pair(center)?;
-    
+
     let mut final_gcode = String::new();
     final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_ABSOLUTE_POS, gcode::CMD_HOME));
 
@@ -116,10 +128,19 @@ pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, pa
                     let x = 16.0 * t.sin().powi(3);
                     let y = 13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos();
                     if i == 0 {
-                        final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy(cx + x * scl_val, cy + y * scl_val)));
-                        final_gcode.push_str(&format!("{} F{}\n", gcode::laser_on_dynamic(pwr_val * 10.0), spd_val * 10.0));
+                        final_gcode.push_str(&format!(
+                            "{}\n{}\n",
+                            gcode::CMD_LASER_OFF,
+                            gcode::move_xy(cx + x * scl_val, cy + y * scl_val)
+                        ));
+                        final_gcode.push_str(&format!(
+                            "{} F{}\n",
+                            gcode::laser_on_dynamic(pwr_val * 10.0),
+                            spd_val * 10.0
+                        ));
                     } else {
-                        final_gcode.push_str(&format!("{}\n", gcode::move_linear_xy(cx + x * scl_val, cy + y * scl_val)));
+                        final_gcode
+                            .push_str(&format!("{}\n", gcode::move_linear_xy(cx + x * scl_val, cy + y * scl_val)));
                     }
                 }
             }
@@ -127,14 +148,27 @@ pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, pa
                 let pts = 5;
                 for i in 0..=(pts * 2) {
                     let angle = (i as f32 / (pts as f32 * 2.0)) * 2.0 * std::f32::consts::PI;
-                    let r = if i % 2 == 0 { 20.0 } else { 8.0 };
+                    let r = if i % 2 == 0 {
+                        20.0
+                    } else {
+                        8.0
+                    };
                     let x = r * angle.cos();
                     let y = r * angle.sin();
                     if i == 0 {
-                        final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy(cx + x * scl_val, cy + y * scl_val)));
-                        final_gcode.push_str(&format!("{} F{}\n", gcode::laser_on_dynamic(pwr_val * 10.0), spd_val * 10.0));
+                        final_gcode.push_str(&format!(
+                            "{}\n{}\n",
+                            gcode::CMD_LASER_OFF,
+                            gcode::move_xy(cx + x * scl_val, cy + y * scl_val)
+                        ));
+                        final_gcode.push_str(&format!(
+                            "{} F{}\n",
+                            gcode::laser_on_dynamic(pwr_val * 10.0),
+                            spd_val * 10.0
+                        ));
                     } else {
-                        final_gcode.push_str(&format!("{}\n", gcode::move_linear_xy(cx + x * scl_val, cy + y * scl_val)));
+                        final_gcode
+                            .push_str(&format!("{}\n", gcode::move_linear_xy(cx + x * scl_val, cy + y * scl_val)));
                     }
                 }
             }
@@ -149,7 +183,7 @@ pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, pa
                 if !filename.to_lowercase().ends_with(".svg") {
                     filename.push_str(".svg");
                 }
-                
+
                 let asset_path = format!("assets/{}", filename);
                 let final_path = if std::path::Path::new(&filename).exists() {
                     Some(filename)
@@ -167,7 +201,15 @@ pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, pa
                         }
                     }
 
-                    if let Ok((svg_gcode, _, _, _, _)) = svg_helper::load_svg_as_gcode(&p, scl_val, parsed_fit, cx, cy, (pwr_val * 10.0) as i32, (spd_val * 10.0) as i32) {
+                    if let Ok((svg_gcode, _, _, _, _)) = svg_helper::load_svg_as_gcode(
+                        &p,
+                        scl_val,
+                        parsed_fit,
+                        cx,
+                        cy,
+                        (pwr_val * 10.0) as i32,
+                        (spd_val * 10.0) as i32,
+                    ) {
                         final_gcode.push_str(&svg_gcode);
                     }
                 }
@@ -177,12 +219,29 @@ pub fn generate_pattern_gcode(shape: &str, pwr: &str, spd: &str, scale: &str, pa
     }
     final_gcode.push_str(&format!("{}\n", gcode::CMD_HOME));
 
-    Ok((final_gcode, format!("Pattern {} (Scale: {}x, Center: {}, Power: {}%, Speed: {}%)", shape, scl_val, center, pwr_val, spd_val)))
+    Ok((
+        final_gcode,
+        format!(
+            "Pattern {} (Scale: {}x, Center: {}, Power: {}%, Speed: {}%)",
+            shape, scl_val, center, pwr_val, spd_val
+        ),
+    ))
 }
 
-pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, passes: u32, fit: Option<(f32, f32)>, center: (f32, f32), low_fid: f32, high_fid: f32, is_preview: bool) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+pub fn generate_image_gcode(
+    path: &str,
+    pwr_max: f32,
+    speed: f32,
+    scale: f32,
+    passes: u32,
+    fit: Option<(f32, f32)>,
+    center: (f32, f32),
+    low_fid: f32,
+    high_fid: f32,
+    is_preview: bool,
+) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
     let mut img_base = image::open(path)?;
-    
+
     // Resize image to a reasonable resolution for laser etching (e.g. max 500px dimension)
     // This dramatically speeds up G-code generation and reduces file size
     let max_dim = 500;
@@ -190,10 +249,10 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
         img_base = img_base.resize(max_dim, max_dim, image::imageops::FilterType::Lanczos3);
     }
     let img = img_base.to_rgba8();
-    
+
     let w = img.width() as f32;
     let h = img.height() as f32;
-    
+
     let mut final_scale = scale;
     if let Some((fit_w, fit_h)) = fit {
         let sw = fit_w / w;
@@ -209,10 +268,14 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
     // Pre-allocate a large string to avoid reallocations
     let mut gcode = String::with_capacity(img.width() as usize * img.height() as usize * 40);
     gcode.push_str(&format!("{}\n{}\n", gcode::CMD_ABSOLUTE_POS, gcode::CMD_HOME));
-    
+
     let f_val = (speed * 10.0) as i32;
 
-    let effective_passes = if is_preview { 1 } else { passes };
+    let effective_passes = if is_preview {
+        1
+    } else {
+        passes
+    };
 
     for _ in 0..effective_passes {
         for y in 0..img.height() {
@@ -229,20 +292,31 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
                 let intensity = 1.0 - (luminance / 255.0);
                 let remapped = ((intensity - low_fid) / (high_fid - low_fid).max(0.001)).clamp(0.0, 1.0);
 
-                if remapped > 0.01 { // Threshold for "empty"
-                    if first_x.is_none() { first_x = Some(x); }
+                if remapped > 0.01 {
+                    // Threshold for "empty"
+                    if first_x.is_none() {
+                        first_x = Some(x);
+                    }
                     last_x = Some(x);
                 }
             }
 
             if let (Some(fx), Some(lx)) = (first_x, last_x) {
                 let left_to_right = y % 2 == 0;
-                
+
                 // Move to start of relevant content
                 // If LTR, start at the LEFT edge of the first pixel (fx)
                 // If RTL, start at the RIGHT edge of the last pixel (lx + 1)
-                let start_x_coord = if left_to_right { fx as f32 } else { lx as f32 + 1.0 };
-                gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy_f(offset_x + start_x_coord * final_scale, actual_y, 3000.0)));
+                let start_x_coord = if left_to_right {
+                    fx as f32
+                } else {
+                    lx as f32 + 1.0
+                };
+                gcode.push_str(&format!(
+                    "{}\n{}\n",
+                    gcode::CMD_LASER_OFF,
+                    gcode::move_xy_f(offset_x + start_x_coord * final_scale, actual_y, 3000.0)
+                ));
                 gcode.push_str(&format!("M4 F{}\n", f_val));
 
                 let range: Vec<u32> = if left_to_right {
@@ -261,7 +335,11 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
                     // The destination coordinate
                     // If LTR, we move to the RIGHT edge of pixel x (x + 1)
                     // If RTL, we move to the LEFT edge of pixel x (x)
-                    let dest_x_coord = if left_to_right { x as f32 + 1.0 } else { x as f32 };
+                    let dest_x_coord = if left_to_right {
+                        x as f32 + 1.0
+                    } else {
+                        x as f32
+                    };
                     let actual_x = offset_x + dest_x_coord * final_scale;
 
                     if s_val > 0 {
@@ -277,7 +355,13 @@ pub fn generate_image_gcode(path: &str, pwr_max: f32, speed: f32, scale: f32, pa
     gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::CMD_HOME));
 
     let filename = std::path::Path::new(path).file_name().and_then(|f| f.to_str()).unwrap_or("image");
-    Ok((gcode, format!("Image {} (Scale: {:.2}x, Center: {:.1},{:.1}, Power: {}%, Speed: {}%, LowFid: {:.2}, HighFid: {:.2})", filename, final_scale, center.0, center.1, pwr_max, speed, low_fid, high_fid)))
+    Ok((
+        gcode,
+        format!(
+            "Image {} (Scale: {:.2}x, Center: {:.1},{:.1}, Power: {}%, Speed: {}%, LowFid: {:.2}, HighFid: {:.2})",
+            filename, final_scale, center.0, center.1, pwr_max, speed, low_fid, high_fid
+        ),
+    ))
 }
 
 struct VectorGCodeBuilder {
@@ -318,7 +402,10 @@ impl OutlineSink for VectorGCodeBuilder {
         let segments = 10;
         for i in 1..=segments {
             let t = i as f32 / segments as f32;
-            let p = self.current_pos * (1.0 - t).powi(3) + control.from() * 3.0 * (1.0 - t).powi(2) * t + control.to() * 3.0 * (1.0 - t) * t.powi(2) + to * t.powi(3);
+            let p = self.current_pos * (1.0 - t).powi(3)
+                + control.from() * 3.0 * (1.0 - t).powi(2) * t
+                + control.to() * 3.0 * (1.0 - t) * t.powi(2)
+                + to * t.powi(3);
             self.line_to(p);
         }
     }
@@ -332,15 +419,33 @@ impl OutlineSink for VectorGCodeBuilder {
     }
 }
 
-pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, passes: u32, fit: Option<(f32, f32)>, center: (f32, f32), bold: bool, outline: bool, letter_spacing: f32, _line_spacing: f32, font_family: &str, is_preview: bool) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+pub fn generate_text_gcode(
+    text: &str,
+    pwr_max: f32,
+    speed: f32,
+    scale: f32,
+    passes: u32,
+    fit: Option<(f32, f32)>,
+    center: (f32, f32),
+    bold: bool,
+    outline: bool,
+    letter_spacing: f32,
+    _line_spacing: f32,
+    font_family: &str,
+    is_preview: bool,
+) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
     use font_kit::canvas::{Canvas, Format, RasterizationOptions};
     use font_kit::hinting::HintingOptions;
-    use pathfinder_geometry::vector::Vector2I;
     use pathfinder_geometry::rect::RectF;
     use pathfinder_geometry::transform2d::Transform2F;
+    use pathfinder_geometry::vector::Vector2I;
 
     let properties = Properties {
-        weight: if bold { Weight::BOLD } else { Weight::NORMAL },
+        weight: if bold {
+            Weight::BOLD
+        } else {
+            Weight::NORMAL
+        },
         ..Properties::new()
     };
 
@@ -348,23 +453,25 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
         Font::from_bytes(Arc::new(include_bytes!("../assets/font.ttf").to_vec()), 0).ok()
     } else {
         let source = SystemSource::new();
-        source.select_best_match(&[FamilyName::Title(font_family.to_string())], &properties)
-            .ok()
-            .and_then(|handle| {
-                match handle {
-                    Handle::Path { path, font_index } => {
-                        let bytes = std::fs::read(path).ok()?;
-                        Font::from_bytes(Arc::new(bytes), font_index).ok()
-                    }
-                    Handle::Memory { bytes, font_index } => {
-                        Font::from_bytes(bytes, font_index).ok()
-                    }
+        source.select_best_match(&[FamilyName::Title(font_family.to_string())], &properties).ok().and_then(|handle| {
+            match handle {
+                Handle::Path {
+                    path,
+                    font_index,
+                } => {
+                    let bytes = std::fs::read(path).ok()?;
+                    Font::from_bytes(Arc::new(bytes), font_index).ok()
                 }
-            })
+                Handle::Memory {
+                    bytes,
+                    font_index,
+                } => Font::from_bytes(bytes, font_index).ok(),
+            }
+        })
     };
 
     let font = font.ok_or("Could not load font")?;
-    let font_size = 64.0; 
+    let font_size = 64.0;
     let units_per_em = font.metrics().units_per_em as f32;
     let design_to_px = font_size / units_per_em;
 
@@ -384,8 +491,10 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
     for c in text.chars() {
         if let Some(glyph_id) = font.glyph_for_char(c) {
             let advance = font.advance(glyph_id).unwrap_or(Vector2F::new(0.0, 0.0)).x();
-            let bounds = font.typographic_bounds(glyph_id).unwrap_or(RectF::new(Vector2F::new(0.0, 0.0), Vector2F::new(0.0, 0.0)));
-            
+            let bounds = font
+                .typographic_bounds(glyph_id)
+                .unwrap_or(RectF::new(Vector2F::new(0.0, 0.0), Vector2F::new(0.0, 0.0)));
+
             let gx = current_x + bounds.origin().x();
             let gy = bounds.origin().y();
             let gw = bounds.size().x();
@@ -421,8 +530,12 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
         let mut gcode = String::new();
         gcode.push_str(&format!("{}\n{}\n", gcode::CMD_ABSOLUTE_POS, gcode::CMD_HOME));
 
-        let effective_passes = if is_preview { 1 } else { passes };
-        
+        let effective_passes = if is_preview {
+            1
+        } else {
+            passes
+        };
+
         let box_center = Vector2F::new((min_x + max_x) / 2.0, (min_y + max_y) / 2.0);
         let center_vec = Vector2F::new(center.0, center.1);
 
@@ -437,7 +550,7 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
                     power: pwr_max,
                     speed: speed,
                 };
-                
+
                 font.outline(glyph.glyph_id, HintingOptions::None, &mut builder).ok();
                 gcode.push_str(&builder.gcode);
             }
@@ -460,7 +573,8 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
             Transform2F::from_translation(origin),
             HintingOptions::None,
             RasterizationOptions::GrayscaleAa,
-        ).ok();
+        )
+        .ok();
     }
 
     // Convert A8 canvas to PNG in memory
@@ -471,7 +585,7 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
         rgba_pixels.push(intensity); // R
         rgba_pixels.push(intensity); // G
         rgba_pixels.push(intensity); // B
-        rgba_pixels.push(255);       // A
+        rgba_pixels.push(255); // A
     }
 
     let img_buffer = image::RgbaImage::from_raw(width, height, rgba_pixels).ok_or("Failed to create image buffer")?;
@@ -484,7 +598,8 @@ pub fn generate_text_gcode(text: &str, pwr_max: f32, speed: f32, scale: f32, pas
     let temp_path = "temp_text_render.png";
     img.export_image(temp_path);
 
-    let result = generate_image_gcode(temp_path, pwr_max, speed, final_user_scale, passes, None, center, 0.0, 1.0, is_preview);
+    let result =
+        generate_image_gcode(temp_path, pwr_max, speed, final_user_scale, passes, None, center, 0.0, 1.0, is_preview);
     let _ = std::fs::remove_file(temp_path);
     result
 }
@@ -521,12 +636,20 @@ pub fn get_gcode_bounds(gcode: &str) -> Option<(f32, f32, f32, f32)> {
             let mut x = None;
             let mut y = None;
             for p in parts {
-                if p.starts_with('X') { x = p[1..].parse::<f32>().ok(); }
-                if p.starts_with('Y') { y = p[1..].parse::<f32>().ok(); }
+                if p.starts_with('X') {
+                    x = p[1..].parse::<f32>().ok();
+                }
+                if p.starts_with('Y') {
+                    y = p[1..].parse::<f32>().ok();
+                }
             }
-            if let Some(val) = x { curr_x = val; }
-            if let Some(val) = y { curr_y = val; }
-            
+            if let Some(val) = x {
+                curr_x = val;
+            }
+            if let Some(val) = y {
+                curr_y = val;
+            }
+
             if x.is_some() || y.is_some() {
                 min_x = min_x.min(curr_x);
                 max_x = max_x.max(curr_x);
@@ -544,9 +667,14 @@ pub fn get_gcode_bounds(gcode: &str) -> Option<(f32, f32, f32, f32)> {
     }
 }
 
-pub fn run_serial_cmd(cmd_str: &str, label: &str, _tx: mpsc::Sender<String>, use_virtual: bool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use std::io::{Write, Read};
-    use crate::gcode::{decode_response, decode_gcode};
+pub fn run_serial_cmd(
+    cmd_str: &str,
+    label: &str,
+    _tx: mpsc::Sender<String>,
+    use_virtual: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use crate::gcode::{decode_gcode, decode_response};
+    use std::io::{Read, Write};
 
     fn get_ts() -> String {
         let now = std::time::SystemTime::now();
@@ -585,15 +713,29 @@ mod tests {
         let _line_spacing = 1.0;
         let font_family = "Default";
 
-        let result = generate_text_gcode(text, pwr, spd, scl, passes, fit, center, bold, _outline, letter_spacing, _line_spacing, font_family, true);
-        
+        let result = generate_text_gcode(
+            text,
+            pwr,
+            spd,
+            scl,
+            passes,
+            fit,
+            center,
+            bold,
+            _outline,
+            letter_spacing,
+            _line_spacing,
+            font_family,
+            true,
+        );
+
         match result {
             Ok((gcode, label)) => {
                 println!("GCode generated length: {}", gcode.len());
                 assert!(!gcode.is_empty(), "G-code should not be empty");
                 assert!(gcode.contains("G1"), "G-code should contain movement commands");
                 assert!(label.contains("Image"), "Label should describe the generated text");
-            },
+            }
             Err(e) => panic!("G-code generation failed: {}", e),
         }
     }
@@ -613,15 +755,29 @@ mod tests {
         let _line_spacing = 1.0;
         let font_family = "Default";
 
-        let result = generate_text_gcode(text, pwr, spd, scl, passes, fit, center, bold, outline, letter_spacing, _line_spacing, font_family, true);
-        
+        let result = generate_text_gcode(
+            text,
+            pwr,
+            spd,
+            scl,
+            passes,
+            fit,
+            center,
+            bold,
+            outline,
+            letter_spacing,
+            _line_spacing,
+            font_family,
+            true,
+        );
+
         match result {
             Ok((gcode, label)) => {
                 println!("Outline GCode length: {}", gcode.len());
                 assert!(!gcode.is_empty(), "G-code should not be empty");
                 assert!(gcode.contains("G1"), "G-code should contain movement commands");
                 assert!(label.contains("Outline"), "Label should describe the outline mode");
-            },
+            }
             Err(e) => panic!("Outline G-code generation failed: {}", e),
         }
     }

@@ -1,5 +1,5 @@
-use std::time::{Instant, Duration};
 use raylib::prelude::Vector2;
+use std::time::{Duration, Instant};
 
 pub struct VirtualDevice {
     pub pos: Vector2,
@@ -48,7 +48,7 @@ impl VirtualDevice {
 
     pub fn update(&mut self) {
         let now = Instant::now();
-        
+
         if let Some(start) = self.move_start {
             let elapsed = now.duration_since(start);
             if elapsed >= self.move_duration {
@@ -71,13 +71,10 @@ impl VirtualDevice {
         if let Some(start) = self.move_start {
             let elapsed = Instant::now().duration_since(start);
             let t = (elapsed.as_secs_f32() / self.move_duration.as_secs_f32()).min(1.0);
-            
+
             if let Some(ref arc) = self.arc_data {
                 let angle = arc.start_angle + t * (arc.end_angle - arc.start_angle);
-                Vector2::new(
-                    arc.center.x + arc.radius * angle.cos(),
-                    arc.center.y + arc.radius * angle.sin(),
-                )
+                Vector2::new(arc.center.x + arc.radius * angle.cos(), arc.center.y + arc.radius * angle.sin())
             } else {
                 Vector2::new(
                     self.pos.x + (self.target_pos.x - self.pos.x) * t,
@@ -93,10 +90,12 @@ impl VirtualDevice {
         let cmd = cmd.trim().to_uppercase();
         if cmd == "?" {
             let p = self.current_interpolated_pos();
-            return vec![format!("<{}|MPos:{:.3},{:.3},0.000|FS:{:.0},{}|WCO:0.000,0.000,0.000>", 
-                self.state, p.x, p.y, self.feed_rate, self.power as i32)];
+            return vec![format!(
+                "<{}|MPos:{:.3},{:.3},0.000|FS:{:.0},{}|WCO:0.000,0.000,0.000>",
+                self.state, p.x, p.y, self.feed_rate, self.power as i32
+            )];
         }
-        
+
         if self.state == "Alarm" && cmd != "$X" && cmd != "0X18" && cmd != "\x18" {
             return vec!["error:9".to_string()]; // Alarm lock
         }
@@ -146,22 +145,36 @@ impl VirtualDevice {
         for p in parts {
             match p {
                 crate::gcode::CMD_MOVE_RAPID | crate::gcode::CMD_MOVE_LINEAR => is_move = true,
-                crate::gcode::CMD_ARC_CW => { is_move = true; is_arc = true; is_clockwise = true; },
-                crate::gcode::CMD_ARC_CCW => { is_move = true; is_arc = true; is_clockwise = false; },
+                crate::gcode::CMD_ARC_CW => {
+                    is_move = true;
+                    is_arc = true;
+                    is_clockwise = true;
+                }
+                crate::gcode::CMD_ARC_CCW => {
+                    is_move = true;
+                    is_arc = true;
+                    is_clockwise = false;
+                }
                 crate::gcode::CMD_ABSOLUTE_POS => self.is_absolute = true,
                 crate::gcode::CMD_RELATIVE_POS => self.is_absolute = false,
                 crate::gcode::CMD_MILLIMETERS => self.is_metric = true,
                 crate::gcode::CMD_INCHES => self.is_metric = false,
-                crate::gcode::CMD_LASER_CONST | crate::gcode::CMD_LASER_DYN => { /* laser on handled by S */ },
+                crate::gcode::CMD_LASER_CONST | crate::gcode::CMD_LASER_DYN => { /* laser on handled by S */ }
                 crate::gcode::CMD_LASER_OFF => self.power = 0.0,
                 crate::gcode::CMD_AIR_ASSIST_ON => self.air_assist = true,
                 crate::gcode::CMD_AIR_ASSIST_OFF => self.air_assist = false,
                 _ => {
-                    if p.starts_with('X') { new_x = p[1..].parse::<f32>().ok(); }
-                    else if p.starts_with('Y') { new_y = p[1..].parse::<f32>().ok(); }
-                    else if p.starts_with('R') { new_r = p[1..].parse::<f32>().ok(); }
-                    else if p.starts_with('F') { self.feed_rate = p[1..].parse::<f32>().unwrap_or(self.feed_rate); }
-                    else if p.starts_with('S') { self.power = p[1..].parse::<f32>().unwrap_or(self.power); }
+                    if p.starts_with('X') {
+                        new_x = p[1..].parse::<f32>().ok();
+                    } else if p.starts_with('Y') {
+                        new_y = p[1..].parse::<f32>().ok();
+                    } else if p.starts_with('R') {
+                        new_r = p[1..].parse::<f32>().ok();
+                    } else if p.starts_with('F') {
+                        self.feed_rate = p[1..].parse::<f32>().unwrap_or(self.feed_rate);
+                    } else if p.starts_with('S') {
+                        self.power = p[1..].parse::<f32>().unwrap_or(self.power);
+                    }
                 }
             }
         }
@@ -171,39 +184,55 @@ impl VirtualDevice {
             self.pos = start_p;
             let mut target = start_p;
             if self.is_absolute {
-                if let Some(x) = new_x { target.x = x; }
-                if let Some(y) = new_y { target.y = y; }
+                if let Some(x) = new_x {
+                    target.x = x;
+                }
+                if let Some(y) = new_y {
+                    target.y = y;
+                }
             } else {
-                if let Some(x) = new_x { target.x += x; }
-                if let Some(y) = new_y { target.y += y; }
+                if let Some(x) = new_x {
+                    target.x += x;
+                }
+                if let Some(y) = new_y {
+                    target.y += y;
+                }
             }
             self.target_pos = target;
-            
+
             if is_arc && new_r.is_some() {
                 let r = new_r.unwrap();
                 let dx = target.x - start_p.x;
                 let dy = target.y - start_p.y;
-                let d2 = dx*dx + dy*dy;
+                let d2 = dx * dx + dy * dy;
                 let d = d2.sqrt();
-                
+
                 if d > 0.0 && d <= 2.0 * r.abs() {
-                    let h = ((r*r - d2/4.0).max(0.0)).sqrt();
+                    let h = ((r * r - d2 / 4.0).max(0.0)).sqrt();
                     let mut cx = (start_p.x + target.x) / 2.0;
                     let mut cy = (start_p.y + target.y) / 2.0;
-                    
-                    let multiplier = if (is_clockwise && r > 0.0) || (!is_clockwise && r < 0.0) { 1.0 } else { -1.0 };
+
+                    let multiplier = if (is_clockwise && r > 0.0) || (!is_clockwise && r < 0.0) {
+                        1.0
+                    } else {
+                        -1.0
+                    };
                     cx += multiplier * h * dy / d;
                     cy -= multiplier * h * dx / d;
-                    
+
                     let start_angle = (start_p.y - cy).atan2(start_p.x - cx);
                     let mut end_angle = (target.y - cy).atan2(target.x - cx);
-                    
+
                     if is_clockwise {
-                        if end_angle >= start_angle { end_angle -= 2.0 * std::f32::consts::PI; }
+                        if end_angle >= start_angle {
+                            end_angle -= 2.0 * std::f32::consts::PI;
+                        }
                     } else {
-                        if end_angle <= start_angle { end_angle += 2.0 * std::f32::consts::PI; }
+                        if end_angle <= start_angle {
+                            end_angle += 2.0 * std::f32::consts::PI;
+                        }
                     }
-                    
+
                     self.arc_data = Some(ArcData {
                         center: Vector2::new(cx, cy),
                         radius: r.abs(),
@@ -211,23 +240,35 @@ impl VirtualDevice {
                         end_angle,
                         is_clockwise,
                     });
-                    
+
                     // Approximate arc length for timing
                     let arc_len = r.abs() * (end_angle - start_angle).abs();
                     let speed_mm_per_sec = self.feed_rate / 60.0;
-                    let seconds = if speed_mm_per_sec > 0.0 { arc_len / speed_mm_per_sec } else { 0.0 };
+                    let seconds = if speed_mm_per_sec > 0.0 {
+                        arc_len / speed_mm_per_sec
+                    } else {
+                        0.0
+                    };
                     self.move_duration = Duration::from_secs_f32(seconds.max(0.001));
                 } else {
                     // Fallback to linear
                     let dist = d;
                     let speed_mm_per_sec = self.feed_rate / 60.0;
-                    let seconds = if speed_mm_per_sec > 0.0 { dist / speed_mm_per_sec } else { 0.0 };
+                    let seconds = if speed_mm_per_sec > 0.0 {
+                        dist / speed_mm_per_sec
+                    } else {
+                        0.0
+                    };
                     self.move_duration = Duration::from_secs_f32(seconds.max(0.001));
                 }
             } else {
                 let dist = ((self.target_pos.x - self.pos.x).powi(2) + (self.target_pos.y - self.pos.y).powi(2)).sqrt();
                 let speed_mm_per_sec = self.feed_rate / 60.0;
-                let seconds = if speed_mm_per_sec > 0.0 { dist / speed_mm_per_sec } else { 0.0 };
+                let seconds = if speed_mm_per_sec > 0.0 {
+                    dist / speed_mm_per_sec
+                } else {
+                    0.0
+                };
                 self.move_duration = Duration::from_secs_f32(seconds.max(0.001));
             }
 
