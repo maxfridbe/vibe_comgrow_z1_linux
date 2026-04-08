@@ -122,13 +122,15 @@ pub fn generate_pattern_gcode(
                 let s = 20.0 * scl_val;
                 final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy(cx - s, cy - s)));
                 final_gcode.push_str(&format!("{} F{}\n", gcode::laser_on_dynamic(pwr_val * 10.0), spd_val * 10.0));
-                final_gcode.push_str(&format!("{}\n", gcode::move_linear_xy(cx + s, cy - s)));
-                final_gcode.push_str(&format!("{}\n", gcode::move_linear_xy(cx + s, cy + s)));
-                final_gcode.push_str(&format!("{}\n", gcode::move_linear_xy(cx - s, cy + s)));
-                final_gcode.push_str(&format!("{}\n", gcode::move_linear_xy(cx - s, cy - s)));
+                let p_val = pwr_val * 10.0;
+                final_gcode.push_str(&format!("{}\n", gcode::burn_s(cx + s, cy - s, p_val)));
+                final_gcode.push_str(&format!("{}\n", gcode::burn_s(cx + s, cy + s, p_val)));
+                final_gcode.push_str(&format!("{}\n", gcode::burn_s(cx - s, cy + s, p_val)));
+                final_gcode.push_str(&format!("{}\n", gcode::burn_s(cx - s, cy - s, p_val)));
             }
             "heart" => {
                 let pts = 100;
+                let p_val = pwr_val * 10.0;
                 for i in 0..=pts {
                     let t = (i as f32 / pts as f32) * 2.0 * std::f32::consts::PI;
                     let x = 16.0 * t.sin().powi(3);
@@ -141,12 +143,12 @@ pub fn generate_pattern_gcode(
                         ));
                         final_gcode.push_str(&format!(
                             "{} F{}\n",
-                            gcode::laser_on_dynamic(pwr_val * 10.0),
+                            gcode::laser_on_dynamic(p_val),
                             spd_val * 10.0
                         ));
                     } else {
                         final_gcode
-                            .push_str(&format!("{}\n", gcode::move_linear_xy(cx + x * scl_val, cy + y * scl_val)));
+                            .push_str(&format!("{}\n", gcode::burn_s(cx + x * scl_val, cy + y * scl_val, p_val)));
                     }
                 }
             }
@@ -349,8 +351,8 @@ pub fn generate_image_gcode(
                     if s_val > 0 {
                         gcode.push_str(&format!("{}\n", gcode::burn_xs(actual_x, s_val as f32)));
                     } else {
-                        // Internal jump over empty pixel
-                        gcode.push_str(&format!("{}\n", gcode::move_linear_x(actual_x)));
+                        // Internal jump over empty pixel - set power to 0
+                        gcode.push_str(&format!("{}\n", gcode::burn_xs(actual_x, 0.0)));
                     }
                 }
             }
@@ -389,7 +391,7 @@ impl OutlineSink for VectorGCodeBuilder {
 
     fn line_to(&mut self, to: Vector2F) {
         let p = (to + self.offset) * self.scale;
-        self.gcode.push_str(&format!("{}\n", gcode::move_linear_xy(p.x(), p.y())));
+        self.gcode.push_str(&format!("{}\n", gcode::burn_s(p.x(), p.y(), self.power * 10.0)));
         self.current_pos = to;
     }
 
