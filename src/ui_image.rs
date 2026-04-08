@@ -286,26 +286,14 @@ pub fn render_image_controls<'a, 'render>(
                                 g.preview_pattern = Some("custom_image".to_string());
                                 g.preview_paths.clear();
                                 g.is_processing = true;
-                                let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh, l_fid, h_fid) = (
-                                    g.power,
-                                    g.feed_rate,
-                                    g.scale,
-                                    g.passes,
-                                    g.boundary_enabled,
-                                    g.boundary_x,
-                                    g.boundary_y,
-                                    g.boundary_w,
-                                    g.boundary_h,
-                                    g.img_low_fidelity,
-                                    g.img_high_fidelity,
-                                );
-                                let fit = if b_enabled {
-                                    Some((bw, bh))
+                                let config = g.get_image_burn_config();
+                                let fit = if config.base.boundary_enabled {
+                                    Some((config.base.boundary_w, config.base.boundary_h))
                                 } else {
                                     None
                                 };
-                                let center = if b_enabled {
-                                    (bx + bw / 2.0, by + bh / 2.0)
+                                let center = if config.base.boundary_enabled {
+                                    (config.base.boundary_x + config.base.boundary_w / 2.0, config.base.boundary_y + config.base.boundary_h / 2.0)
                                 } else {
                                     (200.0, 200.0)
                                 };
@@ -314,14 +302,15 @@ pub fn render_image_controls<'a, 'render>(
                                 std::thread::spawn(move || {
                                     if let Ok((gcode, _)) = generate_image_gcode(
                                         &path_clone,
-                                        pwr,
-                                        spd * 10.0,
-                                        scl,
-                                        pas,
+                                        config.base.power,
+                                        config.base.feed_rate * 10.0,
+                                        config.base.scale,
+                                        config.base.passes,
                                         fit,
                                         center,
-                                        l_fid,
-                                        h_fid,
+                                        config.low_fid,
+                                        config.high_fid,
+                                        config.lines_per_mm,
                                         true,
                                     ) {
                                         let mut g = state_clone.lock().unwrap();
@@ -381,30 +370,18 @@ pub fn render_image_controls<'a, 'render>(
                         font_scale,
                         !is_idle,
                     ) {
-                        let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh, l_fid, h_fid) = {
+                        let config = {
                             let mut g = state.lock().unwrap();
                             g.is_processing = true;
-                            (
-                                g.power,
-                                g.feed_rate,
-                                g.scale,
-                                g.passes,
-                                g.boundary_enabled,
-                                g.boundary_x,
-                                g.boundary_y,
-                                g.boundary_w,
-                                g.boundary_h,
-                                g.img_low_fidelity,
-                                g.img_high_fidelity,
-                            )
+                            g.get_image_burn_config()
                         };
-                        let fit = if b_enabled {
-                            Some((bw, bh))
+                        let fit = if config.base.boundary_enabled {
+                            Some((config.base.boundary_w, config.base.boundary_h))
                         } else {
                             None
                         };
-                        let center = if b_enabled {
-                            (bx + bw / 2.0, by + bh / 2.0)
+                        let center = if config.base.boundary_enabled {
+                            (config.base.boundary_x + config.base.boundary_w / 2.0, config.base.boundary_y + config.base.boundary_h / 2.0)
                         } else {
                             (200.0, 200.0)
                         };
@@ -412,7 +389,7 @@ pub fn render_image_controls<'a, 'render>(
                         let path_clone = p.clone();
                         std::thread::spawn(move || {
                             if let Ok((gcode, _)) =
-                                generate_image_gcode(&path_clone, pwr, spd, scl, pas, fit, center, l_fid, h_fid, false)
+                                generate_image_gcode(&path_clone, config.base.power, config.base.feed_rate, config.base.scale, config.base.passes, fit, center, config.low_fid, config.high_fid, config.lines_per_mm, false)
                             {
                                 state_clone.lock().unwrap().send_command(gcode);
                             }
@@ -425,27 +402,28 @@ pub fn render_image_controls<'a, 'render>(
                         "outline_custom_image",
                         state,
                         move || {
-                            let g = state.lock().unwrap();
-                            let fit = if g.boundary_enabled {
-                                Some((g.boundary_w, g.boundary_h))
+                            let config = state.lock().unwrap().get_image_burn_config();
+                            let fit = if config.base.boundary_enabled {
+                                Some((config.base.boundary_w, config.base.boundary_h))
                             } else {
                                 None
                             };
-                            let center = if g.boundary_enabled {
-                                (g.boundary_x + g.boundary_w / 2.0, g.boundary_y + g.boundary_h / 2.0)
+                            let center = if config.base.boundary_enabled {
+                                (config.base.boundary_x + config.base.boundary_w / 2.0, config.base.boundary_y + config.base.boundary_h / 2.0)
                             } else {
                                 (200.0, 200.0)
                             };
                             generate_image_gcode(
                                 &path_clone,
-                                g.power,
-                                g.feed_rate,
-                                g.scale,
-                                g.passes,
+                                config.base.power,
+                                config.base.feed_rate,
+                                config.base.scale,
+                                config.base.passes,
                                 fit,
                                 center,
-                                g.img_low_fidelity,
-                                g.img_high_fidelity,
+                                config.low_fid,
+                                config.high_fid,
+                                config.lines_per_mm,
                                 false,
                             )
                             .ok()

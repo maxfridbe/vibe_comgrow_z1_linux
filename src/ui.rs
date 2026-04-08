@@ -461,11 +461,11 @@ pub fn render_slider<'a, 'render, F>(
                 .id(slider_id)
                 .layout()
                 .width(grow!())
-                .height(fixed!(6.0 * font_scale))
+                .height(fixed!(16.0 * font_scale))
                 .end()
                 .background_color(COLOR_BG_DARK)
                 .corner_radius()
-                .all(3.0 * font_scale)
+                .all(4.0 * font_scale)
                 .end();
 
             if clay.pointer_over(slider_id) && mouse_down {
@@ -493,7 +493,7 @@ pub fn render_slider<'a, 'render, F>(
                     .end()
                     .background_color(color)
                     .corner_radius()
-                    .all(3.0 * font_scale)
+                    .all(4.0 * font_scale)
                     .end();
                 clay.with(&bar, |_| {});
             });

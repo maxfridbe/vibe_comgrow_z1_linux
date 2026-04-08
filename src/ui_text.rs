@@ -576,72 +576,35 @@ pub fn render_text_controls<'a, 'render>(
                             g.preview_pattern = Some("text".to_string());
                             g.preview_paths.clear();
                             g.is_processing = true;
-                            let state_data = (
-                                g.text_content.clone(),
-                                g.power,
-                                g.feed_rate,
-                                g.scale,
-                                g.passes,
-                                g.boundary_enabled,
-                                g.boundary_x,
-                                g.boundary_y,
-                                g.boundary_w,
-                                g.boundary_h,
-                                g.text_is_bold,
-                                g.text_is_outline,
-                                g.text_letter_spacing,
-                                g.text_line_spacing,
-                                g.text_curve_steps,
-                                g.text_lines_per_mm,
-                                g.text_font.clone(),
-                            );
+                            let config = g.get_text_burn_config();
                             let state_clone = Arc::clone(state);
                             std::thread::spawn(move || {
-                                let (
-                                    txt,
-                                    pwr,
-                                    spd,
-                                    scl,
-                                    pas,
-                                    b_enabled,
-                                    bx,
-                                    by,
-                                    bw,
-                                    bh,
-                                    bold,
-                                    outline,
-                                    l_space,
-                                    line_space,
-                                    c_steps,
-                                    l_per_mm,
-                                    f_name,
-                                ) = state_data;
-                                let fit = if b_enabled {
-                                    Some((bw, bh))
+                                let fit = if config.base.boundary_enabled {
+                                    Some((config.base.boundary_w, config.base.boundary_h))
                                 } else {
                                     None
                                 };
-                                let center = if b_enabled {
-                                    (bx + bw / 2.0, by + bh / 2.0)
+                                let center = if config.base.boundary_enabled {
+                                    (config.base.boundary_x + config.base.boundary_w / 2.0, config.base.boundary_y + config.base.boundary_h / 2.0)
                                 } else {
                                     (200.0, 200.0)
                                 };
 
                                 if let Ok((gcode, _)) = generate_text_gcode(
-                                    &txt,
-                                    pwr,
-                                    spd * 10.0,
-                                    scl,
-                                    pas,
+                                    &config.content,
+                                    config.base.power,
+                                    config.base.feed_rate * 10.0,
+                                    config.base.scale,
+                                    config.base.passes,
                                     fit,
                                     center,
-                                    bold,
-                                    outline,
-                                    l_space,
-                                    line_space,
-                                    c_steps,
-                                    l_per_mm,
-                                    &f_name,
+                                    config.is_bold,
+                                    config.is_outline,
+                                    config.letter_spacing,
+                                    config.line_spacing,
+                                    config.curve_steps,
+                                    config.lines_per_mm,
+                                    &config.font,
                                     true,
                                 ) {
                                     let mut g = state_clone.lock().unwrap();
@@ -696,61 +659,25 @@ pub fn render_text_controls<'a, 'render>(
                     let state_data = {
                         let mut g = state.lock().unwrap();
                         g.is_processing = true;
-                        (
-                            g.text_content.clone(),
-                            g.power,
-                            g.feed_rate,
-                            g.scale,
-                            g.passes,
-                            g.boundary_enabled,
-                            g.boundary_x,
-                            g.boundary_y,
-                            g.boundary_w,
-                            g.boundary_h,
-                            g.text_is_bold,
-                            g.text_is_outline,
-                            g.text_letter_spacing,
-                            g.text_line_spacing,
-                            g.text_curve_steps,
-                            g.text_lines_per_mm,
-                            g.text_font.clone(),
-                        )
+                        g.get_text_burn_config()
                     };
                     let state_clone = Arc::clone(state);
                     std::thread::spawn(move || {
-                        let (
-                            txt,
-                            pwr,
-                            spd,
-                            scl,
-                            pas,
-                            b_enabled,
-                            bx,
-                            by,
-                            bw,
-                            bh,
-                            bold,
-                            outline,
-                            l_space,
-                            line_space,
-                            c_steps,
-                            l_per_mm,
-                            f_name,
-                        ) = state_data;
-                        let fit = if b_enabled {
-                            Some((bw, bh))
+                        let config = state_data;
+                        let fit = if config.base.boundary_enabled {
+                            Some((config.base.boundary_w, config.base.boundary_h))
                         } else {
                             None
                         };
-                        let center = if b_enabled {
-                            (bx + bw / 2.0, by + bh / 2.0)
+                        let center = if config.base.boundary_enabled {
+                            (config.base.boundary_x + config.base.boundary_w / 2.0, config.base.boundary_y + config.base.boundary_h / 2.0)
                         } else {
                             (200.0, 200.0)
                         };
 
                         if let Ok((gcode, _)) = generate_text_gcode(
-                            &txt, pwr, spd, scl, pas, fit, center, bold, outline, l_space, line_space, c_steps, l_per_mm,
-                            &f_name, false,
+                            &config.content, config.base.power, config.base.feed_rate, config.base.scale, config.base.passes, fit, center, config.is_bold, config.is_outline, config.letter_spacing, config.line_spacing, config.curve_steps, config.lines_per_mm,
+                            &config.font, false,
                         ) {
                             state_clone.lock().unwrap().send_command(gcode);
                         }

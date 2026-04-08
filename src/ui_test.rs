@@ -257,27 +257,14 @@ pub fn render_test_controls<'a, 'render>(
                             font_scale,
                             !is_idle,
                         ) {
-                            let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = {
-                                let g = state.lock().unwrap();
-                                (
-                                    g.power / 10.0,
-                                    g.feed_rate / 10.0,
-                                    g.scale,
-                                    g.passes,
-                                    g.boundary_enabled,
-                                    g.boundary_x,
-                                    g.boundary_y,
-                                    g.boundary_w,
-                                    g.boundary_h,
-                                )
-                            };
-                            let fit = if b_enabled {
-                                Some(format!("{}x{}", bw, bh))
+                            let config = state.lock().unwrap().get_burn_config();
+                            let fit = if config.boundary_enabled {
+                                Some(format!("{}x{}", config.boundary_w, config.boundary_h))
                             } else {
                                 None
                             };
-                            let center = if b_enabled {
-                                format!("{},{}", bx + bw / 2.0, by + bh / 2.0)
+                            let center = if config.boundary_enabled {
+                                format!("{},{}", config.boundary_x + config.boundary_w / 2.0, config.boundary_y + config.boundary_h / 2.0)
                             } else {
                                 "200,200".to_string()
                             };
@@ -285,10 +272,10 @@ pub fn render_test_controls<'a, 'render>(
                             let result: Result<(String, String), Box<dyn std::error::Error + Send + Sync>> =
                                 generate_pattern_gcode(
                                     &p,
-                                    &format!("{}%", pwr),
-                                    &format!("{}%", spd),
-                                    &format!("{}x", scl),
-                                    &pas.to_string(),
+                                    &format!("{}%", config.power / 10.0),
+                                    &format!("{}%", config.feed_rate / 10.0),
+                                    &format!("{}x", config.scale),
+                                    &config.passes.to_string(),
                                     fit,
                                     &center,
                                 );
@@ -302,34 +289,23 @@ pub fn render_test_controls<'a, 'render>(
                             "outline_custom_svg",
                             state,
                             move || {
-                                let g = state.lock().unwrap();
-                                let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = (
-                                    g.power / 10.0,
-                                    g.feed_rate / 10.0,
-                                    g.scale,
-                                    g.passes,
-                                    g.boundary_enabled,
-                                    g.boundary_x,
-                                    g.boundary_y,
-                                    g.boundary_w,
-                                    g.boundary_h,
-                                );
-                                let fit = if b_enabled {
-                                    Some(format!("{}x{}", bw, bh))
+                                let config = state.lock().unwrap().get_burn_config();
+                                let fit = if config.boundary_enabled {
+                                    Some(format!("{}x{}", config.boundary_w, config.boundary_h))
                                 } else {
                                     None
                                 };
-                                let center = if b_enabled {
-                                    format!("{},{}", bx + bw / 2.0, by + bh / 2.0)
+                                let center = if config.boundary_enabled {
+                                    format!("{},{}", config.boundary_x + config.boundary_w / 2.0, config.boundary_y + config.boundary_h / 2.0)
                                 } else {
                                     "200,200".to_string()
                                 };
                                 generate_pattern_gcode(
                                     &path_clone,
-                                    &format!("{}%", pwr),
-                                    &format!("{}%", spd),
-                                    &format!("{}x", scl),
-                                    &pas.to_string(),
+                                    &format!("{}%", config.power / 10.0),
+                                    &format!("{}%", config.feed_rate / 10.0),
+                                    &format!("{}x", config.scale),
+                                    &config.passes.to_string(),
                                     fit,
                                     &center,
                                 )
@@ -361,28 +337,18 @@ pub fn render_test_controls<'a, 'render>(
                                     g.preview_pattern = Some("custom_svg".to_string());
                                     g.preview_paths.clear();
                                     g.is_processing = true;
-                                    let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = (
-                                        g.power / 10.0,
-                                        g.feed_rate / 10.0,
-                                        g.scale,
-                                        g.passes,
-                                        g.boundary_enabled,
-                                        g.boundary_x,
-                                        g.boundary_y,
-                                        g.boundary_w,
-                                        g.boundary_h,
-                                    );
-                                    let fit = if b_enabled {
-                                        Some(format!("{}x{}", bw, bh))
+                                    let config = g.get_burn_config();
+                                    let fit = if config.boundary_enabled {
+                                        Some(format!("{}x{}", config.boundary_w, config.boundary_h))
                                     } else {
                                         None
                                     };
-                                    let center = if b_enabled {
-                                        format!("{},{}", bx + bw / 2.0, by + bh / 2.0)
+                                    let center = if config.boundary_enabled {
+                                        format!("{},{}", config.boundary_x + config.boundary_w / 2.0, config.boundary_y + config.boundary_h / 2.0)
                                     } else {
                                         "200,200".to_string()
                                     };
-                                    let preview_spd = (spd * 10.0).min(1000.0);
+                                    let preview_spd = config.feed_rate.min(1000.0);
                                     let state_clone = Arc::clone(state);
                                     let path_clone = p.clone();
 
@@ -390,10 +356,10 @@ pub fn render_test_controls<'a, 'render>(
                                         let result: Result<(String, String), Box<dyn std::error::Error + Send + Sync>> =
                                             generate_pattern_gcode(
                                                 &path_clone,
-                                                &format!("{}%", pwr),
+                                                &format!("{}%", config.power / 10.0),
                                                 &format!("{}%", preview_spd),
-                                                &format!("{}x", scl),
-                                                &pas.to_string(),
+                                                &format!("{}x", config.scale),
+                                                &config.passes.to_string(),
                                                 fit,
                                                 &center,
                                             );
@@ -594,38 +560,25 @@ pub fn render_test_controls<'a, 'render>(
                                         font_scale,
                                         !is_idle,
                                     ) {
-                                        let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = {
-                                            let g = state.lock().unwrap();
-                                            (
-                                                g.power / 10.0,
-                                                g.feed_rate / 10.0,
-                                                g.scale,
-                                                g.passes,
-                                                g.boundary_enabled,
-                                                g.boundary_x,
-                                                g.boundary_y,
-                                                g.boundary_w,
-                                                g.boundary_h,
-                                            )
-                                        };
+                                        let config = state.lock().unwrap().get_burn_config();
 
-                                        let fit = if b_enabled {
-                                            Some(format!("{}x{}", bw, bh))
+                                        let fit = if config.boundary_enabled {
+                                            Some(format!("{}x{}", config.boundary_w, config.boundary_h))
                                         } else {
                                             None
                                         };
-                                        let center = if b_enabled {
-                                            format!("{},{}", bx + bw / 2.0, by + bh / 2.0)
+                                        let center = if config.boundary_enabled {
+                                            format!("{},{}", config.boundary_x + config.boundary_w / 2.0, config.boundary_y + config.boundary_h / 2.0)
                                         } else {
                                             "200,200".to_string()
                                         };
 
                                         match generate_pattern_gcode(
                                             cmd.label,
-                                            &format!("{}%", pwr),
-                                            &format!("{}%", spd),
-                                            &format!("{}x", scl),
-                                            &pas.to_string(),
+                                            &format!("{}%", config.power / 10.0),
+                                            &format!("{}%", config.feed_rate / 10.0),
+                                            &format!("{}x", config.scale),
+                                            &config.passes.to_string(),
                                             fit,
                                             &center,
                                         ) {
@@ -643,34 +596,23 @@ pub fn render_test_controls<'a, 'render>(
                                         arena.push(format!("outline_test_{}", cmd.label)),
                                         state,
                                         move || {
-                                            let g = state.lock().unwrap();
-                                            let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = (
-                                                g.power / 10.0,
-                                                g.feed_rate / 10.0,
-                                                g.scale,
-                                                g.passes,
-                                                g.boundary_enabled,
-                                                g.boundary_x,
-                                                g.boundary_y,
-                                                g.boundary_w,
-                                                g.boundary_h,
-                                            );
-                                            let fit = if b_enabled {
-                                                Some(format!("{}x{}", bw, bh))
+                                            let config = state.lock().unwrap().get_burn_config();
+                                            let fit = if config.boundary_enabled {
+                                                Some(format!("{}x{}", config.boundary_w, config.boundary_h))
                                             } else {
                                                 None
                                             };
-                                            let center = if b_enabled {
-                                                format!("{},{}", bx + bw / 2.0, by + bh / 2.0)
+                                            let center = if config.boundary_enabled {
+                                                format!("{},{}", config.boundary_x + config.boundary_w / 2.0, config.boundary_y + config.boundary_h / 2.0)
                                             } else {
                                                 "200,200".to_string()
                                             };
                                             generate_pattern_gcode(
                                                 &label_clone,
-                                                &format!("{}%", pwr),
-                                                &format!("{}%", spd),
-                                                &format!("{}x", scl),
-                                                &pas.to_string(),
+                                                &format!("{}%", config.power / 10.0),
+                                                &format!("{}%", config.feed_rate / 10.0),
+                                                &format!("{}x", config.scale),
+                                                &config.passes.to_string(),
                                                 fit,
                                                 &center,
                                             )
@@ -703,40 +645,31 @@ pub fn render_test_controls<'a, 'render>(
                                                 g.preview_pattern = Some(cmd.label.to_string());
                                                 g.preview_paths.clear();
                                                 g.is_processing = true;
-                                                let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = (
-                                                    g.power / 10.0,
-                                                    g.feed_rate / 10.0,
-                                                    g.scale,
-                                                    g.passes,
-                                                    g.boundary_enabled,
-                                                    g.boundary_x,
-                                                    g.boundary_y,
-                                                    g.boundary_w,
-                                                    g.boundary_h,
-                                                );
-                                                let fit = if b_enabled {
-                                                    Some(format!("{}x{}", bw, bh))
+                                                let config = g.get_burn_config();
+                                                let fit = if config.boundary_enabled {
+                                                    Some(format!("{}x{}", config.boundary_w, config.boundary_h))
                                                 } else {
                                                     None
                                                 };
-                                                let center = if b_enabled {
-                                                    format!("{},{}", bx + bw / 2.0, by + bh / 2.0)
+                                                let center = if config.boundary_enabled {
+                                                    format!("{},{}", config.boundary_x + config.boundary_w / 2.0, config.boundary_y + config.boundary_h / 2.0)
                                                 } else {
                                                     "200,200".to_string()
                                                 };
 
                                                 // 10x speed for preview
-                                                let preview_spd = (spd * 10.0).min(1000.0);
+                                                let preview_spd = (config.feed_rate / 10.0 * 10.0).min(1000.0); // Equivalent to feed_rate.min(1000.0)
+                                                let preview_spd = config.feed_rate.min(1000.0);
                                                 let label_clone = cmd.label.to_string();
                                                 let state_clone = Arc::clone(state);
 
                                                 std::thread::spawn(move || {
                                                     if let Ok((gcode, _)) = generate_pattern_gcode(
                                                         &label_clone,
-                                                        &format!("{}%", pwr),
+                                                        &format!("{}%", config.power / 10.0),
                                                         &format!("{}%", preview_spd),
-                                                        &format!("{}x", scl),
-                                                        &pas.to_string(),
+                                                        &format!("{}x", config.scale),
+                                                        &config.passes.to_string(),
                                                         fit,
                                                         &center,
                                                     ) {

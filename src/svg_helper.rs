@@ -198,9 +198,13 @@ pub fn load_svg_data_as_gcode(
                 update_bounds(px, py);
             }
             Op::LineTo(x, y) => {
-                let px = (offset_x + (x * final_scale)).clamp(0.0, 400.0);
-                let py = (offset_y + (y * final_scale)).clamp(0.0, 400.0);
-                gcode.push_str(&format!("{}\n", crate::gcode::burn_s(px, py, s_val as f32)));
+                let px_raw = offset_x + (x * final_scale);
+                let py_raw = offset_y + (y * final_scale);
+                let out_of_bounds = px_raw < 0.0 || px_raw > 400.0 || py_raw < 0.0 || py_raw > 400.0;
+                let power = if out_of_bounds { 0.0 } else { s_val as f32 };
+                let px = px_raw.clamp(0.0, 400.0);
+                let py = py_raw.clamp(0.0, 400.0);
+                gcode.push_str(&format!("{}\n", crate::gcode::burn_s(px, py, power)));
                 update_bounds(px, py);
             }
         }

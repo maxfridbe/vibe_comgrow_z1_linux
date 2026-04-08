@@ -5,6 +5,40 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::mpsc::Sender;
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BurnConfig {
+    pub power: f32,
+    pub feed_rate: f32,
+    pub scale: f32,
+    pub passes: u32,
+    pub boundary_enabled: bool,
+    pub boundary_x: f32,
+    pub boundary_y: f32,
+    pub boundary_w: f32,
+    pub boundary_h: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ImageBurnConfig {
+    pub base: BurnConfig,
+    pub low_fid: f32,
+    pub high_fid: f32,
+    pub lines_per_mm: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TextBurnConfig {
+    pub base: BurnConfig,
+    pub content: String,
+    pub font: String,
+    pub is_bold: bool,
+    pub is_outline: bool,
+    pub letter_spacing: f32,
+    pub line_spacing: f32,
+    pub curve_steps: u32,
+    pub lines_per_mm: f32,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SavedState {
     pub timestamp: String,
@@ -28,6 +62,7 @@ pub struct SavedState {
     pub boundary_h: f32,
     pub img_low_fidelity: f32,
     pub img_high_fidelity: f32,
+    pub img_lines_per_mm: f32,
     pub custom_image_path: Option<String>,
     pub custom_svg_path: Option<String>,
 }
@@ -98,6 +133,7 @@ pub struct AppState {
     pub boundary_h: f32,
     pub img_low_fidelity: f32,
     pub img_high_fidelity: f32,
+    pub img_lines_per_mm: f32,
     pub is_processing: bool,
     pub text_content: String,
     pub text_font: String,
@@ -399,6 +435,43 @@ impl AppState {
         }
     }
 
+    pub fn get_burn_config(&self) -> BurnConfig {
+        BurnConfig {
+            power: self.power,
+            feed_rate: self.feed_rate,
+            scale: self.scale,
+            passes: self.passes,
+            boundary_enabled: self.boundary_enabled,
+            boundary_x: self.boundary_x,
+            boundary_y: self.boundary_y,
+            boundary_w: self.boundary_w,
+            boundary_h: self.boundary_h,
+        }
+    }
+
+    pub fn get_image_burn_config(&self) -> ImageBurnConfig {
+        ImageBurnConfig {
+            base: self.get_burn_config(),
+            low_fid: self.img_low_fidelity,
+            high_fid: self.img_high_fidelity,
+            lines_per_mm: self.img_lines_per_mm,
+        }
+    }
+
+    pub fn get_text_burn_config(&self) -> TextBurnConfig {
+        TextBurnConfig {
+            base: self.get_burn_config(),
+            content: self.text_content.clone(),
+            font: self.text_font.clone(),
+            is_bold: self.text_is_bold,
+            is_outline: self.text_is_outline,
+            letter_spacing: self.text_letter_spacing,
+            line_spacing: self.text_line_spacing,
+            curve_steps: self.text_curve_steps,
+            lines_per_mm: self.text_lines_per_mm,
+        }
+    }
+
     pub fn capture_state(&self, label: &str) -> SavedState {
         SavedState {
             timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -422,6 +495,7 @@ impl AppState {
             boundary_h: self.boundary_h,
             img_low_fidelity: self.img_low_fidelity,
             img_high_fidelity: self.img_high_fidelity,
+            img_lines_per_mm: self.img_lines_per_mm,
             custom_image_path: self.custom_image_path.clone(),
             custom_svg_path: self.custom_svg_path.clone(),
         }
@@ -447,6 +521,7 @@ impl AppState {
         self.boundary_h = state.boundary_h;
         self.img_low_fidelity = state.img_low_fidelity;
         self.img_high_fidelity = state.img_high_fidelity;
+        self.img_lines_per_mm = state.img_lines_per_mm;
         self.custom_image_path = state.custom_image_path.clone();
         self.custom_svg_path = state.custom_svg_path.clone();
     }

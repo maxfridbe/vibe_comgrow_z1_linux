@@ -265,32 +265,35 @@ pub fn generate_image_gcode(
     center: (f32, f32),
     low_fid: f32,
     high_fid: f32,
+    lines_per_mm: f32,
     is_preview: bool,
 ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
-    let mut img_base = image::open(path)?;
+    let img_base = image::open(path)?;
 
-    // Resize image to a reasonable resolution for laser etching (e.g. max 500px dimension)
-    // This dramatically speeds up G-code generation and reduces file size
-    let max_dim = 500;
-    if img_base.width() > max_dim || img_base.height() > max_dim {
-        img_base = img_base.resize(max_dim, max_dim, image::imageops::FilterType::Lanczos3);
-    }
-    let img = img_base.to_rgba8();
-
-    let w = img.width() as f32;
-    let h = img.height() as f32;
+    let orig_w = img_base.width() as f32;
+    let orig_h = img_base.height() as f32;
 
     let mut final_scale = scale;
     if let Some((fit_w, fit_h)) = fit {
-        let sw = fit_w / w;
-        let sh = fit_h / h;
+        let sw = fit_w / orig_w;
+        let sh = fit_h / orig_h;
         final_scale = sw.min(sh);
     }
 
-    let out_w = w * final_scale;
-    let out_h = h * final_scale;
+    let out_w = orig_w * final_scale;
+    let out_h = orig_h * final_scale;
+    
+    // Resize image based on desired lines per mm (pixels per mm)
+    let target_w = (out_w * lines_per_mm).max(1.0).ceil() as u32;
+    let target_h = (out_h * lines_per_mm).max(1.0).ceil() as u32;
+
+    let img = img_base.resize_exact(target_w, target_h, image::imageops::FilterType::Lanczos3).to_rgba8();
+
     let offset_x = center.0 - out_w / 2.0;
     let offset_y = center.1 - out_h / 2.0;
+
+    // The effective scale per pixel is now 1.0 / lines_per_mm
+    let effective_pixel_scale = 1.0 / lines_per_mm;
 
     // Pre-allocate a large string to avoid reallocations
     let mut gcode = String::with_capacity(img.width() as usize * img.height() as usize * 40);
@@ -298,16 +301,12 @@ pub fn generate_image_gcode(
 
     let f_val = (speed * 10.0) as i32;
 
-    let effective_passes = if is_preview {
-        1
-    } else {
-        passes
-    };
+    let effective_passes = if is_preview { 1 } else { passes };
 
     for _ in 0..effective_passes {
         for y in 0..img.height() {
             // Use 0.5 offset to center the laser on the pixel row
-            let actual_y = offset_y + (img.height() as f32 - 0.5 - y as f32) * final_scale;
+            let actual_y = offset_y + (img.height() as f32 - 0.5 - y as f32) * effective_pixel_scale;
 
             if actual_y < 0.0 || actual_y > 400.0 {
                 continue;
@@ -336,14 +335,12 @@ pub fn generate_image_gcode(
                 let left_to_right = y % 2 == 0;
 
                 // Move to start of relevant content
-                // If LTR, start at the LEFT edge of the first pixel (fx)
-                // If RTL, start at the RIGHT edge of the last pixel (lx + 1)
                 let start_x_coord = if left_to_right {
                     fx as f32
                 } else {
                     lx as f32 + 1.0
                 };
-                let px = (offset_x + start_x_coord * final_scale).clamp(0.0, 400.0);
+                let px = (offset_x + start_x_coord * effective_pixel_scale).clamp(0.0, 400.0);
                 let py = actual_y.clamp(0.0, 400.0);
                 gcode.push_str(&format!(
                     "{}\n{}\n",
@@ -365,16 +362,21 @@ pub fn generate_image_gcode(
                     let remapped = ((intensity - low_fid) / (high_fid - low_fid).max(0.001)).clamp(0.0, 1.0);
                     let s_val = (remapped * pwr_max * 10.0) as i32;
 
-                    // The destination coordinate
-                    // If LTR, we move to the RIGHT edge of pixel x (x + 1)
-                    // If RTL, we move to the LEFT edge of pixel x (x)
                     let dest_x_coord = if left_to_right {
                         x as f32 + 1.0
                     } else {
                         x as f32
                     };
-                    let unclamped_x = offset_x + dest_x_coord * final_scale;
+                    let unclamped_x = offset_x + dest_x_coord * effective_pixel_scale;
                     let actual_x = unclamped_x.clamp(0.0, 400.0);
+
+                    // Skip consecutive identical out-of-bounds jumps to save processing time
+                    if s_val == 0 && unclamped_x < 0.0 && actual_x == 0.0 {
+                        continue;
+                    }
+                    if s_val == 0 && unclamped_x > 400.0 && actual_x == 400.0 {
+                        continue;
+                    }
 
                     if s_val > 0 && unclamped_x >= 0.0 && unclamped_x <= 400.0 {
                         gcode.push_str(&format!("{}\n", gcode::burn_xs(actual_x, s_val as f32)));
@@ -392,8 +394,8 @@ pub fn generate_image_gcode(
     Ok((
         gcode,
         format!(
-            "Image {} (Scale: {:.2}x, Center: {:.1},{:.1}, Power: {}%, Speed: {}%, LowFid: {:.2}, HighFid: {:.2})",
-            filename, final_scale, center.0, center.1, pwr_max, speed, low_fid, high_fid
+            "Image {} (Scale: {:.2}x, Center: {:.1},{:.1}, Power: {}%, Speed: {}%, LinesPerMM: {:.1})",
+            filename, final_scale, center.0, center.1, pwr_max, speed, lines_per_mm
         ),
     ))
 }
@@ -657,7 +659,7 @@ pub fn generate_text_gcode(
     img.export_image(temp_path);
 
     let result =
-        generate_image_gcode(temp_path, pwr_max, speed, final_user_scale, passes, None, center, 0.0, 1.0, is_preview);
+        generate_image_gcode(temp_path, pwr_max, speed, final_user_scale, passes, None, center, 0.0, 1.0, lines_per_mm, is_preview);
     let _ = std::fs::remove_file(temp_path);
     result
 }
@@ -893,6 +895,7 @@ mod tests {
                         boundary_h: 400.0,
                         img_low_fidelity: 0.0,
                         img_high_fidelity: 1.0,
+                        img_lines_per_mm: 5.0,
                         is_processing: false,
                         text_content: String::new(),
                         text_font: "Default".to_string(),

@@ -79,6 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         boundary_h: 100.0,
         img_low_fidelity: 0.0,
         img_high_fidelity: 1.0,
+        img_lines_per_mm: 5.0,
         is_processing: false,
         text_content: "Comgrow Z1".to_string(),
         text_font: "Default".to_string(),
