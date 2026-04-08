@@ -1234,6 +1234,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 );
                 d.draw_line_ex(start, end, 2.0, raylib::color::Color::new(255, 71, 87, (p.intensity * 255.0) as u8));
             }
+            let preview_thickness = (side / (400.0 * guard.text_lines_per_mm)).max(1.0);
             for p in &guard.preview_paths {
                 let start = raylib::math::Vector2::new(
                     draw_area.x + (p.x1 / 400.0) * side,
@@ -1243,7 +1244,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     draw_area.x + (p.x2 / 400.0) * side,
                     draw_area.y + draw_area.height - (p.y2 / 400.0) * side,
                 );
-                d.draw_line_ex(start, end, 2.0, raylib::color::Color::new(0, 255, 0, (p.intensity * 255.0) as u8));
+                d.draw_line_ex(start, end, preview_thickness, raylib::color::Color::new(0, 255, 0, (p.intensity * 255.0) as u8));
             }
             let head_pos = raylib::math::Vector2::new(
                 draw_area.x + (guard.machine_pos.x / 400.0) * side,

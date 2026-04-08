@@ -537,7 +537,7 @@ pub fn render_text_controls<'a, 'render>(
                         "Lines Per MM",
                         lines_per_mm,
                         1.0,
-                        20.0,
+                        40.0,
                         COLOR_SLIDER_Y,
                         state,
                         |s, v| s.text_lines_per_mm = v,
