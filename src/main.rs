@@ -137,6 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ICON_CHECK,
         ICON_FILE,
         ICON_EYE,
+        ICON_SPINNER,
         ICON_IMAGE,
     ];
     for &icon in icons_list {
@@ -385,6 +386,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let _base_font_size = zoom_size as u16;
 
         let mouse_pos = rl.get_mouse_position();
+        let frame_time_total = rl.get_time() as f32;
         let mouse_down = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
         let mouse_pressed = rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
         let mut scroll_delta = rl.get_mouse_wheel_move_v();
@@ -1088,12 +1090,24 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         config.color.b as u8,
                         config.color.a as u8,
                     );
-                    let text_size = font.measure_text_ex(text_str, command.bounding_box.height, 0.0);
-                    let pos = raylib::math::Vector2::new(
-                        command.bounding_box.x + (command.bounding_box.width - text_size.x) / 2.0,
-                        command.bounding_box.y + (command.bounding_box.height - text_size.y) / 2.0,
-                    );
-                    d.draw_text_ex(&font, text_str, pos, command.bounding_box.height, 0.0, color);
+                    let font_size = command.bounding_box.height;
+                    let text_size = font.measure_text_ex(text_str, font_size, 0.0);
+
+                    if text_str == ICON_SPINNER {
+                        let rotation = frame_time_total * 360.0; // 1 rotation per second
+                        let center = raylib::math::Vector2::new(
+                            command.bounding_box.x + command.bounding_box.width / 2.0,
+                            command.bounding_box.y + command.bounding_box.height / 2.0,
+                        );
+                        let origin = raylib::math::Vector2::new(text_size.x / 2.0, text_size.y / 2.0);
+                        d.draw_text_pro(&font, text_str, center, origin, rotation, font_size, 0.0, color);
+                    } else {
+                        let pos = raylib::math::Vector2::new(
+                            command.bounding_box.x + (command.bounding_box.width - text_size.x) / 2.0,
+                            command.bounding_box.y + (command.bounding_box.height - text_size.y) / 2.0,
+                        );
+                        d.draw_text_ex(&font, text_str, pos, font_size, 0.0, color);
+                    }
                 }
                 RenderCommandConfig::ScissorStart() => unsafe {
                     raylib::ffi::BeginScissorMode(
