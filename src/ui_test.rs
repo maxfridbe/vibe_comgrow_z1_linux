@@ -756,7 +756,7 @@ pub fn render_test_controls<'a, 'render>(
                                     }
                                     let mut eye_btn = Declaration::<Texture2D, ()>::new();
                                     eye_btn.id(eye_id).layout().padding(Padding::all(4)).end();
-                                    clay_scope.with(&eye_btn, |clay| {
+                                    clay.with(&eye_btn, |clay| {
                                         if is_processing {
                                             clay.text(
                                                 ICON_SPINNER,
