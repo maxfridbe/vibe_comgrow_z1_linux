@@ -163,6 +163,83 @@ pub fn decode_response(resp: &str) -> String {
     }
 }
 
+// --- G-Code Constants ---
+pub const CMD_HOME: &str = "$H";
+pub const CMD_LASER_OFF: &str = "M5";
+pub const CMD_ABSOLUTE_POS: &str = "G90";
+pub const CMD_RELATIVE_POS: &str = "G91";
+pub const CMD_AIR_ASSIST_ON: &str = "M8";
+pub const CMD_AIR_ASSIST_OFF: &str = "M9";
+pub const CMD_UNLOCK: &str = "$X";
+pub const CMD_STATUS_REPORT: &str = "?";
+pub const CMD_FEED_HOLD: &str = "!";
+pub const CMD_CYCLE_START: &str = "~";
+pub const CMD_MILLIMETERS: &str = "G21";
+pub const CMD_INCHES: &str = "G20";
+pub const CMD_SET_ORIGIN: &str = "G92 X0 Y0";
+pub const CMD_SOFT_RESET: &str = "0x18";
+
+// --- G-Code Functions ---
+pub fn move_xyz(x: f32, y: f32, z: f32) -> String {
+    format!("G0 X{:.2} Y{:.2} Z{:.2}", x, y, z)
+}
+
+pub fn move_xy(x: f32, y: f32) -> String {
+    format!("G0 X{:.2} Y{:.2}", x, y)
+}
+
+pub fn move_xy_f(x: f32, y: f32, f: f32) -> String {
+    format!("G0 X{:.2} Y{:.2} F{:.0}", x, y, f)
+}
+
+pub fn move_z(z: f32) -> String {
+    format!("G0 Z{:.2}", z)
+}
+
+pub fn move_linear_xy(x: f32, y: f32) -> String {
+    format!("G1 X{:.2} Y{:.2}", x, y)
+}
+
+pub fn move_linear_x(x: f32) -> String {
+    format!("G1 X{:.2}", x)
+}
+
+pub fn laser_on(power: f32) -> String {
+    format!("M3 S{}", power)
+}
+
+pub fn laser_on_dynamic(power: f32) -> String {
+    format!("M4 S{}", power)
+}
+
+pub fn laser_on_dynamic_f(power: f32, f: f32) -> String {
+    format!("M4 S{} F{:.0}", power, f)
+}
+
+pub fn laser_dynamic_f_only(f: f32) -> String {
+    format!("M4 F{:.0}", f)
+}
+
+pub fn burn(x: f32, y: f32, s: f32, f: f32) -> String {
+    format!("G1 X{:.2} Y{:.2} S{} F{}", x, y, s, f)
+}
+
+pub fn burn_s(x: f32, y: f32, s: f32) -> String {
+    format!("G1 X{:.2} Y{:.2} S{}", x, y, s)
+}
+
+pub fn burn_xs(x: f32, s: f32) -> String {
+    format!("G1 X{:.2} S{}", x, s)
+}
+
+pub fn jog_xy(x: f32, y: f32, f: f32) -> String {
+    format!("$J={} X{:.2} Y{:.2} F{}", CMD_RELATIVE_POS, x, y, f)
+}
+
+pub fn jog_z(z: f32, f: f32) -> String {
+    format!("$J={} Z{:.2} F{}", CMD_RELATIVE_POS, z, f)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,7 +255,7 @@ mod tests {
         assert_eq!(decode_gcode("$32=1"), "Set Laser Mode to 1 (0=Off, 1=On)");
         assert_eq!(decode_gcode("$20=0"), "Set Soft Limits to 0 (0=Off, 1=On)");
         assert_eq!(decode_gcode("$21=0"), "Set Hard Limits to 0 (0=Off, 1=On)");
-        assert_eq!(decode_gcode("$1=25"), "Update GRBL Setting");
+        assert_eq!(decode_gcode("$1=25"), "Update GRBL Setting $1=25");
     }
 
     #[test]
@@ -195,5 +272,36 @@ mod tests {
     #[test]
     fn test_decode_gcode_linear() {
         assert_eq!(decode_gcode("G1 X10 Y20 F1000 S500"), "Burn Linear to X10 Y20 (F1000, S500)");
+    }
+
+    #[test]
+    fn test_gcode_generation_move() {
+        assert_eq!(move_xyz(10.5, 20.0, -5.1), "G0 X10.50 Y20.00 Z-5.10");
+        assert_eq!(move_xy(10.5, 20.0), "G0 X10.50 Y20.00");
+        assert_eq!(move_xy_f(10.5, 20.0, 3000.0), "G0 X10.50 Y20.00 F3000");
+        assert_eq!(move_z(5.0), "G0 Z5.00");
+        assert_eq!(move_linear_xy(10.5, 20.0), "G1 X10.50 Y20.00");
+        assert_eq!(move_linear_x(10.5), "G1 X10.50");
+    }
+
+    #[test]
+    fn test_gcode_generation_laser() {
+        assert_eq!(laser_on(500.0), "M3 S500");
+        assert_eq!(laser_on_dynamic(500.0), "M4 S500");
+        assert_eq!(laser_on_dynamic_f(500.0, 1000.0), "M4 S500 F1000");
+        assert_eq!(laser_dynamic_f_only(1000.0), "M4 F1000");
+    }
+
+    #[test]
+    fn test_gcode_generation_burn() {
+        assert_eq!(burn(10.5, 20.0, 500.0, 1000.0), "G1 X10.50 Y20.00 S500 F1000");
+        assert_eq!(burn_s(10.5, 20.0, 500.0), "G1 X10.50 Y20.00 S500");
+        assert_eq!(burn_xs(10.5, 500.0), "G1 X10.50 S500");
+    }
+
+    #[test]
+    fn test_gcode_generation_jog() {
+        assert_eq!(jog_xy(10.5, 20.0, 1000.0), "$J=G91 X10.50 Y20.00 F1000");
+        assert_eq!(jog_z(-5.0, 500.0), "$J=G91 Z-5.00 F500");
     }
 }
