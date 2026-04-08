@@ -349,7 +349,8 @@ pub fn render_test_controls<'a, 'render>(
                         } else {
                             COLOR_TEXT_MUTED
                         };
-                        if clay.pointer_over(eye_id) {
+                        let is_processing = { state.lock().unwrap().is_processing };
+                        if !is_processing && clay.pointer_over(eye_id) {
                             eye_color = COLOR_TEXT_WHITE;
                             if mouse_pressed {
                                 let mut g = state.lock().unwrap();
@@ -359,6 +360,7 @@ pub fn render_test_controls<'a, 'render>(
                                 } else {
                                     g.preview_pattern = Some("custom_svg".to_string());
                                     g.preview_paths.clear();
+                                    g.is_processing = true;
                                     let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = (
                                         g.power / 10.0,
                                         g.feed_rate / 10.0,
@@ -381,39 +383,55 @@ pub fn render_test_controls<'a, 'render>(
                                         "200,200".to_string()
                                     };
                                     let preview_spd = (spd * 10.0).min(1000.0);
+                                    let state_clone = Arc::clone(state);
+                                    let path_clone = p.clone();
 
-                                    let result: Result<(String, String), Box<dyn std::error::Error + Send + Sync>> =
-                                        generate_pattern_gcode(
-                                            &p,
-                                            &format!("{}%", pwr),
-                                            &format!("{}%", preview_spd),
-                                            &format!("{}x", scl),
-                                            &pas.to_string(),
-                                            fit,
-                                            &center,
-                                        );
-                                    if let Ok((gcode, _)) = result {
-                                        let original_v_pos = g.v_pos;
-                                        let original_is_abs = g.is_absolute;
-                                        for line in gcode.lines() {
-                                            g.process_command_for_preview(line);
+                                    std::thread::spawn(move || {
+                                        let result: Result<(String, String), Box<dyn std::error::Error + Send + Sync>> =
+                                            generate_pattern_gcode(
+                                                &path_clone,
+                                                &format!("{}%", pwr),
+                                                &format!("{}%", preview_spd),
+                                                &format!("{}x", scl),
+                                                &pas.to_string(),
+                                                fit,
+                                                &center,
+                                            );
+                                        if let Ok((gcode, _)) = result {
+                                            let mut g = state_clone.lock().unwrap();
+                                            let original_v_pos = g.v_pos;
+                                            let original_is_abs = g.is_absolute;
+                                            for line in gcode.lines() {
+                                                g.process_command_for_preview(line);
+                                            }
+                                            g.v_pos = original_v_pos;
+                                            g.is_absolute = original_is_abs;
                                         }
-                                        g.v_pos = original_v_pos;
-                                        g.is_absolute = original_is_abs;
-                                    }
+                                        state_clone.lock().unwrap().is_processing = false;
+                                    });
                                 }
                             }
                         }
                         let mut eye_btn = Declaration::<Texture2D, ()>::new();
                         eye_btn.id(eye_id).layout().padding(Padding::all(4)).end();
                         clay.with(&eye_btn, |clay| {
-                            clay.text(
-                                ICON_EYE,
-                                clay_layout::text::TextConfig::new()
-                                    .font_size((20.0 * font_scale) as u16)
-                                    .color(eye_color)
-                                    .end(),
-                            );
+                            if is_processing {
+                                clay.text(
+                                    ICON_SPINNER,
+                                    clay_layout::text::TextConfig::new()
+                                        .font_size((20.0 * font_scale) as u16)
+                                        .color(COLOR_SUCCESS)
+                                        .end(),
+                                );
+                            } else {
+                                clay.text(
+                                    ICON_EYE,
+                                    clay_layout::text::TextConfig::new()
+                                        .font_size((20.0 * font_scale) as u16)
+                                        .color(eye_color)
+                                        .end(),
+                                );
+                            }
                         });
                     });
                 }
@@ -673,7 +691,8 @@ pub fn render_test_controls<'a, 'render>(
                                     } else {
                                         COLOR_TEXT_MUTED
                                     };
-                                    if clay.pointer_over(eye_id) {
+                                    let is_processing = { state.lock().unwrap().is_processing };
+                                    if !is_processing && clay.pointer_over(eye_id) {
                                         eye_color = COLOR_TEXT_WHITE;
                                         if mouse_pressed {
                                             let mut g = state.lock().unwrap();
@@ -683,6 +702,7 @@ pub fn render_test_controls<'a, 'render>(
                                             } else {
                                                 g.preview_pattern = Some(cmd.label.to_string());
                                                 g.preview_paths.clear();
+                                                g.is_processing = true;
                                                 let (pwr, spd, scl, pas, b_enabled, bx, by, bw, bh) = (
                                                     g.power / 10.0,
                                                     g.feed_rate / 10.0,
@@ -707,37 +727,53 @@ pub fn render_test_controls<'a, 'render>(
 
                                                 // 10x speed for preview
                                                 let preview_spd = (spd * 10.0).min(1000.0);
+                                                let label_clone = cmd.label.to_string();
+                                                let state_clone = Arc::clone(state);
 
-                                                if let Ok((gcode, _)) = generate_pattern_gcode(
-                                                    cmd.label,
-                                                    &format!("{}%", pwr),
-                                                    &format!("{}%", preview_spd),
-                                                    &format!("{}x", scl),
-                                                    &pas.to_string(),
-                                                    fit,
-                                                    &center,
-                                                ) {
-                                                    let original_v_pos = g.v_pos;
-                                                    let original_is_abs = g.is_absolute;
-                                                    for line in gcode.lines() {
-                                                        g.process_command_for_preview(line);
+                                                std::thread::spawn(move || {
+                                                    if let Ok((gcode, _)) = generate_pattern_gcode(
+                                                        &label_clone,
+                                                        &format!("{}%", pwr),
+                                                        &format!("{}%", preview_spd),
+                                                        &format!("{}x", scl),
+                                                        &pas.to_string(),
+                                                        fit,
+                                                        &center,
+                                                    ) {
+                                                        let mut g = state_clone.lock().unwrap();
+                                                        let original_v_pos = g.v_pos;
+                                                        let original_is_abs = g.is_absolute;
+                                                        for line in gcode.lines() {
+                                                            g.process_command_for_preview(line);
+                                                        }
+                                                        g.v_pos = original_v_pos;
+                                                        g.is_absolute = original_is_abs;
                                                     }
-                                                    g.v_pos = original_v_pos;
-                                                    g.is_absolute = original_is_abs;
-                                                }
+                                                    state_clone.lock().unwrap().is_processing = false;
+                                                });
                                             }
                                         }
                                     }
                                     let mut eye_btn = Declaration::<Texture2D, ()>::new();
                                     eye_btn.id(eye_id).layout().padding(Padding::all(4)).end();
-                                    clay.with(&eye_btn, |clay| {
-                                        clay.text(
-                                            ICON_EYE,
-                                            clay_layout::text::TextConfig::new()
-                                                .font_size((20.0 * font_scale) as u16)
-                                                .color(eye_color)
-                                                .end(),
-                                        );
+                                    clay_scope.with(&eye_btn, |clay| {
+                                        if is_processing {
+                                            clay.text(
+                                                ICON_SPINNER,
+                                                clay_layout::text::TextConfig::new()
+                                                    .font_size((20.0 * font_scale) as u16)
+                                                    .color(COLOR_SUCCESS)
+                                                    .end(),
+                                            );
+                                        } else {
+                                            clay.text(
+                                                ICON_EYE,
+                                                clay_layout::text::TextConfig::new()
+                                                    .font_size((20.0 * font_scale) as u16)
+                                                    .color(eye_color)
+                                                    .end(),
+                                            );
+                                        }
                                     });
                                 });
                             }

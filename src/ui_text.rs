@@ -180,6 +180,7 @@ pub fn render_text_controls<'a, 'render>(
                 lines_per_mm,
                 available_fonts,
                 dropdown_open,
+                is_processing,
             ) = {
                 let g = state.lock().unwrap();
                 (
@@ -193,6 +194,7 @@ pub fn render_text_controls<'a, 'render>(
                     g.text_lines_per_mm,
                     g.available_fonts.clone(),
                     g.text_font_dropdown_open,
+                    g.is_processing,
                 )
             };
 
@@ -563,7 +565,7 @@ pub fn render_text_controls<'a, 'render>(
                 } else {
                     COLOR_TEXT_MUTED
                 };
-                if clay_scope.pointer_over(eye_id) {
+                if !is_processing && clay_scope.pointer_over(eye_id) {
                     eye_color = COLOR_TEXT_WHITE;
                     if mouse_pressed {
                         let mut g = state.lock().unwrap();
@@ -659,13 +661,23 @@ pub fn render_text_controls<'a, 'render>(
                 let mut eye_btn = Declaration::<Texture2D, ()>::new();
                 eye_btn.id(eye_id).layout().padding(Padding::all(4)).end();
                 clay_scope.with(&eye_btn, |clay| {
-                    clay.text(
-                        ICON_EYE,
-                        clay_layout::text::TextConfig::new()
-                            .font_size((20.0 * font_scale) as u16)
-                            .color(eye_color)
-                            .end(),
-                    );
+                    if is_processing {
+                        clay.text(
+                            ICON_SPINNER,
+                            clay_layout::text::TextConfig::new()
+                                .font_size((20.0 * font_scale) as u16)
+                                .color(COLOR_SUCCESS)
+                                .end(),
+                        );
+                    } else {
+                        clay.text(
+                            ICON_EYE,
+                            clay_layout::text::TextConfig::new()
+                                .font_size((20.0 * font_scale) as u16)
+                                .color(eye_color)
+                                .end(),
+                        );
+                    }
                 });
 
                 if render_burn_btn(
