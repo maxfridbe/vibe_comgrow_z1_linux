@@ -208,20 +208,14 @@ pub fn render_image_controls<'a, 'render>(
             };
             clay_scope.with(&load_btn, |clay| {
                 clay.text(
-                    ICON_IMAGE,
-                    clay_layout::text::TextConfig::new()
-                        .font_size((14.0 * font_scale) as u16)
-                        .color(load_text_color)
-                        .end(),
-                );
-                clay.text(
-                    "Pick Custom Image",
+                    arena.push(format!("{} Pick Image", ICON_IMAGE)),
                     clay_layout::text::TextConfig::new()
                         .font_size((14.0 * font_scale) as u16)
                         .color(load_text_color)
                         .end(),
                 );
             });
+
 
             // Fidelity Sliders immediately under Pick button
             let (low_fid, high_fid) = {
