@@ -539,7 +539,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .end();
                     clay_scope.with(&input_box, |clay_scope| {
                         clay_scope.text(
-                            arena.push(format!("{} {}", ICON_USB, port)),
+                            arena.push(format!("{}   {}", ICON_USB, port)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
                                 .color(port_text_color)
@@ -559,7 +559,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .end();
                     clay_scope.with(&wattage_box, |clay_scope| {
                         clay_scope.text(
-                            arena.push(format!("{} {}", ICON_CPU, wattage)),
+                            arena.push(format!("{}   {}", ICON_CPU, wattage)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
                                 .color(COLOR_WATTAGE_TEXT)
@@ -601,7 +601,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .end();
                     clay_scope.with(&estop_h_btn, |clay_scope| {
                         clay_scope.text(
-                            "E-STOP",
+                            arena.push(format!("{}   E-STOP", ICON_FLAME)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
                                 .color(COLOR_TEXT_WHITE)
@@ -686,14 +686,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             (g.v_pos.x, g.v_pos.y, g.machine_pos.x, g.machine_pos.y, g.machine_state.clone())
                         };
                         clay_scope.text(
-                            arena.push(format!("V: X:{:.1} Y:{:.1}", vx, vy)),
+                            arena.push(format!("V:   X: {:.1}   Y: {:.1}", vx, vy)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
                                 .color(COLOR_USB_ICON)
                                 .end(),
                         );
                         clay_scope.text(
-                            arena.push(format!("M: X:{:.1} Y:{:.1}", mx, my)),
+                            arena.push(format!("M:   X: {:.1}   Y: {:.1}", mx, my)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
                                 .color(COLOR_TEXT_MUTED)
@@ -731,14 +731,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             .end();
                         clay_scope.with(&tidy_btn, |clay| {
                             clay.text(
-                                ICON_SWEEP,
-                                clay_layout::text::TextConfig::new()
-                                    .font_size((16.0 * font_scale) as u16)
-                                    .color(tidy_color)
-                                    .end(),
-                            );
-                            clay.text(
-                                "TIDY",
+                                arena.push(format!("{}   TIDY", ICON_SWEEP)),
                                 clay_layout::text::TextConfig::new()
                                     .font_size((12.0 * font_scale) as u16)
                                     .color(tidy_color)
@@ -900,7 +893,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     .end();
                 clay_scope.with(&estop_b, |clay_scope| {
                     clay_scope.text(
-                        "E-STOP",
+                        arena.push(format!("{}   E-STOP", ICON_FLAME)),
                         clay_layout::text::TextConfig::new()
                             .font_size((24.0 * font_scale) as u16)
                             .color(COLOR_TEXT_WHITE)

@@ -49,7 +49,7 @@ pub fn render_manual_left_subcol<'a, 'render>(
                     .end();
                 clay_scope.with(&title_line, |clay_scope| {
                     clay_scope.text(
-                        arena.push(format!("{} {}", section.icon, section.title)),
+                        arena.push(format!("{}   {}", section.icon, section.title)),
                         clay_layout::text::TextConfig::new()
                             .font_size((14.0 * font_scale) as u16)
                             .color(section.color)
@@ -117,7 +117,7 @@ pub fn render_manual_left_subcol<'a, 'render>(
                                 text_stack.layout().direction(LayoutDirection::TopToBottom).child_gap(2).end();
                                 clay_scope.with(&text_stack, |clay_scope| {
                                     clay_scope.text(
-                                        arena.push(format!("{} {}", section.icon, cmd.label)),
+                                        arena.push(format!("{}   {}", section.icon, cmd.label)),
                                         clay_layout::text::TextConfig::new()
                                             .font_size((12.0 * font_scale) as u16)
                                             .color(text_color)
@@ -318,7 +318,7 @@ pub fn render_manual_right_col<'a, 'render>(
 
                     clay_scope.with(&fire_btn, |clay| {
                         clay.text(
-                            arena.push(format!("{} FIRE", ICON_FLAME)),
+                            arena.push(format!("{}   FIRE", ICON_FLAME)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((10.0 * font_scale) as u16)
                                 .color(fire_text_color)
@@ -352,7 +352,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         .end();
                     clay_scope.with(&off_btn, |clay| {
                         clay.text(
-                            arena.push(format!("{} OFF", ICON_POWER)),
+                            arena.push(format!("{}   OFF", ICON_POWER)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((10.0 * font_scale) as u16)
                                 .color(off_text_color)

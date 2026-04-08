@@ -60,7 +60,7 @@ where
     let mut clicked = false;
     clay.with(&btn, |clay_scope| {
         clay_scope.text(
-            arena.push(format!("{} {}", icon, label)),
+            arena.push(format!("{}   {}", icon, label)),
             clay_layout::text::TextConfig::new().font_size((16.0 * font_scale) as u16).color(text_color).end(),
         );
         if unsafe { raylib::ffi::IsMouseButtonPressed(raylib::ffi::MouseButton::MOUSE_BUTTON_LEFT as i32) }
@@ -208,7 +208,7 @@ where
     };
     clay.with(&btn, |clay| {
         clay.text(
-            arena.push(format!("{} {}", ICON_FLAME, label)),
+            arena.push(format!("{}   {}", ICON_FLAME, label)),
             clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(text_color).end(),
         );
     });
@@ -397,9 +397,9 @@ pub fn render_slider<'a, 'render, F>(
         clay.with(&header, |clay| {
             // Intelligent rounding
             let val_str = if value.fract() == 0.0 {
-                format!("{}: {}", label, value as i32)
+                format!("{}   {}", label, value as i32)
             } else {
-                format!("{}: {:.1}", label, value)
+                format!("{}   {:.1}", label, value)
             };
             clay.text(
                 arena.push(val_str),

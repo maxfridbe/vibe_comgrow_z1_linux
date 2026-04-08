@@ -217,7 +217,7 @@ pub fn render_test_controls<'a, 'render>(
                 };
                 clay_scope.with(&load_btn, |clay| {
                     clay.text(
-                        arena.push(format!("{} Pick Custom SVG", ICON_FILE)),
+                        arena.push(format!("{}   Pick Custom SVG", ICON_FILE)),
                         clay_layout::text::TextConfig::new()
                             .font_size((14.0 * font_scale) as u16)
                             .color(load_text_color)
