@@ -225,22 +225,6 @@ pub fn render_manual_right_col<'a, 'render>(
                         font_scale,
                         !is_idle,
                     );
-                    render_outline_btn(
-                        clay_scope,
-                        "o_ul",
-                        state,
-                        || {
-                            let g = state.lock().unwrap();
-                            Some(format!(
-                                "{}\n{}",
-                                gcode::CMD_RELATIVE_POS,
-                                gcode::burn(-1.0 * g.distance, 1.0 * g.distance, g.power, g.feed_rate)
-                            ))
-                        },
-                        mouse_pressed,
-                        font_scale,
-                        !is_idle,
-                    );
                 });
 
                 let mut btn_box = Declaration::<Texture2D, ()>::new();
@@ -258,22 +242,6 @@ pub fn render_manual_right_col<'a, 'render>(
                         font_scale,
                         !is_idle,
                     );
-                    render_outline_btn(
-                        clay_scope,
-                        "o_up",
-                        state,
-                        || {
-                            let g = state.lock().unwrap();
-                            Some(format!(
-                                "{}\n{}",
-                                gcode::CMD_RELATIVE_POS,
-                                gcode::burn(0.0, 1.0 * g.distance, g.power, g.feed_rate)
-                            ))
-                        },
-                        mouse_pressed,
-                        font_scale,
-                        !is_idle,
-                    );
                 });
 
                 let mut btn_box = Declaration::<Texture2D, ()>::new();
@@ -288,22 +256,6 @@ pub fn render_manual_right_col<'a, 'render>(
                         1.0,
                         mouse_pressed,
                         clipboard,
-                        font_scale,
-                        !is_idle,
-                    );
-                    render_outline_btn(
-                        clay_scope,
-                        "o_ur",
-                        state,
-                        || {
-                            let g = state.lock().unwrap();
-                            Some(format!(
-                                "{}\n{}",
-                                gcode::CMD_RELATIVE_POS,
-                                gcode::burn(1.0 * g.distance, 1.0 * g.distance, g.power, g.feed_rate)
-                            ))
-                        },
-                        mouse_pressed,
                         font_scale,
                         !is_idle,
                     );
@@ -327,22 +279,6 @@ pub fn render_manual_right_col<'a, 'render>(
                         0.0,
                         mouse_pressed,
                         clipboard,
-                        font_scale,
-                        !is_idle,
-                    );
-                    render_outline_btn(
-                        clay_scope,
-                        "o_l",
-                        state,
-                        || {
-                            let g = state.lock().unwrap();
-                            Some(format!(
-                                "{}\n{}",
-                                gcode::CMD_RELATIVE_POS,
-                                gcode::burn(-1.0 * g.distance, 0.0, g.power, g.feed_rate)
-                            ))
-                        },
-                        mouse_pressed,
                         font_scale,
                         !is_idle,
                     );
@@ -464,22 +400,6 @@ pub fn render_manual_right_col<'a, 'render>(
                         font_scale,
                         !is_idle,
                     );
-                    render_outline_btn(
-                        clay_scope,
-                        "o_r",
-                        state,
-                        || {
-                            let g = state.lock().unwrap();
-                            Some(format!(
-                                "{}\n{}",
-                                gcode::CMD_RELATIVE_POS,
-                                gcode::burn(1.0 * g.distance, 0.0, g.power, g.feed_rate)
-                            ))
-                        },
-                        mouse_pressed,
-                        font_scale,
-                        !is_idle,
-                    );
                 });
             });
             let mut r3 = Declaration::<Texture2D, ()>::new();
@@ -503,22 +423,6 @@ pub fn render_manual_right_col<'a, 'render>(
                         font_scale,
                         !is_idle,
                     );
-                    render_outline_btn(
-                        clay_scope,
-                        "o_dl",
-                        state,
-                        || {
-                            let g = state.lock().unwrap();
-                            Some(format!(
-                                "{}\n{}",
-                                gcode::CMD_RELATIVE_POS,
-                                gcode::burn(-1.0 * g.distance, -1.0 * g.distance, g.power, g.feed_rate)
-                            ))
-                        },
-                        mouse_pressed,
-                        font_scale,
-                        !is_idle,
-                    );
                 });
 
                 let mut btn_box = Declaration::<Texture2D, ()>::new();
@@ -536,22 +440,6 @@ pub fn render_manual_right_col<'a, 'render>(
                         font_scale,
                         !is_idle,
                     );
-                    render_outline_btn(
-                        clay_scope,
-                        "o_dn",
-                        state,
-                        || {
-                            let g = state.lock().unwrap();
-                            Some(format!(
-                                "{}\n{}",
-                                gcode::CMD_RELATIVE_POS,
-                                gcode::burn(0.0, -1.0 * g.distance, g.power, g.feed_rate)
-                            ))
-                        },
-                        mouse_pressed,
-                        font_scale,
-                        !is_idle,
-                    );
                 });
 
                 let mut btn_box = Declaration::<Texture2D, ()>::new();
@@ -566,22 +454,6 @@ pub fn render_manual_right_col<'a, 'render>(
                         -1.0,
                         mouse_pressed,
                         clipboard,
-                        font_scale,
-                        !is_idle,
-                    );
-                    render_outline_btn(
-                        clay_scope,
-                        "o_dr",
-                        state,
-                        || {
-                            let g = state.lock().unwrap();
-                            Some(format!(
-                                "{}\n{}",
-                                gcode::CMD_RELATIVE_POS,
-                                gcode::burn(1.0 * g.distance, -1.0 * g.distance, g.power, g.feed_rate)
-                            ))
-                        },
-                        mouse_pressed,
                         font_scale,
                         !is_idle,
                     );

@@ -86,141 +86,144 @@ pub struct AppState {
 
 impl AppState {
     pub fn process_command_for_preview(&mut self, cmd: &str) {
-        // println!("PREVIEW CMD: {} (Power: {})", cmd, self.current_preview_power);
-        let parts: Vec<&str> = cmd.split_whitespace().collect();
-        let mut has_g0 = false;
-        let mut has_g1 = false;
-        let mut has_g2 = false;
-        let mut has_g3 = false;
+        // Handle potential multiple commands on one line or space-separated commands
+        for single_cmd in cmd.split('\n') {
+            let parts: Vec<&str> = single_cmd.split_whitespace().collect();
+            let mut has_g0 = false;
+            let mut has_g1 = false;
+            let mut has_g2 = false;
+            let mut has_g3 = false;
 
-        let mut x_val = None;
-        let mut y_val = None;
-        let mut s_val = None;
-        let mut r_val = None;
-        let mut has_m5 = false;
+            let mut x_val = None;
+            let mut y_val = None;
+            let mut r_val = None;
+            let mut has_m5 = false;
 
-        for part in &parts {
-            if *part == crate::gcode::CMD_ABSOLUTE_POS {
-                self.is_absolute = true;
-            } else if *part == crate::gcode::CMD_RELATIVE_POS {
-                self.is_absolute = false;
-            } else if *part == crate::gcode::CMD_HOME {
-                self.v_pos = raylib::prelude::Vector2 {
-                    x: 0.0,
-                    y: 0.0,
-                };
-            } else if *part == "G0" {
-                has_g0 = true;
-            } else if *part == "G1" {
-                has_g1 = true;
-            } else if *part == "G2" {
-                has_g2 = true;
-            } else if *part == "G3" {
-                has_g3 = true;
-            } else if *part == "M3" || *part == "M4" { /* power updated via S */
-            } else if *part == crate::gcode::CMD_LASER_OFF {
-                has_m5 = true;
-            } else if part.starts_with('X') {
-                x_val = part[1..].parse::<f32>().ok();
-            } else if part.starts_with('Y') {
-                y_val = part[1..].parse::<f32>().ok();
-            } else if part.starts_with('S') {
-                if let Ok(val) = part[1..].parse::<f32>() {
-                    self.current_preview_power = val;
-                    s_val = Some(val);
-                }
-            } else if part.starts_with('R') {
-                r_val = part[1..].parse::<f32>().ok();
-            }
-        }
-
-        if has_m5 {
-            self.current_preview_power = 0.0;
-        }
-
-        if has_g0 || has_g1 || has_g2 || has_g3 {
-            let old_pos = self.v_pos;
-            let mut target = self.v_pos;
-            if self.is_absolute {
-                if let Some(x) = x_val {
-                    target.x = x.clamp(0.0, 400.0);
-                }
-                if let Some(y) = y_val {
-                    target.y = y.clamp(0.0, 400.0);
-                }
-            } else {
-                if let Some(x) = x_val {
-                    target.x = (target.x + x).clamp(0.0, 400.0);
-                }
-                if let Some(y) = y_val {
-                    target.y = (target.y + y).clamp(0.0, 400.0);
-                }
-            }
-
-            if has_g1 {
-                let intensity = (self.current_preview_power / 1000.0).clamp(0.0, 1.0);
-                if intensity > 0.01 {
-                    self.preview_paths.push(PathSegment {
-                        x1: old_pos.x,
-                        y1: old_pos.y,
-                        x2: target.x,
-                        y2: target.y,
-                        s: self.current_preview_power,
-                        intensity,
-                    });
-                }
-                self.v_pos = target;
-            } else if (has_g2 || has_g3) && r_val.is_some() {
-                let r = r_val.unwrap();
-                let start = old_pos;
-                let end = target;
-                let dx = end.x - start.x;
-                let dy = end.y - start.y;
-                let d2 = dx * dx + dy * dy;
-                let d = d2.sqrt();
-                if d > 0.0 && d <= 2.0 * r.abs() + 0.1 {
-                    let h = (r * r - d2 / 4.0).max(0.0).sqrt();
-                    let mut cx = (start.x + end.x) / 2.0;
-                    let mut cy = (start.y + end.y) / 2.0;
-                    let multiplier = if (has_g2 && r > 0.0) || (has_g3 && r < 0.0) {
-                        1.0
-                    } else {
-                        -1.0
+            for part in &parts {
+                if *part == crate::gcode::CMD_ABSOLUTE_POS {
+                    self.is_absolute = true;
+                } else if *part == crate::gcode::CMD_RELATIVE_POS {
+                    self.is_absolute = false;
+                } else if *part == crate::gcode::CMD_HOME {
+                    self.v_pos = raylib::prelude::Vector2 {
+                        x: 0.0,
+                        y: 0.0,
                     };
-                    cx += multiplier * h * dy / d;
-                    cy -= multiplier * h * dx / d;
-                    let start_angle = (start.y - cy).atan2(start.x - cx);
-                    let mut end_angle = (end.y - cy).atan2(end.x - cx);
-                    if has_g2 {
-                        if end_angle >= start_angle {
-                            end_angle -= 2.0 * std::f32::consts::PI;
-                        }
-                    } else {
-                        if end_angle <= start_angle {
-                            end_angle += 2.0 * std::f32::consts::PI;
-                        }
+                } else if *part == "G0" {
+                    has_g0 = true;
+                } else if *part == "G1" {
+                    has_g1 = true;
+                } else if *part == "G2" {
+                    has_g2 = true;
+                } else if *part == "G3" {
+                    has_g3 = true;
+                } else if *part == "M3" || *part == "M4" {
+                    // Check if there's an S value in the same command
+                } else if *part == crate::gcode::CMD_LASER_OFF {
+                    has_m5 = true;
+                } else if part.starts_with('X') {
+                    x_val = part[1..].parse::<f32>().ok();
+                } else if part.starts_with('Y') {
+                    y_val = part[1..].parse::<f32>().ok();
+                } else if part.starts_with('S') {
+                    if let Ok(val) = part[1..].parse::<f32>() {
+                        self.current_preview_power = val;
                     }
-                    let segments = 20;
-                    let mut prev_p = start;
-                    for i in 1..=segments {
-                        let t = i as f32 / segments as f32;
-                        let angle = start_angle + t * (end_angle - start_angle);
-                        let next_p = Vector2::new(cx + r.abs() * angle.cos(), cy + r.abs() * angle.sin());
-                        let intensity = (s_val.unwrap_or(self.power) / 1000.0).clamp(0.0, 1.0);
+                } else if part.starts_with('R') {
+                    r_val = part[1..].parse::<f32>().ok();
+                }
+            }
+
+            if has_m5 {
+                self.current_preview_power = 0.0;
+            }
+
+            if has_g0 || has_g1 || has_g2 || has_g3 {
+                let old_pos = self.v_pos;
+                let mut target = self.v_pos;
+                if self.is_absolute {
+                    if let Some(x) = x_val {
+                        target.x = x.clamp(0.0, 400.0);
+                    }
+                    if let Some(y) = y_val {
+                        target.y = y.clamp(0.0, 400.0);
+                    }
+                } else {
+                    if let Some(x) = x_val {
+                        target.x = (target.x + x).clamp(0.0, 400.0);
+                    }
+                    if let Some(y) = y_val {
+                        target.y = (target.y + y).clamp(0.0, 400.0);
+                    }
+                }
+
+                if has_g1 {
+                    let intensity = (self.current_preview_power / 1000.0).clamp(0.0, 1.0);
+                    if intensity > 0.01 {
                         self.preview_paths.push(PathSegment {
-                            x1: prev_p.x,
-                            y1: prev_p.y,
-                            x2: next_p.x,
-                            y2: next_p.y,
-                            s: s_val.unwrap_or(self.power),
+                            x1: old_pos.x,
+                            y1: old_pos.y,
+                            x2: target.x,
+                            y2: target.y,
+                            s: self.current_preview_power,
                             intensity,
                         });
-                        prev_p = next_p;
                     }
+                    self.v_pos = target;
+                } else if has_g0 {
+                    self.v_pos = target;
+                } else if (has_g2 || has_g3) && r_val.is_some() {
+                    let r = r_val.unwrap();
+                    let start = old_pos;
+                    let end = target;
+                    let dx = end.x - start.x;
+                    let dy = end.y - start.y;
+                    let d2 = dx * dx + dy * dy;
+                    let d = d2.sqrt();
+                    if d > 0.0 && d <= 2.0 * r.abs() + 0.1 {
+                        let h = (r * r - d2 / 4.0).max(0.0).sqrt();
+                        let mut cx = (start.x + end.x) / 2.0;
+                        let mut cy = (start.y + end.y) / 2.0;
+                        let multiplier = if (has_g2 && r > 0.0) || (has_g3 && r < 0.0) {
+                            1.0
+                        } else {
+                            -1.0
+                        };
+                        cx += multiplier * h * dy / d;
+                        cy -= multiplier * h * dx / d;
+                        let start_angle = (start.y - cy).atan2(start.x - cx);
+                        let mut end_angle = (end.y - cy).atan2(end.x - cx);
+                        if has_g2 {
+                            if end_angle >= start_angle {
+                                end_angle -= 2.0 * std::f32::consts::PI;
+                            }
+                        } else {
+                            if end_angle <= start_angle {
+                                end_angle += 2.0 * std::f32::consts::PI;
+                            }
+                        }
+                        let segments = 20;
+                        let mut prev_p = start;
+                        for i in 1..=segments {
+                            let t = i as f32 / segments as f32;
+                            let angle = start_angle + t * (end_angle - start_angle);
+                            let next_p = Vector2::new(cx + r.abs() * angle.cos(), cy + r.abs() * angle.sin());
+                            let intensity = (self.current_preview_power / 1000.0).clamp(0.0, 1.0);
+                            self.preview_paths.push(PathSegment {
+                                x1: prev_p.x,
+                                y1: prev_p.y,
+                                x2: next_p.x,
+                                y2: next_p.y,
+                                s: self.current_preview_power,
+                                intensity,
+                            });
+                            prev_p = next_p;
+                        }
+                    }
+                    self.v_pos = target;
+                } else {
+                    self.v_pos = target;
                 }
-                self.v_pos = target;
-            } else {
-                self.v_pos = target;
             }
         }
     }
