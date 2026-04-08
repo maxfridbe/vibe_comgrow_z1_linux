@@ -120,28 +120,43 @@ pub fn generate_pattern_gcode(
         match shape_lower.as_str() {
             "square" => {
                 let s = 20.0 * scl_val;
-                let x1 = (cx - s).clamp(0.0, 400.0);
-                let y1 = (cy - s).clamp(0.0, 400.0);
-                let x2 = (cx + s).clamp(0.0, 400.0);
-                let y2 = (cy + s).clamp(0.0, 400.0);
+                let x1_raw = cx - s;
+                let y1_raw = cy - s;
+                let x2_raw = cx + s;
+                let y2_raw = cy + s;
+
+                let x1 = x1_raw.clamp(0.0, 400.0);
+                let y1 = y1_raw.clamp(0.0, 400.0);
+                let x2 = x2_raw.clamp(0.0, 400.0);
+                let y2 = y2_raw.clamp(0.0, 400.0);
 
                 final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy(x1, y1)));
                 final_gcode.push_str(&format!("{} F{}\n", gcode::laser_on_dynamic(pwr_val * 10.0), spd_val * 10.0));
-                let p_val = pwr_val * 10.0;
-                final_gcode.push_str(&format!("{}\n", gcode::burn_s(x2, y1, p_val)));
-                final_gcode.push_str(&format!("{}\n", gcode::burn_s(x2, y2, p_val)));
-                final_gcode.push_str(&format!("{}\n", gcode::burn_s(x1, y2, p_val)));
-                final_gcode.push_str(&format!("{}\n", gcode::burn_s(x1, y1, p_val)));
+                
+                let p1 = if x2_raw < 0.0 || x2_raw > 400.0 || y1_raw < 0.0 || y1_raw > 400.0 { 0.0 } else { pwr_val * 10.0 };
+                final_gcode.push_str(&format!("{}\n", gcode::burn_s(x2, y1, p1)));
+
+                let p2 = if x2_raw < 0.0 || x2_raw > 400.0 || y2_raw < 0.0 || y2_raw > 400.0 { 0.0 } else { pwr_val * 10.0 };
+                final_gcode.push_str(&format!("{}\n", gcode::burn_s(x2, y2, p2)));
+
+                let p3 = if x1_raw < 0.0 || x1_raw > 400.0 || y2_raw < 0.0 || y2_raw > 400.0 { 0.0 } else { pwr_val * 10.0 };
+                final_gcode.push_str(&format!("{}\n", gcode::burn_s(x1, y2, p3)));
+
+                let p4 = if x1_raw < 0.0 || x1_raw > 400.0 || y1_raw < 0.0 || y1_raw > 400.0 { 0.0 } else { pwr_val * 10.0 };
+                final_gcode.push_str(&format!("{}\n", gcode::burn_s(x1, y1, p4)));
             }
             "heart" => {
                 let pts = 100;
-                let p_val = pwr_val * 10.0;
                 for i in 0..=pts {
                     let t = (i as f32 / pts as f32) * 2.0 * std::f32::consts::PI;
                     let x = 16.0 * t.sin().powi(3);
                     let y = 13.0 * t.cos() - 5.0 * (2.0 * t).cos() - 2.0 * (3.0 * t).cos() - (4.0 * t).cos();
-                    let px = (cx + x * scl_val).clamp(0.0, 400.0);
-                    let py = (cy + y * scl_val).clamp(0.0, 400.0);
+                    let px_raw = cx + x * scl_val;
+                    let py_raw = cy + y * scl_val;
+                    let out_of_bounds = px_raw < 0.0 || px_raw > 400.0 || py_raw < 0.0 || py_raw > 400.0;
+                    let p_val = if out_of_bounds { 0.0 } else { pwr_val * 10.0 };
+                    let px = px_raw.clamp(0.0, 400.0);
+                    let py = py_raw.clamp(0.0, 400.0);
                     if i == 0 {
                         final_gcode.push_str(&format!(
                             "{}\n{}\n",
@@ -294,6 +309,10 @@ pub fn generate_image_gcode(
             // Use 0.5 offset to center the laser on the pixel row
             let actual_y = offset_y + (img.height() as f32 - 0.5 - y as f32) * final_scale;
 
+            if actual_y < 0.0 || actual_y > 400.0 {
+                continue;
+            }
+
             // Find first and last non-zero pixels in this row to avoid crossing the whole canvas
             let mut first_x = None;
             let mut last_x = None;
@@ -354,12 +373,13 @@ pub fn generate_image_gcode(
                     } else {
                         x as f32
                     };
-                    let actual_x = (offset_x + dest_x_coord * final_scale).clamp(0.0, 400.0);
+                    let unclamped_x = offset_x + dest_x_coord * final_scale;
+                    let actual_x = unclamped_x.clamp(0.0, 400.0);
 
-                    if s_val > 0 {
+                    if s_val > 0 && unclamped_x >= 0.0 && unclamped_x <= 400.0 {
                         gcode.push_str(&format!("{}\n", gcode::burn_xs(actual_x, s_val as f32)));
                     } else {
-                        // Internal jump over empty pixel - set power to 0
+                        // Internal jump over empty pixel or out of bounds - set power to 0
                         gcode.push_str(&format!("{}\n", gcode::burn_xs(actual_x, 0.0)));
                     }
                 }
@@ -402,9 +422,13 @@ impl OutlineSink for VectorGCodeBuilder {
 
     fn line_to(&mut self, to: Vector2F) {
         let p = (to + self.offset) * self.scale;
-        let px = p.x().clamp(0.0, 400.0);
-        let py = p.y().clamp(0.0, 400.0);
-        self.gcode.push_str(&format!("{}\n", gcode::burn_s(px, py, self.power * 10.0)));
+        let px_raw = p.x();
+        let py_raw = p.y();
+        let out_of_bounds = px_raw < 0.0 || px_raw > 400.0 || py_raw < 0.0 || py_raw > 400.0;
+        let power = if out_of_bounds { 0.0 } else { self.power * 10.0 };
+        let px = px_raw.clamp(0.0, 400.0);
+        let py = py_raw.clamp(0.0, 400.0);
+        self.gcode.push_str(&format!("{}\n", gcode::burn_s(px, py, power)));
         self.current_pos = to;
     }
 
@@ -883,6 +907,8 @@ mod tests {
                         text_font_scroll_offset: 0.0,
                         is_text_input_active: false,
                         current_preview_power: 0.0,
+                        saved_states: Vec::new(),
+                        load_dialog_open: false,
                     };
 
                     state.process_command_for_preview(&gcode);
