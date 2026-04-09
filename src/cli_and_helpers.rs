@@ -300,12 +300,27 @@ pub fn generate_image_gcode(
 
     let out_w = orig_w * final_scale;
     let out_h = orig_h * final_scale;
-    
-    // Resize image based on desired lines per mm (pixels per mm)
-    let target_w = (out_w * lines_per_mm).max(1.0).ceil() as u32;
-    let target_h = (out_h * lines_per_mm).max(1.0).ceil() as u32;
 
-    let img = img_base.resize_exact(target_w, target_h, image::imageops::FilterType::Lanczos3).to_rgba8();
+    let workarea_max = if config.base.bounds.enabled {
+        config.base.bounds.w.max(config.base.bounds.h)
+    } else {
+        400.0
+    };
+    
+    // Pre-downscale image to a reasonable resolution based on the effective workarea
+    // and requested lines_per_mm. Limit max dimension to 2000px to prevent OOM.
+    let max_pixels = 2000;
+    let mut working_img = img_base;
+    if working_img.width() > max_pixels || working_img.height() > max_pixels {
+        working_img = working_img.resize(max_pixels, max_pixels, image::imageops::FilterType::Nearest);
+    }
+    
+    // Now resize to the final target resolution for this specific burn
+    // The target resolution is still bounded by the lines_per_mm
+    let target_w = (out_w * lines_per_mm).max(1.0).min(2000.0).ceil() as u32;
+    let target_h = (out_h * lines_per_mm).max(1.0).min(2000.0).ceil() as u32;
+
+    let mut img = working_img.resize_exact(target_w, target_h, image::imageops::FilterType::Lanczos3).to_rgba8();
 
     let offset_x = center.0 - out_w / 2.0;
     let offset_y = center.1 - out_h / 2.0;
@@ -321,85 +336,80 @@ pub fn generate_image_gcode(
 
     let effective_passes = if is_preview { 1 } else { passes };
 
-    for _ in 0..effective_passes {
-        for y in 0..img.height() {
-            // Use 0.5 offset to center the laser on the pixel row
-            let actual_y = offset_y + (img.height() as f32 - 0.5 - y as f32) * effective_pixel_scale;
+    // Get image dimensions
+    let width = img.width();
+    let height = img.height();
+    
+    let img_slice = img.as_flat_samples();
+    let pixel_slice = img_slice.as_slice();
 
-            if actual_y < 0.0 || actual_y > 400.0 {
-                continue;
+    // Cache row empty status
+    let mut row_has_data = vec![false; height as usize];
+    for y in 0..height {
+        let row_start = (y * width * 4) as usize;
+        for x in 0..width {
+            let idx = row_start + (x * 4) as usize;
+            let luminance = 0.2126 * pixel_slice[idx] as f32 + 0.7152 * pixel_slice[idx+1] as f32 + 0.0722 * pixel_slice[idx+2] as f32;
+            let intensity = 1.0 - (luminance / 255.0);
+            if ((intensity - low_fid) / (high_fid - low_fid).max(0.001)).clamp(0.0, 1.0) > 0.01 {
+                row_has_data[y as usize] = true;
+                break;
             }
+        }
+    }
 
-            // Find first and last non-zero pixels in this row to avoid crossing the whole canvas
+
+    let mut gcode = String::with_capacity((width * height) as usize * 10);
+    gcode.push_str(&format!("{}\n{}\n", gcode::CMD_ABSOLUTE_POS, gcode::CMD_HOME));
+
+    for _ in 0..effective_passes {
+        for y in 0..height {
+            if !row_has_data[y as usize] { continue; }
+            
+            let actual_y = offset_y + (height as f32 - 0.5 - y as f32) * effective_pixel_scale;
+            if actual_y < 0.0 || actual_y > 400.0 { continue; }
+
+            // Efficiently find non-zero range in this row
             let mut first_x = None;
             let mut last_x = None;
-
-            for x in 0..img.width() {
-                let pixel = img.get_pixel(x, y);
-                let luminance = 0.2126 * pixel[0] as f32 + 0.7152 * pixel[1] as f32 + 0.0722 * pixel[2] as f32;
+            let row_start = (y * width * 4) as usize;
+            
+            for x in 0..width {
+                let idx = row_start + (x * 4) as usize;
+                let luminance = 0.2126 * pixel_slice[idx] as f32 + 0.7152 * pixel_slice[idx+1] as f32 + 0.0722 * pixel_slice[idx+2] as f32;
                 let intensity = 1.0 - (luminance / 255.0);
-                let remapped = ((intensity - low_fid) / (high_fid - low_fid).max(0.001)).clamp(0.0, 1.0);
-
-                if remapped > 0.01 {
-                    // Threshold for "empty"
-                    if first_x.is_none() {
-                        first_x = Some(x);
-                    }
+                if ((intensity - low_fid) / (high_fid - low_fid).max(0.001)).clamp(0.0, 1.0) > 0.01 {
+                    if first_x.is_none() { first_x = Some(x); }
                     last_x = Some(x);
                 }
             }
 
             if let (Some(fx), Some(lx)) = (first_x, last_x) {
                 let left_to_right = y % 2 == 0;
-
-                // Move to start of relevant content
-                let start_x_coord = if left_to_right {
-                    fx as f32
-                } else {
-                    lx as f32 + 1.0
-                };
+                let start_x_coord = if left_to_right { fx as f32 } else { lx as f32 + 1.0 };
                 let px = (offset_x + start_x_coord * effective_pixel_scale).clamp(0.0, 400.0);
                 let py = actual_y.clamp(0.0, 400.0);
-                gcode.push_str(&format!(
-                    "{}\n{}\n",
-                    gcode::CMD_LASER_OFF,
-                    gcode::move_xy_f(px, py, 3000.0)
-                ));
+                
+                gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy_f(px, py, 3000.0)));
                 gcode.push_str(&format!("M4 F{}\n", f_val));
 
-                let range: Vec<u32> = if left_to_right {
-                    (fx..=lx).collect()
-                } else {
-                    (fx..=lx).rev().collect()
-                };
-
+                let range: Vec<u32> = if left_to_right { (fx..=lx).collect() } else { (fx..=lx).rev().collect() };
                 for x in range {
-                    let pixel = img.get_pixel(x, y);
-                    let luminance = 0.2126 * pixel[0] as f32 + 0.7152 * pixel[1] as f32 + 0.0722 * pixel[2] as f32;
+                    let idx = row_start + (x * 4) as usize;
+                    let luminance = 0.2126 * pixel_slice[idx] as f32 + 0.7152 * pixel_slice[idx+1] as f32 + 0.0722 * pixel_slice[idx+2] as f32;
                     let intensity = 1.0 - (luminance / 255.0);
                     let remapped = ((intensity - low_fid) / (high_fid - low_fid).max(0.001)).clamp(0.0, 1.0);
                     let s_val = (remapped * pwr_max * 10.0) as i32;
 
-                    let dest_x_coord = if left_to_right {
-                        x as f32 + 1.0
-                    } else {
-                        x as f32
-                    };
+                    let dest_x_coord = if left_to_right { x as f32 + 1.0 } else { x as f32 };
                     let unclamped_x = offset_x + dest_x_coord * effective_pixel_scale;
                     let actual_x = unclamped_x.clamp(0.0, 400.0);
 
-                    // Skip consecutive identical out-of-bounds jumps to save processing time
-                    if s_val == 0 && unclamped_x < 0.0 && actual_x == 0.0 {
-                        continue;
-                    }
-                    if s_val == 0 && unclamped_x > 400.0 && actual_x == 400.0 {
-                        continue;
-                    }
-
                     if s_val > 0 && unclamped_x >= 0.0 && unclamped_x <= 400.0 {
                         gcode.push_str(&format!("{}\n", gcode::burn_xs(actual_x, s_val as f32)));
-                    } else {
-                        // Internal jump over empty pixel or out of bounds - set power to 0
+                    } else if s_val == 0 {
+                         // Skip internal jumps if already at edge
+                        if (unclamped_x < 0.0 && actual_x == 0.0) || (unclamped_x > 400.0 && actual_x == 400.0) { continue; }
                         gcode.push_str(&format!("{}\n", gcode::burn_xs(actual_x, 0.0)));
                     }
                 }
@@ -970,4 +980,41 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_image_gcode_performance() {
+        use crate::state::{BurnConfig, Bounds, ImageBurnConfig};
+        let path = "assets/test.jpg";
+        let config = ImageBurnConfig {
+            base: BurnConfig {
+                power: 100.0,
+                feed_rate: 1000.0,
+                scale: 0.5,
+                passes: 1,
+                bounds: Bounds {
+                    enabled: false,
+                    x: 0.0,
+                    y: 0.0,
+                    w: 400.0,
+                    h: 400.0,
+                },
+            },
+            low_fid: 0.0,
+            high_fid: 1.0,
+            lines_per_mm: 5.0,
+        };
+
+        let start = std::time::Instant::now();
+        let result = generate_image_gcode(path, &config, false);
+        let duration = start.elapsed();
+        
+        match result {
+            Ok((gcode, _)) => {
+                println!("Image GCode generated in: {:?}", duration);
+                println!("GCode length: {}", gcode.len());
+            }
+            Err(e) => panic!("Image G-code generation failed: {}", e),
+        }
+        }
+
 }

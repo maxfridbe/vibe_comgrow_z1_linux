@@ -493,6 +493,22 @@ pub fn render_image_controls<'a, 'render>(
                         arena,
                         font_scale,
                     );
+                    render_slider(
+                        clay_scope,
+                        "img_lpmm",
+                        "Lines Per MM",
+                        state.lock().unwrap().img_lines_per_mm,
+                        1.0,
+                        40.0,
+                        COLOR_ACCENT_PURPLE,
+                        state,
+                        |s, v| s.img_lines_per_mm = v,
+                        mouse_pos,
+                        mouse_down,
+                        scroll_y,
+                        arena,
+                        font_scale,
+                    );
                 });
             });
         });
