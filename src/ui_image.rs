@@ -31,13 +31,13 @@ pub fn render_image_controls<'a, 'render>(
     let is_idle = { state.lock().unwrap().machine_state == "Idle" };
     let (enabled, bx, by, bw, bh) = {
         let g = state.lock().unwrap();
-        (g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
+        (g.bounds.enabled, g.bounds.x, g.bounds.y, g.bounds.w, g.bounds.h)
     };
 
     clay.with(&left_col, |clay_scope| {
         // 1. Boundary Settings
-        let mut boundary_box = Declaration::<Texture2D, ()>::new();
-        boundary_box
+        let mut bounds_box = Declaration::<Texture2D, ()>::new();
+        bounds_box
             .layout()
             .width(grow!())
             .direction(LayoutDirection::TopToBottom)
@@ -49,7 +49,7 @@ pub fn render_image_controls<'a, 'render>(
             .all(16.0 * font_scale)
             .end();
 
-        clay_scope.with(&boundary_box, |clay_scope| {
+        clay_scope.with(&bounds_box, |clay_scope| {
             clay_scope.text(
                 "BOUNDARY SETTINGS",
                 clay_layout::text::TextConfig::new()
@@ -60,11 +60,11 @@ pub fn render_image_controls<'a, 'render>(
 
             render_checkbox(
                 clay_scope,
-                "img_boundary_enabled",
+                "img_bounds_enabled",
                 "Enable Boundary Clipping",
                 enabled,
                 state,
-                |s, v| s.boundary_enabled = v,
+                |s, v| s.bounds.enabled = v,
                 mouse_pressed,
                 font_scale,
             );
@@ -84,7 +84,7 @@ pub fn render_image_controls<'a, 'render>(
                         400.0,
                         COLOR_SLIDER_X,
                         state,
-                        |s, v| s.boundary_x = v,
+                        |s, v| s.bounds.x = v,
                         mouse_pos,
                         mouse_down,
                         scroll_y,
@@ -100,7 +100,7 @@ pub fn render_image_controls<'a, 'render>(
                         400.0,
                         COLOR_SLIDER_W,
                         state,
-                        |s, v| s.boundary_w = v,
+                        |s, v| s.bounds.w = v,
                         mouse_pos,
                         mouse_down,
                         scroll_y,
@@ -120,7 +120,7 @@ pub fn render_image_controls<'a, 'render>(
                         400.0,
                         COLOR_SLIDER_Y,
                         state,
-                        |s, v| s.boundary_y = v,
+                        |s, v| s.bounds.y = v,
                         mouse_pos,
                         mouse_down,
                         scroll_y,
@@ -136,7 +136,7 @@ pub fn render_image_controls<'a, 'render>(
                         400.0,
                         COLOR_SLIDER_H,
                         state,
-                        |s, v| s.boundary_h = v,
+                        |s, v| s.bounds.h = v,
                         mouse_pos,
                         mouse_down,
                         scroll_y,
@@ -287,30 +287,12 @@ pub fn render_image_controls<'a, 'render>(
                                 g.preview_paths.clear();
                                 g.is_processing = true;
                                 let config = g.get_image_burn_config();
-                                let fit = if config.base.boundary_enabled {
-                                    Some((config.base.boundary_w, config.base.boundary_h))
-                                } else {
-                                    None
-                                };
-                                let center = if config.base.boundary_enabled {
-                                    (config.base.boundary_x + config.base.boundary_w / 2.0, config.base.boundary_y + config.base.boundary_h / 2.0)
-                                } else {
-                                    (200.0, 200.0)
-                                };
                                 let state_clone = Arc::clone(state);
                                 let path_clone = p.clone();
                                 std::thread::spawn(move || {
                                     if let Ok((gcode, _)) = generate_image_gcode(
                                         &path_clone,
-                                        config.base.power,
-                                        config.base.feed_rate * 10.0,
-                                        config.base.scale,
-                                        config.base.passes,
-                                        fit,
-                                        center,
-                                        config.low_fid,
-                                        config.high_fid,
-                                        config.lines_per_mm,
+                                        &config,
                                         true,
                                     ) {
                                         let mut g = state_clone.lock().unwrap();
@@ -375,21 +357,11 @@ pub fn render_image_controls<'a, 'render>(
                             g.is_processing = true;
                             g.get_image_burn_config()
                         };
-                        let fit = if config.base.boundary_enabled {
-                            Some((config.base.boundary_w, config.base.boundary_h))
-                        } else {
-                            None
-                        };
-                        let center = if config.base.boundary_enabled {
-                            (config.base.boundary_x + config.base.boundary_w / 2.0, config.base.boundary_y + config.base.boundary_h / 2.0)
-                        } else {
-                            (200.0, 200.0)
-                        };
                         let state_clone = Arc::clone(state);
                         let path_clone = p.clone();
                         std::thread::spawn(move || {
                             if let Ok((gcode, _)) =
-                                generate_image_gcode(&path_clone, config.base.power, config.base.feed_rate, config.base.scale, config.base.passes, fit, center, config.low_fid, config.high_fid, config.lines_per_mm, false)
+                                generate_image_gcode(&path_clone, &config, false)
                             {
                                 state_clone.lock().unwrap().send_command(gcode);
                             }
@@ -403,27 +375,9 @@ pub fn render_image_controls<'a, 'render>(
                         state,
                         move || {
                             let config = state.lock().unwrap().get_image_burn_config();
-                            let fit = if config.base.boundary_enabled {
-                                Some((config.base.boundary_w, config.base.boundary_h))
-                            } else {
-                                None
-                            };
-                            let center = if config.base.boundary_enabled {
-                                (config.base.boundary_x + config.base.boundary_w / 2.0, config.base.boundary_y + config.base.boundary_h / 2.0)
-                            } else {
-                                (200.0, 200.0)
-                            };
                             generate_image_gcode(
                                 &path_clone,
-                                config.base.power,
-                                config.base.feed_rate,
-                                config.base.scale,
-                                config.base.passes,
-                                fit,
-                                center,
-                                config.low_fid,
-                                config.high_fid,
-                                config.lines_per_mm,
+                                &config,
                                 false,
                             )
                             .ok()

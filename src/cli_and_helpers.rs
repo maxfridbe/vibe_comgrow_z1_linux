@@ -1,5 +1,6 @@
 use crate::gcode;
 use crate::svg_helper;
+use crate::state::{BurnConfig, ImageBurnConfig, TextBurnConfig};
 use crate::ui::Section;
 use crate::virtual_device::VirtualDevice;
 use font_kit::family_name::FamilyName;
@@ -76,9 +77,21 @@ pub fn run_dynamic_pattern_cli(args: &[OsString]) -> Result<(), Box<dyn std::err
     let scl: String = opts.value_from_str("--scale")?;
     let cx: f32 = opts.value_from_str("--cx")?;
     let cy: f32 = opts.value_from_str("--cy")?;
-    let center: String = format!("{},{}", cx, cy);
+    let config = BurnConfig {
+        power: pwr.trim_end_matches('%').parse::<f32>()? * 10.0,
+        feed_rate: spd.trim_end_matches('%').parse::<f32>()? * 10.0,
+        scale: scl.trim_end_matches('x').parse::<f32>()?,
+        passes: 1,
+        bounds: crate::state::Bounds {
+            enabled: true,
+            x: cx - 200.0,
+            y: cy - 200.0,
+            w: 400.0,
+            h: 400.0,
+        },
+    };
 
-    let (gcode, _) = generate_pattern_gcode(&shape, &pwr, &spd, &scl, "1", None, &center)?;
+    let (gcode, _) = generate_pattern_gcode(&shape, &config, false)?;
     println!("{}", gcode);
     Ok(())
 }
@@ -93,18 +106,24 @@ fn parse_pair(s: &str) -> Result<(f32, f32), Box<dyn std::error::Error + Send + 
 
 pub fn generate_pattern_gcode(
     shape: &str,
-    pwr: &str,
-    spd: &str,
-    scale: &str,
-    passes: &str,
-    _fit: Option<String>,
-    center: &str,
+    config: &BurnConfig,
+    is_preview: bool,
 ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
-    let pwr_val = pwr.trim_end_matches('%').parse::<f32>()?;
-    let spd_val = spd.trim_end_matches('%').parse::<f32>()?;
-    let scl_val = scale.trim_end_matches('x').parse::<f32>()?;
-    let pas_val = passes.parse::<u32>().unwrap_or(1);
-    let (cx, cy) = parse_pair(center)?;
+    let pwr_val = config.power / 10.0;
+    let spd_val = if is_preview { config.feed_rate.min(1000.0) / 10.0 } else { config.feed_rate / 10.0 };
+    let scl_val = config.scale;
+    let pas_val = config.passes;
+    let (cx, cy) = if config.bounds.enabled {
+        (config.bounds.x + config.bounds.w / 2.0, config.bounds.y + config.bounds.h / 2.0)
+    } else {
+        (200.0, 200.0)
+    };
+    let center = format!("{},{}", cx, cy);
+    let parsed_fit = if config.bounds.enabled {
+        Some((config.bounds.w, config.bounds.h))
+    } else {
+        None
+    };
 
     // Embedded SVG Assets
     let car_svg = include_str!("../assets/car.svg");
@@ -181,12 +200,7 @@ pub fn generate_pattern_gcode(
                     "car" => car_svg,
                     _ => unreachable!(),
                 };
-                let mut parsed_fit = None;
-                if let Some(ref f) = _fit {
-                    if let Ok(pair) = parse_pair(f) {
-                        parsed_fit = Some(pair);
-                    }
-                }
+
                 if let Ok((svg_gcode, _, _, _, _)) = svg_helper::load_svg_data_as_gcode(
                     svg_data.as_bytes(),
                     scl_val,
@@ -221,12 +235,7 @@ pub fn generate_pattern_gcode(
                 };
 
                 if let Some(p) = final_path {
-                    let mut parsed_fit = None;
-                    if let Some(ref f) = _fit {
-                        if let Ok(pair) = parse_pair(f) {
-                            parsed_fit = Some(pair);
-                        }
-                    }
+
 
                     if let Ok((svg_gcode, _, _, _, _)) = svg_helper::load_svg_as_gcode(
                         &p,
@@ -257,17 +266,26 @@ pub fn generate_pattern_gcode(
 
 pub fn generate_image_gcode(
     path: &str,
-    pwr_max: f32,
-    speed: f32,
-    scale: f32,
-    passes: u32,
-    fit: Option<(f32, f32)>,
-    center: (f32, f32),
-    low_fid: f32,
-    high_fid: f32,
-    lines_per_mm: f32,
+    config: &ImageBurnConfig,
     is_preview: bool,
 ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+    let pwr_max = config.base.power;
+    let speed = if is_preview { config.base.feed_rate * 10.0 } else { config.base.feed_rate };
+    let scale = config.base.scale;
+    let passes = config.base.passes;
+    let low_fid = config.low_fid;
+    let high_fid = config.high_fid;
+    let lines_per_mm = config.lines_per_mm;
+    let fit = if config.base.bounds.enabled {
+        Some((config.base.bounds.w, config.base.bounds.h))
+    } else {
+        None
+    };
+    let center = if config.base.bounds.enabled {
+        (config.base.bounds.x + config.base.bounds.w / 2.0, config.base.bounds.y + config.base.bounds.h / 2.0)
+    } else {
+        (200.0, 200.0)
+    };
     let img_base = image::open(path)?;
 
     let orig_w = img_base.width() as f32;
@@ -465,22 +483,32 @@ impl OutlineSink for VectorGCodeBuilder {
 }
 
 pub fn generate_text_gcode(
-    text: &str,
-    pwr_max: f32,
-    speed: f32,
-    scale: f32,
-    passes: u32,
-    fit: Option<(f32, f32)>,
-    center: (f32, f32),
-    bold: bool,
-    outline: bool,
-    letter_spacing: f32,
-    _line_spacing: f32,
-    curve_steps: u32,
-    lines_per_mm: f32,
-    font_family: &str,
+    config: &TextBurnConfig,
     is_preview: bool,
 ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+    let text = &config.content;
+    let pwr_max = config.base.power;
+    let speed = config.base.feed_rate;
+    let scale = config.base.scale;
+    let passes = config.base.passes;
+    let bold = config.is_bold;
+    let outline = config.is_outline;
+    let letter_spacing = config.letter_spacing;
+    let _line_spacing = config.line_spacing;
+    let curve_steps = config.curve_steps;
+    let lines_per_mm = config.lines_per_mm;
+    let font_family = &config.font;
+
+    let fit = if config.base.bounds.enabled {
+        Some((config.base.bounds.w, config.base.bounds.h))
+    } else {
+        None
+    };
+    let center = if config.base.bounds.enabled {
+        (config.base.bounds.x + config.base.bounds.w / 2.0, config.base.bounds.y + config.base.bounds.h / 2.0)
+    } else {
+        (200.0, 200.0)
+    };
     use font_kit::canvas::{Canvas, Format, RasterizationOptions};
     use font_kit::hinting::HintingOptions;
     use pathfinder_geometry::rect::RectF;
@@ -658,8 +686,19 @@ pub fn generate_text_gcode(
     let temp_path = "temp_text_render.png";
     img.export_image(temp_path);
 
-    let result =
-        generate_image_gcode(temp_path, pwr_max, speed, final_user_scale, passes, None, center, 0.0, 1.0, lines_per_mm, is_preview);
+    let img_config = ImageBurnConfig {
+        base: BurnConfig {
+            power: config.base.power,
+            feed_rate: config.base.feed_rate,
+            scale: config.base.scale,
+            passes: config.base.passes,
+            bounds: config.base.bounds.clone(),
+        },
+        low_fid: 0.0,
+        high_fid: 1.0,
+        lines_per_mm: config.lines_per_mm,
+    };
+    let result = generate_image_gcode(temp_path, &img_config, is_preview);
     let _ = std::fs::remove_file(temp_path);
     result
 }
@@ -760,36 +799,31 @@ mod tests {
 
     #[test]
     fn test_text_gcode_generation_not_empty() {
-        let text = "Hi";
-        let pwr = 100.0;
-        let spd = 1000.0;
-        let scl = 1.0;
-        let passes = 1;
-        let fit = None;
-        let center = (200.0, 200.0);
-        let bold = false;
-        let _outline = false;
-        let letter_spacing = 0.0;
-        let _line_spacing = 1.0;
-        let font_family = "Default";
+        let config = TextBurnConfig {
+            base: BurnConfig {
+                power: 100.0,
+                feed_rate: 1000.0,
+                scale: 1.0,
+                passes: 1,
+                bounds: crate::state::Bounds {
+                    enabled: false,
+                    x: 0.0,
+                    y: 0.0,
+                    w: 400.0,
+                    h: 400.0,
+                },
+            },
+            content: "Hi".to_string(),
+            font: "Default".to_string(),
+            is_bold: false,
+            is_outline: false,
+            letter_spacing: 0.0,
+            line_spacing: 1.0,
+            curve_steps: 10,
+            lines_per_mm: 5.0,
+        };
 
-        let result = generate_text_gcode(
-            text,
-            pwr,
-            spd,
-            scl,
-            passes,
-            fit,
-            center,
-            bold,
-            _outline,
-            letter_spacing,
-            _line_spacing,
-            10,
-            5.0,
-            font_family,
-            true,
-        );
+        let result = generate_text_gcode(&config, true);
 
         match result {
             Ok((gcode, label)) => {
@@ -804,36 +838,31 @@ mod tests {
 
     #[test]
     fn test_text_gcode_generation_outline() {
-        let text = "Hi";
-        let pwr = 100.0;
-        let spd = 1000.0;
-        let scl = 1.0;
-        let passes = 1;
-        let fit = None;
-        let center = (200.0, 200.0);
-        let bold = false;
-        let outline = true;
-        let letter_spacing = 0.0;
-        let _line_spacing = 1.0;
-        let font_family = "Default";
+        let config = TextBurnConfig {
+            base: BurnConfig {
+                power: 100.0,
+                feed_rate: 1000.0,
+                scale: 1.0,
+                passes: 1,
+                bounds: crate::state::Bounds {
+                    enabled: false,
+                    x: 0.0,
+                    y: 0.0,
+                    w: 400.0,
+                    h: 400.0,
+                },
+            },
+            content: "Hi".to_string(),
+            font: "Default".to_string(),
+            is_bold: false,
+            is_outline: true,
+            letter_spacing: 0.0,
+            line_spacing: 1.0,
+            curve_steps: 10,
+            lines_per_mm: 5.0,
+        };
 
-        let result = generate_text_gcode(
-            text,
-            pwr,
-            spd,
-            scl,
-            passes,
-            fit,
-            center,
-            bold,
-            outline,
-            letter_spacing,
-            _line_spacing,
-            10,
-            5.0,
-            font_family,
-            true,
-        );
+        let result = generate_text_gcode(&config, true);
 
         match result {
             Ok((gcode, label)) => {
@@ -850,7 +879,20 @@ mod tests {
     fn test_embedded_shapes_generation() {
         let shapes = vec!["star", "stars8", "stars9", "car", "square", "heart"];
         for shape in shapes {
-            let result = generate_pattern_gcode(shape, "10%", "1000%", "1.0x", "1", None, "200,200");
+            let config = BurnConfig {
+                power: 100.0,
+                feed_rate: 10000.0,
+                scale: 1.0,
+                passes: 1,
+                bounds: crate::state::Bounds {
+                    enabled: false,
+                    x: 0.0,
+                    y: 0.0,
+                    w: 400.0,
+                    h: 400.0,
+                },
+            };
+            let result = generate_pattern_gcode(shape, &config, false);
             match result {
                 Ok((gcode, _)) => {
                     assert!(!gcode.is_empty(), "G-code for {} should not be empty", shape);
@@ -888,11 +930,13 @@ mod tests {
                         copied_at: None,
                         serial_logs: std::collections::VecDeque::new(),
                         tx,
-                        boundary_enabled: false,
-                        boundary_x: 0.0,
-                        boundary_y: 0.0,
-                        boundary_w: 400.0,
-                        boundary_h: 400.0,
+                        bounds: crate::state::Bounds {
+                            enabled: false,
+                            x: 0.0,
+                            y: 0.0,
+                            w: 400.0,
+                            h: 400.0,
+                        },
                         img_low_fidelity: 0.0,
                         img_high_fidelity: 1.0,
                         img_lines_per_mm: 5.0,

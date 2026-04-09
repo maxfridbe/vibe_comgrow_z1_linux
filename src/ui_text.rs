@@ -30,13 +30,13 @@ pub fn render_text_controls<'a, 'render>(
     let is_idle = { state.lock().unwrap().machine_state == "Idle" };
     let (enabled, bx, by, bw, bh) = {
         let g = state.lock().unwrap();
-        (g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
+        (g.bounds.enabled, g.bounds.x, g.bounds.y, g.bounds.w, g.bounds.h)
     };
 
     clay.with(&left_col, |clay_scope| {
         // 1. Boundary Settings
-        let mut boundary_box = Declaration::<Texture2D, ()>::new();
-        boundary_box
+        let mut bounds_box = Declaration::<Texture2D, ()>::new();
+        bounds_box
             .layout()
             .width(grow!())
             .direction(LayoutDirection::TopToBottom)
@@ -48,7 +48,7 @@ pub fn render_text_controls<'a, 'render>(
             .all(16.0 * font_scale)
             .end();
 
-        clay_scope.with(&boundary_box, |clay_scope| {
+        clay_scope.with(&bounds_box, |clay_scope| {
             clay_scope.text(
                 "BOUNDARY SETTINGS",
                 clay_layout::text::TextConfig::new()
@@ -59,11 +59,11 @@ pub fn render_text_controls<'a, 'render>(
 
             render_checkbox(
                 clay_scope,
-                "txt_boundary_enabled",
+                "txt_bounds_enabled",
                 "Enable Boundary Clipping",
                 enabled,
                 state,
-                |s, v| s.boundary_enabled = v,
+                |s, v| s.bounds.enabled = v,
                 mouse_pressed,
                 font_scale,
             );
@@ -83,7 +83,7 @@ pub fn render_text_controls<'a, 'render>(
                         400.0,
                         COLOR_SLIDER_X,
                         state,
-                        |s, v| s.boundary_x = v,
+                        |s, v| s.bounds.x = v,
                         mouse_pos,
                         mouse_down,
                         scroll_y,
@@ -99,7 +99,7 @@ pub fn render_text_controls<'a, 'render>(
                         400.0,
                         COLOR_SLIDER_W,
                         state,
-                        |s, v| s.boundary_w = v,
+                        |s, v| s.bounds.w = v,
                         mouse_pos,
                         mouse_down,
                         scroll_y,
@@ -119,7 +119,7 @@ pub fn render_text_controls<'a, 'render>(
                         400.0,
                         COLOR_SLIDER_Y,
                         state,
-                        |s, v| s.boundary_y = v,
+                        |s, v| s.bounds.y = v,
                         mouse_pos,
                         mouse_down,
                         scroll_y,
@@ -135,7 +135,7 @@ pub fn render_text_controls<'a, 'render>(
                         400.0,
                         COLOR_SLIDER_H,
                         state,
-                        |s, v| s.boundary_h = v,
+                        |s, v| s.bounds.h = v,
                         mouse_pos,
                         mouse_down,
                         scroll_y,
@@ -579,32 +579,8 @@ pub fn render_text_controls<'a, 'render>(
                             let config = g.get_text_burn_config();
                             let state_clone = Arc::clone(state);
                             std::thread::spawn(move || {
-                                let fit = if config.base.boundary_enabled {
-                                    Some((config.base.boundary_w, config.base.boundary_h))
-                                } else {
-                                    None
-                                };
-                                let center = if config.base.boundary_enabled {
-                                    (config.base.boundary_x + config.base.boundary_w / 2.0, config.base.boundary_y + config.base.boundary_h / 2.0)
-                                } else {
-                                    (200.0, 200.0)
-                                };
-
                                 if let Ok((gcode, _)) = generate_text_gcode(
-                                    &config.content,
-                                    config.base.power,
-                                    config.base.feed_rate * 10.0,
-                                    config.base.scale,
-                                    config.base.passes,
-                                    fit,
-                                    center,
-                                    config.is_bold,
-                                    config.is_outline,
-                                    config.letter_spacing,
-                                    config.line_spacing,
-                                    config.curve_steps,
-                                    config.lines_per_mm,
-                                    &config.font,
+                                    &config,
                                     true,
                                 ) {
                                     let mut g = state_clone.lock().unwrap();
@@ -664,20 +640,8 @@ pub fn render_text_controls<'a, 'render>(
                     let state_clone = Arc::clone(state);
                     std::thread::spawn(move || {
                         let config = state_data;
-                        let fit = if config.base.boundary_enabled {
-                            Some((config.base.boundary_w, config.base.boundary_h))
-                        } else {
-                            None
-                        };
-                        let center = if config.base.boundary_enabled {
-                            (config.base.boundary_x + config.base.boundary_w / 2.0, config.base.boundary_y + config.base.boundary_h / 2.0)
-                        } else {
-                            (200.0, 200.0)
-                        };
-
                         if let Ok((gcode, _)) = generate_text_gcode(
-                            &config.content, config.base.power, config.base.feed_rate, config.base.scale, config.base.passes, fit, center, config.is_bold, config.is_outline, config.letter_spacing, config.line_spacing, config.curve_steps, config.lines_per_mm,
-                            &config.font, false,
+                            &config, false,
                         ) {
                             state_clone.lock().unwrap().send_command(gcode);
                         }
@@ -690,31 +654,9 @@ pub fn render_text_controls<'a, 'render>(
                     state,
                     || {
                         let g = state.lock().unwrap();
-                        let fit = if g.boundary_enabled {
-                            Some((g.boundary_w, g.boundary_h))
-                        } else {
-                            None
-                        };
-                        let center = if g.boundary_enabled {
-                            (g.boundary_x + g.boundary_w / 2.0, g.boundary_y + g.boundary_h / 2.0)
-                        } else {
-                            (200.0, 200.0)
-                        };
+                        let config = g.get_text_burn_config();
                         generate_text_gcode(
-                            &g.text_content,
-                            g.power,
-                            g.feed_rate,
-                            g.scale,
-                            g.passes,
-                            fit,
-                            center,
-                            g.text_is_bold,
-                            g.text_is_outline,
-                            g.text_letter_spacing,
-                            g.text_line_spacing,
-                            g.text_curve_steps,
-                            g.text_lines_per_mm,
-                            &g.text_font,
+                            &config,
                             false,
                         )
                         .ok()

@@ -6,16 +6,21 @@ use std::collections::VecDeque;
 use std::sync::mpsc::Sender;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Bounds {
+    pub enabled: bool,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BurnConfig {
     pub power: f32,
     pub feed_rate: f32,
     pub scale: f32,
     pub passes: u32,
-    pub boundary_enabled: bool,
-    pub boundary_x: f32,
-    pub boundary_y: f32,
-    pub boundary_w: f32,
-    pub boundary_h: f32,
+    pub bounds: Bounds,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -55,11 +60,7 @@ pub struct SavedState {
     pub feed_rate: f32,
     pub scale: f32,
     pub passes: u32,
-    pub boundary_enabled: bool,
-    pub boundary_x: f32,
-    pub boundary_y: f32,
-    pub boundary_w: f32,
-    pub boundary_h: f32,
+    pub bounds: Bounds,
     pub img_low_fidelity: f32,
     pub img_high_fidelity: f32,
     pub img_lines_per_mm: f32,
@@ -126,11 +127,7 @@ pub struct AppState {
     pub copied_at: Option<std::time::Instant>,
     pub serial_logs: VecDeque<LogEntry>,
     pub tx: Sender<String>,
-    pub boundary_enabled: bool,
-    pub boundary_x: f32,
-    pub boundary_y: f32,
-    pub boundary_w: f32,
-    pub boundary_h: f32,
+    pub bounds: Bounds,
     pub img_low_fidelity: f32,
     pub img_high_fidelity: f32,
     pub img_lines_per_mm: f32,
@@ -441,11 +438,7 @@ impl AppState {
             feed_rate: self.feed_rate,
             scale: self.scale,
             passes: self.passes,
-            boundary_enabled: self.boundary_enabled,
-            boundary_x: self.boundary_x,
-            boundary_y: self.boundary_y,
-            boundary_w: self.boundary_w,
-            boundary_h: self.boundary_h,
+            bounds: self.bounds.clone(),
         }
     }
 
@@ -488,11 +481,7 @@ impl AppState {
             feed_rate: self.feed_rate,
             scale: self.scale,
             passes: self.passes,
-            boundary_enabled: self.boundary_enabled,
-            boundary_x: self.boundary_x,
-            boundary_y: self.boundary_y,
-            boundary_w: self.boundary_w,
-            boundary_h: self.boundary_h,
+            bounds: self.bounds.clone(),
             img_low_fidelity: self.img_low_fidelity,
             img_high_fidelity: self.img_high_fidelity,
             img_lines_per_mm: self.img_lines_per_mm,
@@ -514,11 +503,7 @@ impl AppState {
         self.feed_rate = state.feed_rate;
         self.scale = state.scale;
         self.passes = state.passes;
-        self.boundary_enabled = state.boundary_enabled;
-        self.boundary_x = state.boundary_x;
-        self.boundary_y = state.boundary_y;
-        self.boundary_w = state.boundary_w;
-        self.boundary_h = state.boundary_h;
+        self.bounds = state.bounds.clone();
         self.img_low_fidelity = state.img_low_fidelity;
         self.img_high_fidelity = state.img_high_fidelity;
         self.img_lines_per_mm = state.img_lines_per_mm;

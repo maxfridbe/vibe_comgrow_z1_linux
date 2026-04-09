@@ -72,11 +72,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         copied_at: None,
         serial_logs: std::collections::VecDeque::new(),
         tx: mpsc::channel().0,
-        boundary_enabled: false,
-        boundary_x: 0.0,
-        boundary_y: 0.0,
-        boundary_w: 100.0,
-        boundary_h: 100.0,
+        bounds: crate::state::Bounds {
+            enabled: false,
+            x: 0.0,
+            y: 0.0,
+            w: 400.0,
+            h: 400.0,
+        },
         img_low_fidelity: 0.0,
         img_high_fidelity: 1.0,
         img_lines_per_mm: 5.0,
@@ -1463,13 +1465,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 );
             }
             let guard = state.lock().unwrap();
-            if guard.boundary_enabled {
-                let bx = draw_area.x + (guard.boundary_x / 400.0) * side;
+            if guard.bounds.enabled {
+                let bx = draw_area.x + (guard.bounds.x / 400.0) * side;
                 let by = draw_area.y + draw_area.height
-                    - (guard.boundary_y / 400.0) * side
-                    - (guard.boundary_h / 400.0) * side;
-                let bw = (guard.boundary_w / 400.0) * side;
-                let bh = (guard.boundary_h / 400.0) * side;
+                    - (guard.bounds.y / 400.0) * side
+                    - (guard.bounds.h / 400.0) * side;
+                let bw = (guard.bounds.w / 400.0) * side;
+                let bh = (guard.bounds.h / 400.0) * side;
                 d.draw_rectangle_lines_ex(
                     raylib::math::Rectangle::new(bx, by, bw, bh),
                     2.0,

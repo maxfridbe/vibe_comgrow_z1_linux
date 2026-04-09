@@ -31,13 +31,13 @@ pub fn render_test_controls<'a, 'render>(
     let is_idle = { state.lock().unwrap().machine_state == "Idle" };
     let (enabled, bx, by, bw, bh) = {
         let g = state.lock().unwrap();
-        (g.boundary_enabled, g.boundary_x, g.boundary_y, g.boundary_w, g.boundary_h)
+        (g.bounds.enabled, g.bounds.x, g.bounds.y, g.bounds.w, g.bounds.h)
     };
 
     clay.with(&left_col, |clay_scope| {
         // 1. Boundary Settings (At the top)
-        let mut boundary_box = Declaration::<Texture2D, ()>::new();
-        boundary_box
+        let mut bounds_box = Declaration::<Texture2D, ()>::new();
+        bounds_box
             .layout()
             .width(grow!())
             .direction(LayoutDirection::TopToBottom)
@@ -49,7 +49,7 @@ pub fn render_test_controls<'a, 'render>(
             .all(16.0 * font_scale)
             .end();
 
-        clay_scope.with(&boundary_box, |clay_scope| {
+        clay_scope.with(&bounds_box, |clay_scope| {
             clay_scope.text(
                 "BOUNDARY SETTINGS",
                 clay_layout::text::TextConfig::new()
@@ -60,11 +60,11 @@ pub fn render_test_controls<'a, 'render>(
 
             render_checkbox(
                 clay_scope,
-                "boundary_enabled",
+                "bounds_enabled",
                 "Enable Boundary Clipping",
                 enabled,
                 state,
-                |s, v| s.boundary_enabled = v,
+                |s, v| s.bounds.enabled = v,
                 mouse_pressed,
                 font_scale,
             );
@@ -84,7 +84,7 @@ pub fn render_test_controls<'a, 'render>(
                         400.0,
                         COLOR_SLIDER_X,
                         state,
-                        |s, v| s.boundary_x = v,
+                        |s, v| s.bounds.x = v,
                         mouse_pos,
                         mouse_down,
                         scroll_y,
@@ -100,7 +100,7 @@ pub fn render_test_controls<'a, 'render>(
                         400.0,
                         COLOR_SLIDER_W,
                         state,
-                        |s, v| s.boundary_w = v,
+                        |s, v| s.bounds.w = v,
                         mouse_pos,
                         mouse_down,
                         scroll_y,
@@ -120,7 +120,7 @@ pub fn render_test_controls<'a, 'render>(
                         400.0,
                         COLOR_SLIDER_Y,
                         state,
-                        |s, v| s.boundary_y = v,
+                        |s, v| s.bounds.y = v,
                         mouse_pos,
                         mouse_down,
                         scroll_y,
@@ -136,7 +136,7 @@ pub fn render_test_controls<'a, 'render>(
                         400.0,
                         COLOR_SLIDER_H,
                         state,
-                        |s, v| s.boundary_h = v,
+                        |s, v| s.bounds.h = v,
                         mouse_pos,
                         mouse_down,
                         scroll_y,
@@ -258,26 +258,11 @@ pub fn render_test_controls<'a, 'render>(
                             !is_idle,
                         ) {
                             let config = state.lock().unwrap().get_burn_config();
-                            let fit = if config.boundary_enabled {
-                                Some(format!("{}x{}", config.boundary_w, config.boundary_h))
-                            } else {
-                                None
-                            };
-                            let center = if config.boundary_enabled {
-                                format!("{},{}", config.boundary_x + config.boundary_w / 2.0, config.boundary_y + config.boundary_h / 2.0)
-                            } else {
-                                "200,200".to_string()
-                            };
-
                             let result: Result<(String, String), Box<dyn std::error::Error + Send + Sync>> =
                                 generate_pattern_gcode(
                                     &p,
-                                    &format!("{}%", config.power / 10.0),
-                                    &format!("{}%", config.feed_rate / 10.0),
-                                    &format!("{}x", config.scale),
-                                    &config.passes.to_string(),
-                                    fit,
-                                    &center,
+                                    &config,
+                                    false,
                                 );
                             if let Ok((gcode, _)) = result {
                                 state.lock().unwrap().send_command(gcode);
@@ -290,24 +275,10 @@ pub fn render_test_controls<'a, 'render>(
                             state,
                             move || {
                                 let config = state.lock().unwrap().get_burn_config();
-                                let fit = if config.boundary_enabled {
-                                    Some(format!("{}x{}", config.boundary_w, config.boundary_h))
-                                } else {
-                                    None
-                                };
-                                let center = if config.boundary_enabled {
-                                    format!("{},{}", config.boundary_x + config.boundary_w / 2.0, config.boundary_y + config.boundary_h / 2.0)
-                                } else {
-                                    "200,200".to_string()
-                                };
                                 generate_pattern_gcode(
                                     &path_clone,
-                                    &format!("{}%", config.power / 10.0),
-                                    &format!("{}%", config.feed_rate / 10.0),
-                                    &format!("{}x", config.scale),
-                                    &config.passes.to_string(),
-                                    fit,
-                                    &center,
+                                    &config,
+                                    false,
                                 )
                                 .ok()
                                 .map(|(g, _)| g)
@@ -338,17 +309,6 @@ pub fn render_test_controls<'a, 'render>(
                                     g.preview_paths.clear();
                                     g.is_processing = true;
                                     let config = g.get_burn_config();
-                                    let fit = if config.boundary_enabled {
-                                        Some(format!("{}x{}", config.boundary_w, config.boundary_h))
-                                    } else {
-                                        None
-                                    };
-                                    let center = if config.boundary_enabled {
-                                        format!("{},{}", config.boundary_x + config.boundary_w / 2.0, config.boundary_y + config.boundary_h / 2.0)
-                                    } else {
-                                        "200,200".to_string()
-                                    };
-                                    let preview_spd = config.feed_rate.min(1000.0);
                                     let state_clone = Arc::clone(state);
                                     let path_clone = p.clone();
 
@@ -356,12 +316,8 @@ pub fn render_test_controls<'a, 'render>(
                                         let result: Result<(String, String), Box<dyn std::error::Error + Send + Sync>> =
                                             generate_pattern_gcode(
                                                 &path_clone,
-                                                &format!("{}%", config.power / 10.0),
-                                                &format!("{}%", preview_spd),
-                                                &format!("{}x", config.scale),
-                                                &config.passes.to_string(),
-                                                fit,
-                                                &center,
+                                                &config,
+                                                true,
                                             );
                                         if let Ok((gcode, _)) = result {
                                             let mut g = state_clone.lock().unwrap();
@@ -562,25 +518,10 @@ pub fn render_test_controls<'a, 'render>(
                                     ) {
                                         let config = state.lock().unwrap().get_burn_config();
 
-                                        let fit = if config.boundary_enabled {
-                                            Some(format!("{}x{}", config.boundary_w, config.boundary_h))
-                                        } else {
-                                            None
-                                        };
-                                        let center = if config.boundary_enabled {
-                                            format!("{},{}", config.boundary_x + config.boundary_w / 2.0, config.boundary_y + config.boundary_h / 2.0)
-                                        } else {
-                                            "200,200".to_string()
-                                        };
-
                                         match generate_pattern_gcode(
                                             cmd.label,
-                                            &format!("{}%", config.power / 10.0),
-                                            &format!("{}%", config.feed_rate / 10.0),
-                                            &format!("{}x", config.scale),
-                                            &config.passes.to_string(),
-                                            fit,
-                                            &center,
+                                            &config,
+                                            false,
                                         ) {
                                             Ok((gcode, _)) => {
                                                 state.lock().unwrap().send_command(gcode);
@@ -597,24 +538,10 @@ pub fn render_test_controls<'a, 'render>(
                                         state,
                                         move || {
                                             let config = state.lock().unwrap().get_burn_config();
-                                            let fit = if config.boundary_enabled {
-                                                Some(format!("{}x{}", config.boundary_w, config.boundary_h))
-                                            } else {
-                                                None
-                                            };
-                                            let center = if config.boundary_enabled {
-                                                format!("{},{}", config.boundary_x + config.boundary_w / 2.0, config.boundary_y + config.boundary_h / 2.0)
-                                            } else {
-                                                "200,200".to_string()
-                                            };
                                             generate_pattern_gcode(
                                                 &label_clone,
-                                                &format!("{}%", config.power / 10.0),
-                                                &format!("{}%", config.feed_rate / 10.0),
-                                                &format!("{}x", config.scale),
-                                                &config.passes.to_string(),
-                                                fit,
-                                                &center,
+                                                &config,
+                                                false,
                                             )
                                             .ok()
                                             .map(|(g, _)| g)
@@ -646,32 +573,14 @@ pub fn render_test_controls<'a, 'render>(
                                                 g.preview_paths.clear();
                                                 g.is_processing = true;
                                                 let config = g.get_burn_config();
-                                                let fit = if config.boundary_enabled {
-                                                    Some(format!("{}x{}", config.boundary_w, config.boundary_h))
-                                                } else {
-                                                    None
-                                                };
-                                                let center = if config.boundary_enabled {
-                                                    format!("{},{}", config.boundary_x + config.boundary_w / 2.0, config.boundary_y + config.boundary_h / 2.0)
-                                                } else {
-                                                    "200,200".to_string()
-                                                };
-
-                                                // 10x speed for preview
-                                                let preview_spd = (config.feed_rate / 10.0 * 10.0).min(1000.0); // Equivalent to feed_rate.min(1000.0)
-                                                let preview_spd = config.feed_rate.min(1000.0);
                                                 let label_clone = cmd.label.to_string();
                                                 let state_clone = Arc::clone(state);
 
                                                 std::thread::spawn(move || {
                                                     if let Ok((gcode, _)) = generate_pattern_gcode(
                                                         &label_clone,
-                                                        &format!("{}%", config.power / 10.0),
-                                                        &format!("{}%", preview_spd),
-                                                        &format!("{}x", config.scale),
-                                                        &config.passes.to_string(),
-                                                        fit,
-                                                        &center,
+                                                        &config,
+                                                        true,
                                                     ) {
                                                         let mut g = state_clone.lock().unwrap();
                                                         let original_v_pos = g.v_pos;
