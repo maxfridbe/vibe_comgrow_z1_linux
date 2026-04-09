@@ -360,12 +360,17 @@ pub fn render_image_controls<'a, 'render>(
                         let state_clone = Arc::clone(state);
                         let path_clone = p.clone();
                         std::thread::spawn(move || {
-                            if let Ok((gcode, _)) =
+                            use std::panic;
+                            let result = panic::catch_unwind(|| {
                                 generate_image_gcode(&path_clone, &config, false)
-                            {
-                                state_clone.lock().unwrap().send_command(gcode);
+                            });
+
+                            let mut g = state_clone.lock().unwrap();
+                            match result {
+                                Ok(Ok((gcode, _))) => g.send_command(gcode),
+                                _ => {}
                             }
-                            state_clone.lock().unwrap().is_processing = false;
+                            g.is_processing = false;
                         });
                     }
                     let path_clone = p.clone();

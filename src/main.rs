@@ -1501,6 +1501,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 );
                 d.draw_line_ex(start, end, preview_thickness, raylib::color::Color::new(0, 255, 0, (p.intensity * 255.0) as u8));
             }
+
             let head_pos = raylib::math::Vector2::new(
                 draw_area.x + (guard.machine_pos.x / 400.0) * side,
                 draw_area.y + draw_area.height - (guard.machine_pos.y / 400.0) * side,
