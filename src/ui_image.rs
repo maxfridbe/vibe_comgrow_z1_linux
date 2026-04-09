@@ -293,6 +293,7 @@ pub fn render_image_controls<'a, 'render>(
                                     if let Ok((gcode, _)) = generate_image_gcode(
                                         &path_clone,
                                         &config,
+                                        None,
                                         true,
                                     ) {
                                         let mut g = state_clone.lock().unwrap();
@@ -362,7 +363,7 @@ pub fn render_image_controls<'a, 'render>(
                         std::thread::spawn(move || {
                             use std::panic;
                             let result = panic::catch_unwind(|| {
-                                generate_image_gcode(&path_clone, &config, false)
+                                generate_image_gcode(&path_clone, &config, None, false)
                             });
 
                             let mut g = state_clone.lock().unwrap();
@@ -383,6 +384,7 @@ pub fn render_image_controls<'a, 'render>(
                             generate_image_gcode(
                                 &path_clone,
                                 &config,
+                                None,
                                 false,
                             )
                             .ok()

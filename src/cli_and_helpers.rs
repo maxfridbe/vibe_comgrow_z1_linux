@@ -177,6 +177,7 @@ pub fn generate_pattern_gcode(
 pub fn generate_image_gcode(
     path: &str,
     config: &ImageBurnConfig,
+    intensity_override: Option<f32>,
     is_preview: bool,
 ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
     let pwr_max = config.base.power;
@@ -282,10 +283,21 @@ pub fn generate_image_gcode(
                     let mut x = fx;
                     while x <= lx {
                         let val = row[x];
-                        let s_val = (val * pwr_max * 10.0) as i32;
+                        let s_val = if let Some(override_val) = intensity_override {
+                            if val > 0.01 { override_val as i32 } else { 0 }
+                        } else {
+                            (val * pwr_max) as i32
+                        };
                         // Find consecutive pixels with same intensity
                         let mut end_x = x;
-                        while end_x < lx && ((row[end_x + 1] * pwr_max * 10.0) as i32) == s_val {
+                        while end_x < lx {
+                            let next_val = row[end_x + 1];
+                            let next_s = if let Some(override_val) = intensity_override {
+                                if next_val > 0.01 { override_val as i32 } else { 0 }
+                            } else {
+                                (next_val * pwr_max) as i32
+                            };
+                            if next_s != s_val { break; }
                             end_x += 1;
                         }
                         let dest_x = offset_x + (end_x as f32 + 1.0) * pixel_scale_x;
@@ -301,9 +313,20 @@ pub fn generate_image_gcode(
                     let mut x = lx;
                     while x >= fx {
                         let val = row[x];
-                        let s_val = (val * pwr_max * 10.0) as i32;
+                        let s_val = if let Some(override_val) = intensity_override {
+                            if val > 0.01 { override_val as i32 } else { 0 }
+                        } else {
+                            (val * pwr_max) as i32
+                        };
                         let mut end_x = x;
-                        while end_x > fx && ((row[end_x - 1] * pwr_max * 10.0) as i32) == s_val {
+                        while end_x > fx {
+                            let next_val = row[end_x - 1];
+                            let next_s = if let Some(override_val) = intensity_override {
+                                if next_val > 0.01 { override_val as i32 } else { 0 }
+                            } else {
+                                (next_val * pwr_max) as i32
+                            };
+                            if next_s != s_val { break; }
                             end_x -= 1;
                         }
                         let dest_x = offset_x + (end_x as f32) * pixel_scale_x;
@@ -426,10 +449,25 @@ pub fn generate_text_gcode(
     let mut img_buffer = image::ImageBuffer::new(width, target_pixels_h);
     for (x, y, pixel) in img_buffer.enumerate_pixels_mut() {
         let val = canvas.pixels[(y * width + x) as usize];
-        *pixel = image::Rgba([255, 255, 255, 255 - val]);
+        let inv = 255 - val;
+        *pixel = image::Rgba([inv, inv, inv, 255]);
     }
     img_buffer.save(temp_path)?;
-    let result = generate_image_gcode(temp_path, &ImageBurnConfig { base: config.base.clone(), low_fid: 0.0, high_fid: 1.0, lines_per_mm }, is_preview);
+
+    let mut image_base_config = config.base.clone();
+    // If bounds are disabled, we must ensure generate_image_gcode doesn't rescale based on pixels.
+    // The physical size we want is out_w, and the image has 'width' pixels.
+    // So scale should be out_w / width. Since width = out_w * lines_per_mm, scale = 1.0 / lines_per_mm.
+    if !image_base_config.bounds.enabled {
+        image_base_config.scale = 1.0 / lines_per_mm;
+    }
+
+    let result = generate_image_gcode(temp_path, &ImageBurnConfig { 
+        base: image_base_config, 
+        low_fid: 0.0, 
+        high_fid: 1.0, 
+        lines_per_mm 
+    }, Some(pwr_max), is_preview);
     let _ = std::fs::remove_file(temp_path);
     result
 }
@@ -566,7 +604,7 @@ mod tests {
             low_fid: 0.0, high_fid: 1.0, lines_per_mm: 5.0,
         };
         let start = std::time::Instant::now();
-        let result = generate_image_gcode(path, &config, true);
+        let result = generate_image_gcode(path, &config, None, true);
         println!("Image GCode performance: {:?}", start.elapsed());
         match result { Ok((gcode, _)) => { println!("Length: {}", gcode.len()); } Err(e) => panic!("Failed: {}", e) }
     }
@@ -595,7 +633,7 @@ mod tests {
         };
 
         let start = std::time::Instant::now();
-        let result = generate_image_gcode(path, &config, true);
+        let result = generate_image_gcode(path, &config, None, true);
         println!("100x50 Test Duration: {:?}", start.elapsed());
         match result {
             Ok((gcode, _)) => {
