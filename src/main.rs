@@ -424,6 +424,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let render_width = rl.get_render_width() as f32;
         let render_height = rl.get_render_height() as f32;
+        let mut canvas_rect_actual = raylib::math::Rectangle::new(0.0, 0.0, 0.0, 0.0);
 
         {
             let current_version = state.lock().unwrap().preview_version;
@@ -434,17 +435,19 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let scale = 2000.0 / 400.0;
                 let preview_thickness = (2000.0 / (400.0 * guard.text_lines_per_mm)).max(2.0);
                 for p in &guard.preview_paths {
-                    // Draw raw coordinates (Y-up in machine space)
-                    // Since we draw with negative height later, this will be correct.
+                    // Draw Y-down in the texture (standard coordinate space)
+                    // We will flip the entire texture once during draw_texture_pro
                     let start = raylib::math::Vector2::new(
                         p.x1 * scale,
-                        p.y1 * scale,
+                        2000.0 - p.y1 * scale,
                     );
                     let end = raylib::math::Vector2::new(
                         p.x2 * scale,
-                        p.y2 * scale,
+                        2000.0 - p.y2 * scale,
                     );
-                    td.draw_line_ex(start, end, preview_thickness, raylib::color::Color::new(0, 255, 0, (p.intensity * 255.0) as u8));
+                    // Boost visibility for preview by using a higher base alpha
+                    let intensity = (p.intensity * 0.7 + 0.3).clamp(0.0, 1.0);
+                    td.draw_line_ex(start, end, preview_thickness, raylib::color::Color::new(0, 255, 0, (intensity * 255.0) as u8));
                 }
                 last_preview_version = current_version;
             }
@@ -1312,8 +1315,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(raylib::color::Color::BLACK);
-
-        let mut canvas_rect_actual = raylib::math::Rectangle::new(0.0, 0.0, 0.0, 0.0);
 
         for command in render_commands {
             match command.config {

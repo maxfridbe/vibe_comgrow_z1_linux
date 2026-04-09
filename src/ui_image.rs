@@ -310,9 +310,11 @@ pub fn render_image_controls<'a, 'render>(
                                 if is_previewing {
                                     g.preview_pattern = None;
                                     g.preview_paths.clear();
+                                    g.preview_version += 1;
                                 } else {
                                     g.preview_pattern = Some("custom_image".to_string());
                                     g.preview_paths.clear();
+                                    g.preview_version += 1;
                                     g.is_processing = true;
                                     let config = g.get_image_burn_config();
                                     let state_clone = Arc::clone(state);
