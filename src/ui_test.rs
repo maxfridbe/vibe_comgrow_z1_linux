@@ -304,11 +304,12 @@ pub fn render_test_controls<'a, 'render>(
                                 if is_previewing {
                                     g.preview_pattern = None;
                                     g.preview_paths.clear();
+                                    g.preview_version += 1;
                                 } else {
                                     g.preview_pattern = Some("custom_svg".to_string());
                                     g.preview_paths.clear();
-                                    g.is_processing = true;
-                                    let config = g.get_burn_config();
+                                    g.preview_version += 1;
+                                    g.is_processing = true;                                    let config = g.get_burn_config();
                                     let state_clone = Arc::clone(state);
                                     let path_clone = p.clone();
 
@@ -336,6 +337,7 @@ pub fn render_test_controls<'a, 'render>(
                                             );
 
                                             let mut g = state_clone.lock().unwrap();
+                                            g.preview_version += 1;
                                             g.preview_paths.extend(segments);
                                             g.v_pos = new_v_pos;
                                             g.is_absolute = new_is_abs;
@@ -579,9 +581,11 @@ pub fn render_test_controls<'a, 'render>(
                                             if is_previewing {
                                                 g.preview_pattern = None;
                                                 g.preview_paths.clear();
+                                                g.preview_version += 1;
                                             } else {
                                                 g.preview_pattern = Some(cmd.label.to_string());
                                                 g.preview_paths.clear();
+                                                g.preview_version += 1;
                                                 g.is_processing = true;
                                                 let config = g.get_burn_config();
                                                 let label_clone = cmd.label.to_string();
@@ -611,6 +615,7 @@ pub fn render_test_controls<'a, 'render>(
                                                         );
 
                                                         let mut g = state_clone.lock().unwrap();
+                                                        g.preview_version += 1;
                                                         g.preview_paths.extend(segments);
                                                         g.v_pos = new_v_pos;
                                                         g.is_absolute = new_is_abs;

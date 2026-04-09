@@ -83,6 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         img_high_fidelity: 1.0,
         img_lines_per_mm: 5.0,
         is_processing: false,
+        preview_version: 0,
         text_content: "Comgrow Z1".to_string(),
         text_font: "Default".to_string(),
         text_is_bold: false,
@@ -354,6 +355,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let mut pre_fullscreen_size = raylib::math::Vector2::new(1280.0, 800.0);
 
+    let mut preview_texture = rl.load_render_texture(&thread, 2000, 2000).expect("Failed to create render texture");
+    preview_texture.set_texture_filter(&thread, raylib::prelude::TextureFilter::TEXTURE_FILTER_BILINEAR);
+    let mut last_preview_version = 0u64;
+
     while !rl.window_should_close() {
         if rl.is_key_pressed(KeyboardKey::KEY_F11) {
             let curr = rl.is_window_fullscreen();
@@ -397,6 +402,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let mouse_pos = rl.get_mouse_position();
         let frame_time_total = rl.get_time() as f32;
+
         let mouse_down = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
         let mouse_pressed = rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
         let mut scroll_delta = rl.get_mouse_wheel_move_v();
@@ -418,6 +424,31 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let render_width = rl.get_render_width() as f32;
         let render_height = rl.get_render_height() as f32;
+
+        {
+            let current_version = state.lock().unwrap().preview_version;
+            if current_version != last_preview_version {
+                let mut td = rl.begin_texture_mode(&thread, &mut preview_texture);
+                td.clear_background(raylib::color::Color::BLANK);
+                let guard = state.lock().unwrap();
+                let scale = 2000.0 / 400.0;
+                let preview_thickness = (2000.0 / (400.0 * guard.text_lines_per_mm)).max(2.0);
+                for p in &guard.preview_paths {
+                    // Draw raw coordinates (Y-up in machine space)
+                    // Since we draw with negative height later, this will be correct.
+                    let start = raylib::math::Vector2::new(
+                        p.x1 * scale,
+                        p.y1 * scale,
+                    );
+                    let end = raylib::math::Vector2::new(
+                        p.x2 * scale,
+                        p.y2 * scale,
+                    );
+                    td.draw_line_ex(start, end, preview_thickness, raylib::color::Color::new(0, 255, 0, (p.intensity * 255.0) as u8));
+                }
+                last_preview_version = current_version;
+            }
+        }
 
         clay.set_layout_dimensions(Dimensions::new(render_width, render_height));
         clay.pointer_state(
@@ -1469,18 +1500,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 );
                 d.draw_line_ex(start, end, 2.0, raylib::color::Color::new(255, 71, 87, (p.intensity * 255.0) as u8));
             }
-            let preview_thickness = (side / (400.0 * guard.text_lines_per_mm)).max(1.0);
-            for p in &guard.preview_paths {
-                let start = raylib::math::Vector2::new(
-                    draw_area.x + (p.x1 / 400.0) * side,
-                    draw_area.y + draw_area.height - (p.y1 / 400.0) * side,
-                );
-                let end = raylib::math::Vector2::new(
-                    draw_area.x + (p.x2 / 400.0) * side,
-                    draw_area.y + draw_area.height - (p.y2 / 400.0) * side,
-                );
-                d.draw_line_ex(start, end, preview_thickness, raylib::color::Color::new(0, 255, 0, (p.intensity * 255.0) as u8));
-            }
+            // Use the cached preview texture for high performance
+            d.draw_texture_pro(
+                &preview_texture,
+                raylib::math::Rectangle::new(0.0, 0.0, 2000.0, -2000.0), // Negative height to flip Y correctly
+                raylib::math::Rectangle::new(draw_area.x, draw_area.y, side, side),
+                raylib::math::Vector2::new(0.0, 0.0),
+                0.0,
+                raylib::color::Color::WHITE,
+            );
 
             let head_pos = raylib::math::Vector2::new(
                 draw_area.x + (guard.machine_pos.x / 400.0) * side,

@@ -572,9 +572,11 @@ pub fn render_text_controls<'a, 'render>(
                         if is_previewing {
                             g.preview_pattern = None;
                             g.preview_paths.clear();
+                            g.preview_version += 1;
                         } else {
                             g.preview_pattern = Some("text".to_string());
                             g.preview_paths.clear();
+                            g.preview_version += 1;
                             g.is_processing = true;
                             let config = g.get_text_burn_config();
                             let state_clone = Arc::clone(state);
@@ -601,6 +603,7 @@ pub fn render_text_controls<'a, 'render>(
                                     );
 
                                     let mut g = state_clone.lock().unwrap();
+                                    g.preview_version += 1;
                                     g.preview_paths.extend(segments);
                                     g.v_pos = new_v_pos;
                                     g.is_absolute = new_is_abs;

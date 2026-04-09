@@ -134,6 +134,7 @@ pub struct AppState {
     pub img_high_fidelity: f32,
     pub img_lines_per_mm: f32,
     pub is_processing: bool,
+    pub preview_version: u64,
     pub text_content: String,
     pub text_font: String,
     pub text_is_bold: bool,
@@ -309,6 +310,9 @@ impl AppState {
             self.is_absolute,
             self.current_preview_power,
         );
+        if !segments.is_empty() {
+            self.preview_version += 1;
+        }
         self.preview_paths.extend(segments);
         self.v_pos = v_pos;
         self.is_absolute = is_absolute;
@@ -539,6 +543,7 @@ impl AppState {
         // Clear preview when state is changed to avoid showing old data
         self.preview_pattern = None;
         self.preview_paths.clear();
+        self.preview_version += 1;
     }
 
     pub fn save_persistence(&self) {

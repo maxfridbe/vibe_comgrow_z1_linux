@@ -342,6 +342,7 @@ pub fn render_image_controls<'a, 'render>(
                                             );
 
                                             let mut g = state_clone.lock().unwrap();
+                                            g.preview_version += 1;
                                             g.preview_paths.extend(segments);
                                             g.v_pos = new_v_pos;
                                             g.is_absolute = new_is_abs;
