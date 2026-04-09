@@ -1,4 +1,4 @@
-use crate::cli_and_helpers::generate_image_gcode;
+use crate::cli_and_helpers::{generate_image_gcode, get_image_outline_gcode};
 use crate::icons::*;
 use crate::state::{AppState, StringArena};
 use crate::styles::*;
@@ -259,141 +259,170 @@ pub fn render_image_controls<'a, 'render>(
             if let Some(p) = custom_path {
                 let filename = Path::new(&p).file_name().and_then(|f| f.to_str()).unwrap_or("unknown");
 
-                let mut file_info_row = Declaration::<Texture2D, ()>::new();
-                file_info_row
+                let mut file_info_box = Declaration::<Texture2D, ()>::new();
+                file_info_box
                     .layout()
+                    .width(grow!())
+                    .padding(Padding::all(8))
+                    .direction(LayoutDirection::TopToBottom)
                     .child_gap(12)
-                    .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
+                    .end()
+                    .background_color(COLOR_BG_DARK)
+                    .corner_radius()
+                    .all(8.0 * font_scale)
                     .end();
 
-                clay_scope.with(&file_info_row, |clay_scope| {
-                    // Preview Eyeball first
-                    let eye_id = clay_scope.id("eye_custom_image");
-                    let is_previewing = { state.lock().unwrap().preview_pattern.as_deref() == Some("custom_image") };
-                    let mut eye_color = if is_previewing {
-                        COLOR_SUCCESS
-                    } else {
-                        COLOR_TEXT_MUTED
-                    };
-                    if !is_processing && clay_scope.pointer_over(eye_id) {
-                        eye_color = COLOR_TEXT_WHITE;
-                        if mouse_pressed {
-                            let mut g = state.lock().unwrap();
-                            if is_previewing {
-                                g.preview_pattern = None;
-                                g.preview_paths.clear();
-                            } else {
-                                g.preview_pattern = Some("custom_image".to_string());
-                                g.preview_paths.clear();
-                                g.is_processing = true;
-                                let config = g.get_image_burn_config();
-                                let state_clone = Arc::clone(state);
-                                let path_clone = p.clone();
-                                std::thread::spawn(move || {
-                                    if let Ok((gcode, _)) = generate_image_gcode(
-                                        &path_clone,
-                                        &config,
-                                        None,
-                                        true,
-                                    ) {
-                                        let mut g = state_clone.lock().unwrap();
-                                        let original_v_pos = g.v_pos;
-                                        let original_is_abs = g.is_absolute;
-                                        for line in gcode.lines() {
-                                            g.process_command_for_preview(line);
-                                        }
-                                        g.v_pos = original_v_pos;
-                                        g.is_absolute = original_is_abs;
-                                    }
-                                    state_clone.lock().unwrap().is_processing = false;
-                                });
-                            }
-                        }
-                    }
-                    let mut eye_btn = Declaration::<Texture2D, ()>::new();
-                    eye_btn.id(eye_id).layout().padding(Padding::all(4)).end();
-                    clay_scope.with(&eye_btn, |clay| {
-                        if is_processing {
-                            clay.text(
-                                ICON_SPINNER,
-                                clay_layout::text::TextConfig::new()
-                                    .font_size((20.0 * font_scale) as u16)
-                                    .color(COLOR_SUCCESS)
-                                    .end(),
-                            );
-                        } else {
-                            clay.text(
-                                ICON_EYE,
-                                clay_layout::text::TextConfig::new()
-                                    .font_size((20.0 * font_scale) as u16)
-                                    .color(eye_color)
-                                    .end(),
-                            );
-                        }
+                clay_scope.with(&file_info_box, |clay_scope| {
+                    let mut title_row = Declaration::<Texture2D, ()>::new();
+                    title_row.layout().child_gap(12).child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center)).end();
+                    
+                    clay_scope.with(&title_row, |clay_scope| {
+                        clay_scope.text(
+                            arena.push(format!("{}   {}", ICON_FILE, filename)),
+                            clay_layout::text::TextConfig::new()
+                                .font_size((14.0 * font_scale) as u16)
+                                .color(COLOR_TEXT_WHITE)
+                                .end(),
+                        );
                     });
 
-                    clay_scope.text(
-                        arena.push(filename.to_string()),
-                        clay_layout::text::TextConfig::new()
-                            .font_size((14.0 * font_scale) as u16)
-                            .color(COLOR_TEXT_WHITE)
-                            .end(),
-                    );
+                    let mut action_row = Declaration::<Texture2D, ()>::new();
+                    action_row
+                        .layout()
+                        .direction(LayoutDirection::LeftToRight)
+                        .child_gap(12)
+                        .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
+                        .end();
 
-                    if render_burn_btn(
-                        clay_scope,
-                        "burn_custom_image",
-                        "BURN",
-                        state,
-                        0.0,
-                        0.0,
-                        mouse_pressed,
-                        clipboard,
-                        arena,
-                        font_scale,
-                        !is_idle,
-                    ) {
-                        let config = {
-                            let mut g = state.lock().unwrap();
-                            g.is_processing = true;
-                            g.get_image_burn_config()
+                    clay_scope.with(&action_row, |clay_scope| {
+                        // Preview Eyeball
+                        let eye_id = clay_scope.id("eye_custom_image");
+                        let is_previewing = { state.lock().unwrap().preview_pattern.as_deref() == Some("custom_image") };
+                        let mut eye_color = if is_previewing {
+                            COLOR_SUCCESS
+                        } else {
+                            COLOR_TEXT_MUTED
                         };
-                        let state_clone = Arc::clone(state);
-                        let path_clone = p.clone();
-                        std::thread::spawn(move || {
-                            use std::panic;
-                            let result = panic::catch_unwind(|| {
-                                generate_image_gcode(&path_clone, &config, None, false)
-                            });
+                        if !is_processing && clay_scope.pointer_over(eye_id) {
+                            eye_color = COLOR_TEXT_WHITE;
+                            if mouse_pressed {
+                                let mut g = state.lock().unwrap();
+                                if is_previewing {
+                                    g.preview_pattern = None;
+                                    g.preview_paths.clear();
+                                } else {
+                                    g.preview_pattern = Some("custom_image".to_string());
+                                    g.preview_paths.clear();
+                                    g.is_processing = true;
+                                    let config = g.get_image_burn_config();
+                                    let state_clone = Arc::clone(state);
+                                    let path_clone = p.clone();
+                                    std::thread::spawn(move || {
+                                        use std::panic;
+                                        let result = panic::catch_unwind(|| {
+                                            generate_image_gcode(
+                                                &path_clone,
+                                                &config,
+                                                None,
+                                                true,
+                                            )
+                                        });
 
-                            let mut g = state_clone.lock().unwrap();
-                            match result {
-                                Ok(Ok((gcode, _))) => g.send_command(gcode),
-                                _ => {}
+                                        if let Ok(Ok((gcode, _))) = result {
+                                            let (v_pos, is_abs, power) = {
+                                                let g = state_clone.lock().unwrap();
+                                                (g.v_pos, g.is_absolute, g.current_preview_power)
+                                            };
+                                            
+                                            let (segments, new_v_pos, new_is_abs, new_power) = AppState::get_preview_segments(
+                                                &gcode,
+                                                v_pos,
+                                                is_abs,
+                                                power
+                                            );
+
+                                            let mut g = state_clone.lock().unwrap();
+                                            g.preview_paths.extend(segments);
+                                            g.v_pos = new_v_pos;
+                                            g.is_absolute = new_is_abs;
+                                            g.current_preview_power = new_power;
+                                        }
+                                        state_clone.lock().unwrap().is_processing = false;
+                                    });
+                                }
                             }
-                            g.is_processing = false;
+                        }
+                        let mut eye_btn = Declaration::<Texture2D, ()>::new();
+                        eye_btn.id(eye_id).layout().padding(Padding::all(4)).end();
+                        clay_scope.with(&eye_btn, |clay| {
+                            if is_processing {
+                                clay.text(
+                                    ICON_SPINNER,
+                                    clay_layout::text::TextConfig::new()
+                                        .font_size((20.0 * font_scale) as u16)
+                                        .color(COLOR_SUCCESS)
+                                        .end(),
+                                );
+                            } else {
+                                clay.text(
+                                    ICON_EYE,
+                                    clay_layout::text::TextConfig::new()
+                                        .font_size((20.0 * font_scale) as u16)
+                                        .color(eye_color)
+                                        .end(),
+                                );
+                            }
                         });
-                    }
-                    let path_clone = p.clone();
-                    render_outline_btn(
-                        clay_scope,
-                        "outline_custom_image",
-                        state,
-                        move || {
-                            let config = state.lock().unwrap().get_image_burn_config();
-                            generate_image_gcode(
-                                &path_clone,
-                                &config,
-                                None,
-                                false,
-                            )
-                            .ok()
-                            .map(|(g, _)| g)
-                        },
-                        mouse_pressed,
-                        font_scale,
-                        !is_idle,
-                    );
+
+                        if render_burn_btn(
+                            clay_scope,
+                            "burn_custom_image",
+                            "BURN",
+                            state,
+                            0.0,
+                            0.0,
+                            mouse_pressed,
+                            clipboard,
+                            arena,
+                            font_scale,
+                            !is_idle,
+                        ) {
+                            let config = {
+                                let mut g = state.lock().unwrap();
+                                g.is_processing = true;
+                                g.get_image_burn_config()
+                            };
+                            let state_clone = Arc::clone(state);
+                            let path_clone = p.clone();
+                            std::thread::spawn(move || {
+                                use std::panic;
+                                let result = panic::catch_unwind(|| {
+                                    generate_image_gcode(&path_clone, &config, None, false)
+                                });
+
+                                let mut g = state_clone.lock().unwrap();
+                                match result {
+                                    Ok(Ok((gcode, _))) => g.send_command(gcode),
+                                    _ => {}
+                                }
+                                g.is_processing = false;
+                            });
+                        }
+                        
+                        let path_clone = p.clone();
+                        render_outline_btn(
+                            clay_scope,
+                            "outline_custom_image",
+                            state,
+                            move || {
+                                let config = state.lock().unwrap().get_image_burn_config();
+                                get_image_outline_gcode(&path_clone, &config)
+                            },
+                            mouse_pressed,
+                            font_scale,
+                            !is_idle,
+                        );
+                    });
                 });
             }
         });

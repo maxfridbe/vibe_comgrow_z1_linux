@@ -528,7 +528,35 @@ impl OutlineSink for VectorGCodeBuilder {
 }
 
 pub fn generate_outline_gcode(x: f32, y: f32, w: f32, h: f32, speed: f32) -> String {
-    format!("{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}", gcode::CMD_HOME, gcode::CMD_ABSOLUTE_POS, gcode::CMD_LASER_OFF, gcode::move_xy_f(x, y, 3000.0), gcode::move_xy_f(x + w, y, speed), gcode::move_linear_xy(x + w, y + h), gcode::move_linear_xy(x, y + h), gcode::move_linear_xy(x, y), gcode::CMD_LASER_OFF, gcode::CMD_HOME)
+    format!(
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+        gcode::CMD_HOME,
+        gcode::CMD_ABSOLUTE_POS,
+        gcode::CMD_LASER_OFF,
+        gcode::move_xy_f(x, y, 3000.0),
+        gcode::move_xy_f(x + w, y, speed),
+        gcode::move_linear_xy(x + w, y + h),
+        gcode::move_linear_xy(x, y + h),
+        gcode::move_linear_xy(x, y),
+        gcode::CMD_LASER_OFF,
+        gcode::CMD_HOME
+    )
+}
+
+pub fn get_image_outline_gcode(path: &str, config: &ImageBurnConfig) -> Option<String> {
+    let img = image::open(path).ok()?;
+    let (orig_w, orig_h) = (img.width() as f32, img.height() as f32);
+    let mut final_scale = config.base.scale;
+    if config.base.bounds.enabled {
+        final_scale = (config.base.bounds.w / orig_w).min(config.base.bounds.h / orig_h);
+    }
+    let out_w = orig_w * final_scale;
+    let out_h = orig_h * final_scale;
+    let cx = if config.base.bounds.enabled { config.base.bounds.x + config.base.bounds.w / 2.0 } else { 200.0 };
+    let cy = if config.base.bounds.enabled { config.base.bounds.y + config.base.bounds.h / 2.0 } else { 200.0 };
+    let x = cx - out_w / 2.0;
+    let y = cy - out_h / 2.0;
+    Some(generate_outline_gcode(x, y, out_w, out_h, config.base.feed_rate))
 }
 
 pub fn get_gcode_bounds(gcode: &str) -> Option<(f32, f32, f32, f32)> {

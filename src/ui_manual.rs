@@ -1,3 +1,4 @@
+use crate::cli_and_helpers::generate_pattern_gcode;
 use crate::gcode;
 use crate::icons::*;
 use crate::state::{AppState, StringArena};
@@ -26,7 +27,7 @@ pub fn render_manual_left_subcol<'a, 'render>(
     let is_idle = { state.lock().unwrap().machine_state == "Idle" };
 
     clay.with(&left_col, |clay_scope| {
-        for section in sections.iter().filter(|s| s.title != "Safety" && s.title != "Test Patterns") {
+        for section in sections.iter().filter(|s| s.title != "Safety") {
             let mut section_box = Declaration::<Texture2D, ()>::new();
             section_box
                 .layout()
@@ -87,8 +88,14 @@ pub fn render_manual_left_subcol<'a, 'render>(
                                 btn_color = COLOR_PRIMARY_HOVER;
                                 text_color = COLOR_TEXT_WHITE;
                                 if mouse_pressed {
-                                    let mut guard = state.lock().unwrap();
-                                    guard.send_command(cmd.cmd.to_string());
+                                    if section.title == "Test Patterns" {
+                                        let config = state.lock().unwrap().get_burn_config();
+                                        if let Ok((gcode, _)) = generate_pattern_gcode(cmd.label, &config, false) {
+                                            state.lock().unwrap().send_command(gcode);
+                                        }
+                                    } else {
+                                        state.lock().unwrap().send_command(cmd.cmd.to_string());
+                                    }
                                 }
                             }
                             let mut btn = Declaration::<Texture2D, ()>::new();

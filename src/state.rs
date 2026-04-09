@@ -48,6 +48,7 @@ pub struct TextBurnConfig {
 pub struct SavedState {
     pub timestamp: String,
     pub label: String,
+    pub current_tab: UITab,
     pub text_content: String,
     pub text_font: String,
     pub text_is_bold: bool,
@@ -86,6 +87,7 @@ pub struct LogEntry {
     pub timestamp: String,
 }
 
+#[derive(Clone)]
 pub struct PathSegment {
     pub x1: f32,
     pub y1: f32,
@@ -95,7 +97,7 @@ pub struct PathSegment {
     pub intensity: f32,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum UITab {
     Manual,
     Pattern,
@@ -150,9 +152,15 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn process_command_for_preview(&mut self, cmd: &str) {
+    pub fn get_preview_segments(
+        gcode: &str,
+        mut v_pos: Vector2,
+        mut is_absolute: bool,
+        mut current_preview_power: f32,
+    ) -> (Vec<PathSegment>, Vector2, bool, f32) {
+        let mut segments = Vec::new();
         // Handle potential multiple commands on one line or space-separated commands
-        for single_cmd in cmd.split('\n') {
+        for single_cmd in gcode.split('\n') {
             let parts: Vec<&str> = single_cmd.split_whitespace().collect();
             let mut has_g0 = false;
             let mut has_g1 = false;
@@ -166,11 +174,11 @@ impl AppState {
 
             for part in &parts {
                 if *part == crate::gcode::CMD_ABSOLUTE_POS {
-                    self.is_absolute = true;
+                    is_absolute = true;
                 } else if *part == crate::gcode::CMD_RELATIVE_POS {
-                    self.is_absolute = false;
+                    is_absolute = false;
                 } else if *part == crate::gcode::CMD_HOME {
-                    self.v_pos = raylib::prelude::Vector2 {
+                    v_pos = raylib::prelude::Vector2 {
                         x: 0.0,
                         y: 0.0,
                     };
@@ -192,7 +200,7 @@ impl AppState {
                     y_val = part[1..].parse::<f32>().ok();
                 } else if part.starts_with('S') {
                     if let Ok(val) = part[1..].parse::<f32>() {
-                        self.current_preview_power = val;
+                        current_preview_power = val;
                     }
                 } else if part.starts_with('R') {
                     r_val = part[1..].parse::<f32>().ok();
@@ -200,13 +208,13 @@ impl AppState {
             }
 
             if has_m5 {
-                self.current_preview_power = 0.0;
+                current_preview_power = 0.0;
             }
 
             if has_g0 || has_g1 || has_g2 || has_g3 {
-                let old_pos = self.v_pos;
-                let mut target = self.v_pos;
-                if self.is_absolute {
+                let old_pos = v_pos;
+                let mut target = v_pos;
+                if is_absolute {
                     if let Some(x) = x_val {
                         target.x = x.clamp(0.0, 400.0);
                     }
@@ -223,20 +231,20 @@ impl AppState {
                 }
 
                 if has_g1 {
-                    let intensity = (self.current_preview_power / 1000.0).clamp(0.0, 1.0);
+                    let intensity = (current_preview_power / 1000.0).clamp(0.0, 1.0);
                     if intensity > 0.01 {
-                        self.preview_paths.push(PathSegment {
+                        segments.push(PathSegment {
                             x1: old_pos.x,
                             y1: old_pos.y,
                             x2: target.x,
                             y2: target.y,
-                            s: self.current_preview_power,
+                            s: current_preview_power,
                             intensity,
                         });
                     }
-                    self.v_pos = target;
+                    v_pos = target;
                 } else if has_g0 {
-                    self.v_pos = target;
+                    v_pos = target;
                 } else if (has_g2 || has_g3) && r_val.is_some() {
                     let r = r_val.unwrap();
                     let start = old_pos;
@@ -267,30 +275,44 @@ impl AppState {
                                 end_angle += 2.0 * std::f32::consts::PI;
                             }
                         }
-                        let segments = 20;
+                        let segments_count = 20;
                         let mut prev_p = start;
-                        for i in 1..=segments {
-                            let t = i as f32 / segments as f32;
+                        for i in 1..=segments_count {
+                            let t = i as f32 / segments_count as f32;
                             let angle = start_angle + t * (end_angle - start_angle);
                             let next_p = Vector2::new(cx + r.abs() * angle.cos(), cy + r.abs() * angle.sin());
-                            let intensity = (self.current_preview_power / 1000.0).clamp(0.0, 1.0);
-                            self.preview_paths.push(PathSegment {
+                            let intensity = (current_preview_power / 1000.0).clamp(0.0, 1.0);
+                            segments.push(PathSegment {
                                 x1: prev_p.x,
                                 y1: prev_p.y,
                                 x2: next_p.x,
                                 y2: next_p.y,
-                                s: self.current_preview_power,
+                                s: current_preview_power,
                                 intensity,
                             });
                             prev_p = next_p;
                         }
                     }
-                    self.v_pos = target;
+                    v_pos = target;
                 } else {
-                    self.v_pos = target;
+                    v_pos = target;
                 }
             }
         }
+        (segments, v_pos, is_absolute, current_preview_power)
+    }
+
+    pub fn process_command_for_preview(&mut self, cmd: &str) {
+        let (segments, v_pos, is_absolute, power) = Self::get_preview_segments(
+            cmd,
+            self.v_pos,
+            self.is_absolute,
+            self.current_preview_power,
+        );
+        self.preview_paths.extend(segments);
+        self.v_pos = v_pos;
+        self.is_absolute = is_absolute;
+        self.current_preview_power = power;
     }
 
     pub fn send_command(&mut self, cmd_str: String) {
@@ -466,9 +488,11 @@ impl AppState {
     }
 
     pub fn capture_state(&self, label: &str) -> SavedState {
+        println!("[{}] Capturing state: {}", get_ts(), label);
         SavedState {
             timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             label: label.to_string(),
+            current_tab: self.current_tab.clone(),
             text_content: self.text_content.clone(),
             text_font: self.text_font.clone(),
             text_is_bold: self.text_is_bold,
@@ -491,6 +515,8 @@ impl AppState {
     }
 
     pub fn apply_state(&mut self, state: &SavedState) {
+        println!("[{}] Applying saved state: {}", get_ts(), state.label);
+        self.current_tab = state.current_tab.clone();
         self.text_content = state.text_content.clone();
         self.text_font = state.text_font.clone();
         self.text_is_bold = state.text_is_bold;
@@ -509,6 +535,10 @@ impl AppState {
         self.img_lines_per_mm = state.img_lines_per_mm;
         self.custom_image_path = state.custom_image_path.clone();
         self.custom_svg_path = state.custom_svg_path.clone();
+        
+        // Clear preview when state is changed to avoid showing old data
+        self.preview_pattern = None;
+        self.preview_paths.clear();
     }
 
     pub fn save_persistence(&self) {

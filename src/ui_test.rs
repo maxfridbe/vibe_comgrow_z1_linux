@@ -313,25 +313,36 @@ pub fn render_test_controls<'a, 'render>(
                                     let path_clone = p.clone();
 
                                     std::thread::spawn(move || {
-                                        let result: Result<(String, String), Box<dyn std::error::Error + Send + Sync>> =
+                                        use std::panic;
+                                        let result = panic::catch_unwind(|| {
                                             generate_pattern_gcode(
                                                 &path_clone,
                                                 &config,
                                                 true,
+                                            )
+                                        });
+
+                                        if let Ok(Ok((gcode, _))) = result {
+                                            let (v_pos, is_abs, power) = {
+                                                let g = state_clone.lock().unwrap();
+                                                (g.v_pos, g.is_absolute, g.current_preview_power)
+                                            };
+
+                                            let (segments, new_v_pos, new_is_abs, new_power) = AppState::get_preview_segments(
+                                                &gcode,
+                                                v_pos,
+                                                is_abs,
+                                                power
                                             );
-                                        if let Ok((gcode, _)) = result {
+
                                             let mut g = state_clone.lock().unwrap();
-                                            let original_v_pos = g.v_pos;
-                                            let original_is_abs = g.is_absolute;
-                                            for line in gcode.lines() {
-                                                g.process_command_for_preview(line);
-                                            }
-                                            g.v_pos = original_v_pos;
-                                            g.is_absolute = original_is_abs;
+                                            g.preview_paths.extend(segments);
+                                            g.v_pos = new_v_pos;
+                                            g.is_absolute = new_is_abs;
+                                            g.current_preview_power = new_power;
                                         }
                                         state_clone.lock().unwrap().is_processing = false;
-                                    });
-                                }
+                                    });                                }
                             }
                         }
                         let mut eye_btn = Declaration::<Texture2D, ()>::new();
@@ -577,19 +588,33 @@ pub fn render_test_controls<'a, 'render>(
                                                 let state_clone = Arc::clone(state);
 
                                                 std::thread::spawn(move || {
-                                                    if let Ok((gcode, _)) = generate_pattern_gcode(
-                                                        &label_clone,
-                                                        &config,
-                                                        true,
-                                                    ) {
+                                                    use std::panic;
+                                                    let result = panic::catch_unwind(|| {
+                                                        generate_pattern_gcode(
+                                                            &label_clone,
+                                                            &config,
+                                                            true,
+                                                        )
+                                                    });
+
+                                                    if let Ok(Ok((gcode, _))) = result {
+                                                        let (v_pos, is_abs, power) = {
+                                                            let g = state_clone.lock().unwrap();
+                                                            (g.v_pos, g.is_absolute, g.current_preview_power)
+                                                        };
+                                                        
+                                                        let (segments, new_v_pos, new_is_abs, new_power) = AppState::get_preview_segments(
+                                                            &gcode,
+                                                            v_pos,
+                                                            is_abs,
+                                                            power
+                                                        );
+
                                                         let mut g = state_clone.lock().unwrap();
-                                                        let original_v_pos = g.v_pos;
-                                                        let original_is_abs = g.is_absolute;
-                                                        for line in gcode.lines() {
-                                                            g.process_command_for_preview(line);
-                                                        }
-                                                        g.v_pos = original_v_pos;
-                                                        g.is_absolute = original_is_abs;
+                                                        g.preview_paths.extend(segments);
+                                                        g.v_pos = new_v_pos;
+                                                        g.is_absolute = new_is_abs;
+                                                        g.current_preview_power = new_power;
                                                     }
                                                     state_clone.lock().unwrap().is_processing = false;
                                                 });

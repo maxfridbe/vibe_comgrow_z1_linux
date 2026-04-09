@@ -579,22 +579,35 @@ pub fn render_text_controls<'a, 'render>(
                             let config = g.get_text_burn_config();
                             let state_clone = Arc::clone(state);
                             std::thread::spawn(move || {
-                                if let Ok((gcode, _)) = generate_text_gcode(
-                                    &config,
-                                    true,
-                                ) {
+                                use std::panic;
+                                let result = panic::catch_unwind(|| {
+                                    generate_text_gcode(
+                                        &config,
+                                        true,
+                                    )
+                                });
+
+                                if let Ok(Ok((gcode, _))) = result {
+                                    let (v_pos, is_abs, power) = {
+                                        let g = state_clone.lock().unwrap();
+                                        (g.v_pos, g.is_absolute, g.current_preview_power)
+                                    };
+
+                                    let (segments, new_v_pos, new_is_abs, new_power) = AppState::get_preview_segments(
+                                        &gcode,
+                                        v_pos,
+                                        is_abs,
+                                        power
+                                    );
+
                                     let mut g = state_clone.lock().unwrap();
-                                    let original_v_pos = g.v_pos;
-                                    let original_is_abs = g.is_absolute;
-                                    for line in gcode.lines() {
-                                        g.process_command_for_preview(line);
-                                    }
-                                    g.v_pos = original_v_pos;
-                                    g.is_absolute = original_is_abs;
+                                    g.preview_paths.extend(segments);
+                                    g.v_pos = new_v_pos;
+                                    g.is_absolute = new_is_abs;
+                                    g.current_preview_power = new_power;
                                 }
                                 state_clone.lock().unwrap().is_processing = false;
-                            });
-                        }
+                            });                        }
                     }
                 }
                 let mut eye_btn = Declaration::<Texture2D, ()>::new();
