@@ -1337,6 +1337,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         8,
                         color,
                     );
+
                     let canvas_id = unsafe {
                         clay_layout::bindings::Clay_GetElementId(clay_layout::bindings::Clay_String::from("canvas")).id
                     };
@@ -1347,7 +1348,82 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             command.bounding_box.width,
                             command.bounding_box.height,
                         );
+                        
+                        let margin = 20.0;
+                        let side = (canvas_rect_actual.width - margin * 2.0).min(canvas_rect_actual.height - margin * 2.0);
+                        let draw_area = raylib::math::Rectangle::new(
+                            canvas_rect_actual.x + (canvas_rect_actual.width - side) / 2.0,
+                            canvas_rect_actual.y + (canvas_rect_actual.height - side) / 2.0,
+                            side,
+                            side,
+                        );
+
+                        // 1. Draw grid lines
+                        for i in 0..=20 {
+                            let offset = (i as f32 / 20.0) * side;
+                            let is_major = i % 5 == 0;
+                            let color = if is_major { raylib::color::Color::new(255, 255, 255, 80) } else { raylib::color::Color::new(255, 255, 255, 30) };
+                            let thickness = if is_major { 2.0 } else { 1.0 };
+                            d.draw_line_ex(raylib::math::Vector2::new(draw_area.x + offset, draw_area.y), raylib::math::Vector2::new(draw_area.x + offset, draw_area.y + draw_area.height), thickness, color);
+                            d.draw_line_ex(raylib::math::Vector2::new(draw_area.x, draw_area.y + offset), raylib::math::Vector2::new(draw_area.x + draw_area.width, draw_area.y + offset), thickness, color);
+                        }
+
+                        // 2. Draw cached preview
+                        d.draw_texture_pro(
+                            &preview_texture,
+                            raylib::math::Rectangle::new(0.0, 0.0, 2000.0, -2000.0),
+                            raylib::math::Rectangle::new(draw_area.x, draw_area.y, side, side),
+                            raylib::math::Vector2::new(0.0, 0.0),
+                            0.0,
+                            raylib::color::Color::WHITE,
+                        );
+
+                        let guard = state.lock().unwrap();
+                        // 3. Draw bounds
+                        if guard.bounds.enabled {
+                            let bx = draw_area.x + (guard.bounds.x / 400.0) * side;
+                            let by = draw_area.y + draw_area.height - (guard.bounds.y / 400.0) * side - (guard.bounds.h / 400.0) * side;
+                            d.draw_rectangle_lines_ex(raylib::math::Rectangle::new(bx, by, (guard.bounds.w / 400.0) * side, (guard.bounds.h / 400.0) * side), 2.0, raylib::color::Color::new(52, 211, 153, 150));
+                        }
+
+                        // 4. Draw real-time paths
+                        for p in &guard.paths {
+                            let start = raylib::math::Vector2::new(draw_area.x + (p.x1 / 400.0) * side, draw_area.y + draw_area.height - (p.y1 / 400.0) * side);
+                            let end = raylib::math::Vector2::new(draw_area.x + (p.x2 / 400.0) * side, draw_area.y + draw_area.height - (p.y2 / 400.0) * side);
+                            d.draw_line_ex(start, end, 2.0, raylib::color::Color::new(255, 71, 87, (p.intensity * 255.0) as u8));
+                        }
+
+                        // 5. Draw laser head
+                        let head_pos = raylib::math::Vector2::new(draw_area.x + (guard.machine_pos.x / 400.0) * side, draw_area.y + draw_area.height - (guard.machine_pos.y / 400.0) * side);
+                        d.draw_circle_v(head_pos, 5.0 * font_scale, raylib::color::Color::new(59, 130, 246, 100));
+                        d.draw_circle_v(head_pos, 2.0 * font_scale, raylib::color::Color::RED);
                     }
+                }
+                RenderCommandConfig::Image(config) => {
+                    let color = raylib::color::Color::new(
+                        config.background_color.r as u8,
+                        config.background_color.g as u8,
+                        config.background_color.b as u8,
+                        config.background_color.a as u8,
+                    );
+                    d.draw_texture_pro(
+                        config.data,
+                        raylib::math::Rectangle::new(
+                            0.0,
+                            0.0,
+                            config.data.width as f32,
+                            config.data.height as f32,
+                        ),
+                        raylib::math::Rectangle::new(
+                            command.bounding_box.x,
+                            command.bounding_box.y,
+                            command.bounding_box.width,
+                            command.bounding_box.height,
+                        ),
+                        raylib::math::Vector2::new(0.0, 0.0),
+                        0.0,
+                        color,
+                    );
                 }
                 RenderCommandConfig::Text(config) => {
                     let text_str = config.text;
@@ -1433,90 +1509,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
                 _ => {}
             }
-        }
-
-        if canvas_rect_actual.width > 0.0 {
-            let margin = 20.0;
-            let side = (canvas_rect_actual.width - margin * 2.0).min(canvas_rect_actual.height - margin * 2.0);
-            let draw_area = raylib::math::Rectangle::new(
-                canvas_rect_actual.x + (canvas_rect_actual.width - side) / 2.0,
-                canvas_rect_actual.y + (canvas_rect_actual.height - side) / 2.0,
-                side,
-                side,
-            );
-
-            // Draw grid lines
-            // Thin lines every 20 (400 / 20 = 20 segments)
-            for i in 0..=20 {
-                let offset = (i as f32 / 20.0) * side;
-                let is_major = i % 5 == 0; // Every 100 (5 * 20 = 100)
-                let color = if is_major {
-                    raylib::color::Color::new(255, 255, 255, 80)
-                } else {
-                    raylib::color::Color::new(255, 255, 255, 30)
-                };
-                let thickness = if is_major {
-                    2.0
-                } else {
-                    1.0
-                };
-
-                // Vertical
-                d.draw_line_ex(
-                    raylib::math::Vector2::new(draw_area.x + offset, draw_area.y),
-                    raylib::math::Vector2::new(draw_area.x + offset, draw_area.y + draw_area.height),
-                    thickness,
-                    color,
-                );
-                // Horizontal
-                d.draw_line_ex(
-                    raylib::math::Vector2::new(draw_area.x, draw_area.y + offset),
-                    raylib::math::Vector2::new(draw_area.x + draw_area.width, draw_area.y + offset),
-                    thickness,
-                    color,
-                );
-            }
-            let guard = state.lock().unwrap();
-            if guard.bounds.enabled {
-                let bx = draw_area.x + (guard.bounds.x / 400.0) * side;
-                let by = draw_area.y + draw_area.height
-                    - (guard.bounds.y / 400.0) * side
-                    - (guard.bounds.h / 400.0) * side;
-                let bw = (guard.bounds.w / 400.0) * side;
-                let bh = (guard.bounds.h / 400.0) * side;
-                d.draw_rectangle_lines_ex(
-                    raylib::math::Rectangle::new(bx, by, bw, bh),
-                    2.0,
-                    raylib::color::Color::new(52, 211, 153, 150),
-                );
-            }
-            for p in &guard.paths {
-                let start = raylib::math::Vector2::new(
-                    draw_area.x + (p.x1 / 400.0) * side,
-                    draw_area.y + draw_area.height - (p.y1 / 400.0) * side,
-                );
-                let end = raylib::math::Vector2::new(
-                    draw_area.x + (p.x2 / 400.0) * side,
-                    draw_area.y + draw_area.height - (p.y2 / 400.0) * side,
-                );
-                d.draw_line_ex(start, end, 2.0, raylib::color::Color::new(255, 71, 87, (p.intensity * 255.0) as u8));
-            }
-            // Use the cached preview texture for high performance
-            d.draw_texture_pro(
-                &preview_texture,
-                raylib::math::Rectangle::new(0.0, 0.0, 2000.0, -2000.0), // Negative height to flip Y correctly
-                raylib::math::Rectangle::new(draw_area.x, draw_area.y, side, side),
-                raylib::math::Vector2::new(0.0, 0.0),
-                0.0,
-                raylib::color::Color::WHITE,
-            );
-
-            let head_pos = raylib::math::Vector2::new(
-                draw_area.x + (guard.machine_pos.x / 400.0) * side,
-                draw_area.y + draw_area.height - (guard.machine_pos.y / 400.0) * side,
-            );
-            d.draw_circle_v(head_pos, 5.0 * font_scale, raylib::color::Color::new(59, 130, 246, 100));
-            d.draw_circle_v(head_pos, 2.0 * font_scale, raylib::color::Color::RED);
         }
     }
     Ok(())
