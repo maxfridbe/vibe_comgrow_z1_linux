@@ -105,6 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         load_dialog_open: false,
         is_burning: false,
         burn_log_active: false,
+        active_toasts: Vec::new(),
     }));
 
     {
@@ -472,7 +473,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             rl.get_frame_time(),
         );
 
+        {
+            let mut guard = state.lock().unwrap();
+            let dt = rl.get_frame_time();
+            guard.active_toasts.retain_mut(|t| {
+                t.remaining_seconds -= dt;
+                t.remaining_seconds > 0.0
+            });
+        }
+
         let mut clay_scope = clay.begin::<Texture2D, ()>();
+
+        crate::ui::render_toasts(&mut clay_scope, &state, &arena, font_scale, mouse_pressed);
 
         // 1. MAIN APP LAYER
         let mut main_app_decl = Declaration::<Texture2D, ()>::new();

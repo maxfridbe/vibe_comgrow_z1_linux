@@ -1,6 +1,6 @@
 use crate::cli_and_helpers::generate_pattern_gcode;
 use crate::icons::*;
-use crate::state::{AppState, StringArena};
+use crate::state::{AppState, StringArena, ToastType};
 use crate::styles::*;
 use crate::ui::{Section, render_burn_btn, render_checkbox, render_outline_btn, render_slider};
 use arboard::Clipboard;
@@ -191,7 +191,10 @@ pub fn render_test_controls<'a, 'render>(
                         if let Some(path_buf) =
                             FileDialog::new().add_filter("Scalable Vector Graphics", &["svg"]).pick_file()
                         {
-                            state.lock().unwrap().custom_svg_path = Some(path_buf.to_string_lossy().to_string());
+                            let path = path_buf.to_string_lossy().to_string();
+                            let mut guard = state.lock().unwrap();
+                            guard.custom_svg_path = Some(path.clone());
+                            guard.add_toast(ToastType::Info, format!("Loaded SVG: {}", path), 2.0, true, None);
                         }
                     }
                 }

@@ -1,12 +1,154 @@
 use crate::cli_and_helpers;
 use crate::icons::*;
-use crate::state::{AppState, StringArena};
+use crate::state::{AppState, StringArena, ToastType};
 use crate::styles::*;
 use arboard::Clipboard;
 use clay_layout::layout::{Alignment, LayoutAlignmentX, LayoutAlignmentY, LayoutDirection, Padding};
 use clay_layout::{Color as ClayColor, Declaration, fixed, grow};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
+
+pub fn render_toasts<'a, 'render>(
+    clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
+    state: &Arc<Mutex<AppState>>,
+    arena: &StringArena,
+    font_scale: f32,
+    mouse_pressed: bool,
+) where
+    'a: 'render,
+{
+    let mut toasts_container = Declaration::<Texture2D, ()>::new();
+    toasts_container
+        .layout()
+        .width(grow!())
+        .direction(LayoutDirection::TopToBottom)
+        .child_gap(8)
+        .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
+        .padding(Padding::all(16))
+        .end()
+        .floating()
+        .end();
+
+    let mut dismiss_ids = Vec::new();
+    let mut action_ids = Vec::new();
+
+    clay.with(&toasts_container, |clay_scope| {
+        let active_toasts = {
+            let guard = state.lock().unwrap();
+            guard.active_toasts.clone()
+        };
+
+        for toast in active_toasts {
+            let bg_color = match toast.toast_type {
+                ToastType::Info => COLOR_PRIMARY,
+                ToastType::Warning => COLOR_ACCENT_PURPLE,
+                ToastType::Error => COLOR_DANGER,
+            };
+
+            let mut toast_decl = Declaration::<Texture2D, ()>::new();
+            toast_decl
+                .layout()
+                .padding(Padding::new(16, 16, 8, 8))
+                .direction(LayoutDirection::LeftToRight)
+                .child_gap(12)
+                .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+                .end()
+                .background_color(bg_color)
+                .corner_radius()
+                .all(8.0 * font_scale)
+                .end();
+
+            clay_scope.with(&toast_decl, |clay_scope| {
+                let icon = match toast.toast_type {
+                    ToastType::Info => ICON_TERMINAL,
+                    ToastType::Warning => ICON_GAUGE,
+                    ToastType::Error => ICON_MOVE,
+                };
+
+                clay_scope.text(
+                    arena.push(format!("{}  {}", icon, toast.message)),
+                    clay_layout::text::TextConfig::new()
+                        .font_size((14.0 * font_scale) as u16)
+                        .color(COLOR_TEXT_WHITE)
+                        .end(),
+                );
+
+                if let Some(ref action) = toast.action_label {
+                    let action_btn_id = clay_scope.id(arena.push(format!("toast_action_{}", toast.id)));
+                    let mut action_btn = Declaration::<Texture2D, ()>::new();
+                    let mut btn_bg = COLOR_BG_DARK;
+                    if clay_scope.pointer_over(action_btn_id) {
+                        btn_bg = COLOR_PRIMARY_HOVER;
+                        if mouse_pressed {
+                            action_ids.push(toast.id);
+                        }
+                    }
+                    action_btn
+                        .id(action_btn_id)
+                        .layout()
+                        .padding(Padding::new(8, 8, 4, 4))
+                        .end()
+                        .background_color(btn_bg)
+                        .corner_radius()
+                        .all(4.0 * font_scale)
+                        .end();
+                    clay_scope.with(&action_btn, |clay_scope| {
+                        clay_scope.text(
+                            arena.push(action.clone()),
+                            clay_layout::text::TextConfig::new()
+                                .font_size((12.0 * font_scale) as u16)
+                                .color(COLOR_TEXT_WHITE)
+                                .end(),
+                        );
+                    });
+                }
+
+                if toast.has_dismiss {
+                    let dismiss_btn_id = clay_scope.id(arena.push(format!("toast_dismiss_{}", toast.id)));
+                    let mut dismiss_btn = Declaration::<Texture2D, ()>::new();
+                    let mut btn_bg = COLOR_BG_DARK;
+                    if clay_scope.pointer_over(dismiss_btn_id) {
+                        btn_bg = COLOR_DANGER;
+                        if mouse_pressed {
+                            dismiss_ids.push(toast.id);
+                        }
+                    }
+                    dismiss_btn
+                        .id(dismiss_btn_id)
+                        .layout()
+                        .padding(Padding::all(4))
+                        .end()
+                        .background_color(btn_bg)
+                        .corner_radius()
+                        .all(4.0 * font_scale)
+                        .end();
+                    clay_scope.with(&dismiss_btn, |clay_scope| {
+                        clay_scope.text(
+                            "X",
+                            clay_layout::text::TextConfig::new()
+                                .font_size((12.0 * font_scale) as u16)
+                                .color(COLOR_TEXT_WHITE)
+                                .end(),
+                        );
+                    });
+                }
+            });
+        }
+    });
+
+    if !dismiss_ids.is_empty() || !action_ids.is_empty() {
+        let mut guard = state.lock().unwrap();
+        for id in dismiss_ids {
+            guard.active_toasts.retain(|t| t.id != id);
+        }
+        for id in action_ids {
+            if let Some(toast) = guard.active_toasts.iter_mut().find(|t| t.id == id) {
+                toast.action_clicked = true;
+                toast.remaining_seconds = -1.0; // Mark for removal or handle action logic elsewhere
+            }
+        }
+    }
+}
 
 pub fn render_tab_btn<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,

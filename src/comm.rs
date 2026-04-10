@@ -1,5 +1,5 @@
 use crate::gcode::decode_response;
-use crate::state::{AppState, LogEntry};
+use crate::state::{AppState, LogEntry, ToastType};
 use crate::virtual_device::VirtualDevice;
 use std::collections::VecDeque;
 use std::io::{Read, Write};
@@ -34,7 +34,7 @@ impl Logger {
         Self { file: None }
     }
 
-    fn ensure_active(&mut self) {
+    fn ensure_active(&mut self, state: &Arc<Mutex<AppState>>) {
         if self.file.is_some() { return; }
         
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
@@ -45,6 +45,10 @@ impl Logger {
         let log_path = log_dir.join(format!("{}.log", timestamp));
         
         println!("[{}] LOGGING: Starting burn log at {:?}", get_timestamp(), log_path);
+        {
+            let mut guard = state.lock().unwrap();
+            guard.add_toast(ToastType::Info, format!("Log beginning: {}", log_path.display()), 1.0, true, None);
+        }
         if let Ok(f) = File::create(&log_path) {
             self.file = Some(f);
         }
@@ -175,9 +179,8 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                         if port_changed { break; }
 
                         if burn_log_active {
-                            logger.ensure_active();
+                            logger.ensure_active(&state);
                         }
-
                         // Periodic Status Query (every 500ms)
                         if last_status_query.elapsed().as_millis() > 500 {
                             let _ = port.write_all(b"?");
@@ -222,9 +225,9 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                                 let mut guard = state.lock().unwrap();
                                 guard.is_burning = false;
                                 guard.burn_log_active = false;
+                                guard.add_toast(ToastType::Info, "Burn completed".to_string(), 3.0, true, None);
                                 logger.log("Session complete. Closing log.");
-                                logger.close();
-                            }
+                                logger.close();                            }
                         }
 
                         // Read responses

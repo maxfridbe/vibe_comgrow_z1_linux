@@ -152,9 +152,45 @@ pub struct AppState {
     pub load_dialog_open: bool,
     pub is_burning: bool,
     pub burn_log_active: bool,
+    pub active_toasts: Vec<Toast>,
+}
+
+#[derive(Clone, Debug)]
+pub enum ToastType {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Clone, Debug)]
+pub struct Toast {
+    pub id: u32,
+    pub toast_type: ToastType,
+    pub message: String,
+    pub remaining_seconds: f32,
+    pub has_dismiss: bool,
+    pub action_label: Option<String>,
+    pub action_clicked: bool,
 }
 
 impl AppState {
+    pub fn add_toast(&mut self, toast_type: ToastType, message: String, seconds: f32, has_dismiss: bool, action: Option<String>) {
+        static mut NEXT_ID: u32 = 0;
+        let id = unsafe {
+            NEXT_ID += 1;
+            NEXT_ID
+        };
+        self.active_toasts.push(Toast {
+            id,
+            toast_type,
+            message,
+            remaining_seconds: seconds,
+            has_dismiss,
+            action_label: action,
+            action_clicked: false,
+        });
+    }
+
     pub fn get_preview_segments(
         gcode: &str,
         mut v_pos: Vector2,
