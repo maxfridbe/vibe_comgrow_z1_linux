@@ -1,5 +1,7 @@
 # Trogdor Laser GRBL Runner
 
+> **⚠️ WARNING:** Trogdor has only ever been tested on Comgrow Z1 10W Laser and nothing else. Use at your own risk.
+
 ![Screenshot Main](./assets/screenshot.png)
 ![Screenshot Text](./assets/screenshot_text.png)
 
