@@ -182,7 +182,13 @@ where
             let s = guard.power;
             let dx_scaled = dx * d;
             let dy_scaled = dy * d;
-            let cmd = format!("{}\n{}", crate::gcode::CMD_RELATIVE_POS, crate::gcode::burn(dx_scaled, dy_scaled, s, f));
+            let cmd = format!(
+                "{}\n{}\n{}\n{}",
+                crate::gcode::CMD_RELATIVE_POS,
+                crate::gcode::burn(dx_scaled, dy_scaled, s, f),
+                crate::gcode::CMD_LASER_OFF,
+                crate::gcode::CMD_HOME
+            );
             guard.send_command(cmd.clone());
             if let Some(cb) = clipboard {
                 let _ = cb.set_text(cmd);
