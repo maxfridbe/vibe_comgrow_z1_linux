@@ -62,7 +62,7 @@ fn parse_dimension(s: &str) -> Result<f32, Box<dyn std::error::Error + Send + Sy
 
 pub fn run_cli_mode(target_label: &str, _sections: &[Section]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let home = std::env::var("HOME")?;
-    let path = std::path::PathBuf::from(home).join(".config").join("johnny5").join("saved_states.json");
+    let path = std::path::PathBuf::from(home).join(".config").join("trogdor").join("saved_states.json");
     if let Ok(json) = std::fs::read_to_string(path) {
         let states: Vec<SavedState> = serde_json::from_str(&json)?;
         if let Some(state) = states.iter().find(|s| s.label == target_label) {

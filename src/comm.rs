@@ -38,7 +38,7 @@ impl Logger {
         if self.file.is_some() { return; }
         
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let log_dir = PathBuf::from(home).join(".johnny5").join("burnlog");
+        let log_dir = PathBuf::from(home).join(".trogdor").join("burnlog");
         let _ = fs::create_dir_all(&log_dir);
         
         let timestamp = get_full_timestamp();

@@ -1,4 +1,4 @@
-# Comgrow Z1 Laser GRBL Runner
+# Trogdor Laser GRBL Runner
 
 ![Screenshot Main](./assets/screenshot.png)
 ![Screenshot Text](./assets/screenshot_text.png)

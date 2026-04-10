@@ -609,7 +609,7 @@ impl AppState {
         let home = std::env::var("HOME")?;
         Ok(std::path::PathBuf::from(home)
             .join(".config")
-            .join("johnny5")
+            .join("trogdor")
             .join("saved_states.json"))
     }
 

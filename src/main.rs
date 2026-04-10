@@ -543,7 +543,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         );
                     });
                     clay_scope.text(
-                        "COMGROW Z1",
+                        "TROGDOR",
                         clay_layout::text::TextConfig::new()
                             .font_size((16.0 * font_scale) as u16)
                             .color(COLOR_TEXT_WHITE)
