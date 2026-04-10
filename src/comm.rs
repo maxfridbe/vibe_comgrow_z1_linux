@@ -86,16 +86,11 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
 
                     if port_changed { break; }
 
-                    if burn_log_active {
-                        logger.ensure_active();
-                    }
-
                     virtual_machine.update();
 
                     // Periodic Status Query (every 250ms for virtual to feel snappy)
                     if last_status_query.elapsed().as_millis() > 250 {
                         let responses = virtual_machine.process_command("?");
-                        if burn_log_active { logger.log("TX: ?"); }
                         handle_responses(&state, responses, &mut wait_for_ok, false, &mut logger);
                         last_status_query = std::time::Instant::now();
                     }
@@ -107,7 +102,6 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                                 let mut guard = state.lock().unwrap();
                                 guard.process_command_for_state(&cmd, true);
                             }
-                            if burn_log_active { logger.log(&format!("TX: {}", cmd)); }
                             let responses = virtual_machine.process_command(&cmd);
                             handle_responses(&state, responses, &mut wait_for_ok, cmd == "?", &mut logger);
                             if cmd == "\x18" || cmd == "0x18" {
@@ -129,7 +123,6 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                                 let mut guard = state.lock().unwrap();
                                 guard.process_command_for_state(&cmd, false);
                             }
-                            if burn_log_active { logger.log(&format!("TX: {}", cmd)); }
                             wait_for_ok = true;
                             let responses = virtual_machine.process_command(&cmd);
                             handle_responses(&state, responses, &mut wait_for_ok, false, &mut logger);
@@ -140,7 +133,6 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                                 virtual_machine.update();
                                 if last_status_query.elapsed().as_millis() > 250 {
                                     let responses = virtual_machine.process_command("?");
-                                    if burn_log_active { logger.log("TX: ?"); }
                                     handle_responses(&state, responses, &mut wait_for_ok, false, &mut logger);
                                     last_status_query = std::time::Instant::now();
                                 }
@@ -149,8 +141,6 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                             let mut guard = state.lock().unwrap();
                             guard.is_burning = false;
                             guard.burn_log_active = false;
-                            logger.log("Session complete. Closing log.");
-                            logger.close();
                         }
                     }
 
@@ -264,12 +254,15 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
 }
 
 fn handle_responses(state: &Arc<Mutex<AppState>>, responses: Vec<String>, wait_for_ok: &mut bool, force_log: bool, logger: &mut Logger) {
-    let burn_log_active = { state.lock().unwrap().burn_log_active };
+    let (burn_log_active, is_virtual) = {
+        let guard = state.lock().unwrap();
+        (guard.burn_log_active, guard.port == "VIRTUAL")
+    };
     for line in responses {
         if line.is_empty() {
             continue;
         }
-        if burn_log_active {
+        if burn_log_active && !is_virtual {
             logger.log(&format!("RX: {}", line));
         }
         if line == "ok" || line.starts_with("error") || line.starts_with("Grbl") {
