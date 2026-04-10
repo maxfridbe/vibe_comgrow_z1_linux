@@ -5,15 +5,60 @@ use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
+use std::fs::{self, File};
+use std::path::PathBuf;
 
 fn get_timestamp() -> String {
     let now = std::time::SystemTime::now();
     let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     let secs = duration.as_secs();
+    let ms = duration.subsec_millis();
     let hh = (secs / 3600) % 24;
     let mm = (secs / 60) % 60;
     let ss = secs % 60;
-    format!("{:02}:{:02}:{:02}", hh, mm, ss)
+    format!("{:02}:{:02}:{:02}:{:03}", hh, mm, ss, ms)
+}
+
+fn get_full_timestamp() -> String {
+    let now = std::time::SystemTime::now();
+    let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    duration.as_millis().to_string()
+}
+
+struct Logger {
+    file: Option<File>,
+}
+
+impl Logger {
+    fn new() -> Self {
+        Self { file: None }
+    }
+
+    fn ensure_active(&mut self) {
+        if self.file.is_some() { return; }
+        
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        let log_dir = PathBuf::from(home).join(".johnny5").join("burnlog");
+        let _ = fs::create_dir_all(&log_dir);
+        
+        let timestamp = get_full_timestamp();
+        let log_path = log_dir.join(format!("{}.log", timestamp));
+        
+        println!("[{}] LOGGING: Starting burn log at {:?}", get_timestamp(), log_path);
+        if let Ok(f) = File::create(&log_path) {
+            self.file = Some(f);
+        }
+    }
+
+    fn log(&mut self, text: &str) {
+        if let Some(ref mut f) = self.file {
+            let _ = writeln!(f, "[{}] {}", get_timestamp(), text);
+        }
+    }
+
+    fn close(&mut self) {
+        self.file = None;
+    }
 }
 
 pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
@@ -22,6 +67,7 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
         let mut queue: VecDeque<String> = VecDeque::new();
         let mut wait_for_ok = false;
         let mut virtual_machine = VirtualDevice::new();
+        let mut logger = Logger::new();
 
         loop {
             let port_name = {
@@ -33,11 +79,15 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                 let mut last_status_query = std::time::Instant::now();
                 loop {
                     // Check if port changed back to real
-                    {
+                    let (port_changed, burn_log_active, is_idle) = {
                         let guard = state.lock().unwrap();
-                        if guard.port != "VIRTUAL" {
-                            break;
-                        }
+                        (guard.port != "VIRTUAL", guard.burn_log_active, guard.machine_state == "Idle")
+                    };
+
+                    if port_changed { break; }
+
+                    if burn_log_active {
+                        logger.ensure_active();
                     }
 
                     virtual_machine.update();
@@ -45,7 +95,8 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                     // Periodic Status Query (every 250ms for virtual to feel snappy)
                     if last_status_query.elapsed().as_millis() > 250 {
                         let responses = virtual_machine.process_command("?");
-                        handle_responses(&state, responses, &mut wait_for_ok, false);
+                        if burn_log_active { logger.log("TX: ?"); }
+                        handle_responses(&state, responses, &mut wait_for_ok, false, &mut logger);
                         last_status_query = std::time::Instant::now();
                     }
 
@@ -56,8 +107,9 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                                 let mut guard = state.lock().unwrap();
                                 guard.process_command_for_state(&cmd, true);
                             }
+                            if burn_log_active { logger.log(&format!("TX: {}", cmd)); }
                             let responses = virtual_machine.process_command(&cmd);
-                            handle_responses(&state, responses, &mut wait_for_ok, cmd == "?");
+                            handle_responses(&state, responses, &mut wait_for_ok, cmd == "?", &mut logger);
                             if cmd == "\x18" || cmd == "0x18" {
                                 queue.clear();
                                 wait_for_ok = false;
@@ -77,9 +129,10 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                                 let mut guard = state.lock().unwrap();
                                 guard.process_command_for_state(&cmd, false);
                             }
+                            if burn_log_active { logger.log(&format!("TX: {}", cmd)); }
                             wait_for_ok = true;
                             let responses = virtual_machine.process_command(&cmd);
-                            handle_responses(&state, responses, &mut wait_for_ok, false);
+                            handle_responses(&state, responses, &mut wait_for_ok, false, &mut logger);
 
                             // Simulate realistic timing by waiting for the virtual machine to finish its move/home
                             while virtual_machine.state == "Run" || virtual_machine.state == "Home" {
@@ -87,10 +140,17 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                                 virtual_machine.update();
                                 if last_status_query.elapsed().as_millis() > 250 {
                                     let responses = virtual_machine.process_command("?");
-                                    handle_responses(&state, responses, &mut wait_for_ok, false);
+                                    if burn_log_active { logger.log("TX: ?"); }
+                                    handle_responses(&state, responses, &mut wait_for_ok, false, &mut logger);
                                     last_status_query = std::time::Instant::now();
                                 }
                             }
+                        } else if burn_log_active && is_idle {
+                            let mut guard = state.lock().unwrap();
+                            guard.is_burning = false;
+                            guard.burn_log_active = false;
+                            logger.log("Session complete. Closing log.");
+                            logger.close();
                         }
                     }
 
@@ -117,16 +177,21 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
 
                     loop {
                         // Check if port changed to virtual
-                        {
+                        let (port_changed, burn_log_active, is_idle) = {
                             let guard = state.lock().unwrap();
-                            if guard.port != port_name {
-                                break;
-                            }
+                            (guard.port != port_name, guard.burn_log_active, guard.machine_state == "Idle")
+                        };
+
+                        if port_changed { break; }
+
+                        if burn_log_active {
+                            logger.ensure_active();
                         }
 
                         // Periodic Status Query (every 500ms)
                         if last_status_query.elapsed().as_millis() > 500 {
                             let _ = port.write_all(b"?");
+                            if burn_log_active { logger.log("TX: ?"); }
                             last_status_query = std::time::Instant::now();
                         }
 
@@ -143,6 +208,7 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                                     &cmd
                                 };
                                 let _ = port.write_all(actual_cmd.as_bytes());
+                                if burn_log_active { logger.log(&format!("TX: {}", actual_cmd)); }
                                 if actual_cmd == "\x18" {
                                     wait_for_ok = false;
                                     queue.clear();
@@ -160,7 +226,14 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                                 }
                                 let full_cmd = format!("{}\n", cmd);
                                 let _ = port.write_all(full_cmd.as_bytes());
+                                if burn_log_active { logger.log(&format!("TX: {}", cmd)); }
                                 wait_for_ok = true;
+                            } else if burn_log_active && is_idle {
+                                let mut guard = state.lock().unwrap();
+                                guard.is_burning = false;
+                                guard.burn_log_active = false;
+                                logger.log("Session complete. Closing log.");
+                                logger.close();
                             }
                         }
 
@@ -173,7 +246,7 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                                     line_accumulator.drain(..=pos);
                                     if !line.is_empty() {
                                         let res_vec = vec![line];
-                                        handle_responses(&state, res_vec, &mut wait_for_ok, false);
+                                        handle_responses(&state, res_vec, &mut wait_for_ok, false, &mut logger);
                                     }
                                 }
                             }
@@ -190,10 +263,14 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
     });
 }
 
-fn handle_responses(state: &Arc<Mutex<AppState>>, responses: Vec<String>, wait_for_ok: &mut bool, force_log: bool) {
+fn handle_responses(state: &Arc<Mutex<AppState>>, responses: Vec<String>, wait_for_ok: &mut bool, force_log: bool, logger: &mut Logger) {
+    let burn_log_active = { state.lock().unwrap().burn_log_active };
     for line in responses {
         if line.is_empty() {
             continue;
+        }
+        if burn_log_active {
+            logger.log(&format!("RX: {}", line));
         }
         if line == "ok" || line.starts_with("error") || line.starts_with("Grbl") {
             *wait_for_ok = false;

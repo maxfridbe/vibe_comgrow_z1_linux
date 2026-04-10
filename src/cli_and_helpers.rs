@@ -167,10 +167,25 @@ pub fn generate_pattern_gcode(
                     final_gcode.push_str(&svg_gcode);
                 }
             }
-            _ => {}
+            _ => {
+                if shape_lower.ends_with(".svg") {
+                    let fit = if config.bounds.enabled { Some((config.bounds.w, config.bounds.h)) } else { None };
+                    if let Ok((svg_gcode, _, _, _, _)) = svg_helper::load_svg_as_gcode(
+                        shape,
+                        scl_val,
+                        fit,
+                        cx,
+                        cy,
+                        pwr_val as i32,
+                        spd_val as i32,
+                    ) {
+                        final_gcode.push_str(&svg_gcode);
+                    }
+                }
+            }
         }
     }
-    final_gcode.push_str(&format!("{}\n", gcode::CMD_HOME));
+    final_gcode.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::CMD_HOME));
     Ok((final_gcode, format!("Pattern {} (Scale: {}x, Center: {:.1},{:.1})", shape, scl_val, cx, cy)))
 }
 
@@ -429,7 +444,7 @@ pub fn generate_text_gcode(
                 gcode_out.push_str(&builder.gcode);
             }
         }
-        gcode_out.push_str(&format!("{}\n", gcode::CMD_HOME));
+        gcode_out.push_str(&format!("{}\n{}\n", gcode::CMD_LASER_OFF, gcode::CMD_HOME));
         return Ok((gcode_out, format!("Text Outline \"{}\"", text)));
     }
 

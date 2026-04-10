@@ -650,6 +650,8 @@ pub fn render_text_controls<'a, 'render>(
                 ) {
                     let state_data = {
                         let mut g = state.lock().unwrap();
+                        g.is_burning = true;
+                        g.burn_log_active = true;
                         g.is_processing = true;
                         g.get_text_burn_config()
                     };

@@ -150,6 +150,8 @@ pub struct AppState {
     pub current_preview_power: f32,
     pub saved_states: Vec<SavedState>,
     pub load_dialog_open: bool,
+    pub is_burning: bool,
+    pub burn_log_active: bool,
 }
 
 impl AppState {

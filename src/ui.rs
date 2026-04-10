@@ -175,6 +175,8 @@ where
         if mouse_pressed {
             clicked = true;
             let mut guard = state.lock().unwrap();
+            guard.is_burning = true;
+            guard.burn_log_active = true;
             let d = guard.distance;
             let f = guard.feed_rate;
             let s = guard.power;
@@ -242,6 +244,8 @@ where
             if let Some(gcode) = action() {
                 if let Some((x, y, w, h)) = cli_and_helpers::get_gcode_bounds(&gcode) {
                     let mut guard = state.lock().unwrap();
+                    guard.is_burning = true;
+                    guard.burn_log_active = true;
                     let speed = guard.feed_rate;
                     let outline_gcode = cli_and_helpers::generate_outline_gcode(x, y, w, h, speed);
                     guard.send_command(outline_gcode);

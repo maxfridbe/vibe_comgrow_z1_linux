@@ -257,7 +257,10 @@ pub fn render_test_controls<'a, 'render>(
                             font_scale,
                             !is_idle,
                         ) {
-                            let config = state.lock().unwrap().get_burn_config();
+                            let mut g = state.lock().unwrap();
+                            g.is_burning = true;
+                            g.burn_log_active = true;
+                            let config = g.get_burn_config();
                             let result: Result<(String, String), Box<dyn std::error::Error + Send + Sync>> =
                                 generate_pattern_gcode(
                                     &p,
@@ -265,7 +268,7 @@ pub fn render_test_controls<'a, 'render>(
                                     false,
                                 );
                             if let Ok((gcode, _)) = result {
-                                state.lock().unwrap().send_command(gcode);
+                                g.send_command(gcode);
                             }
                         }
                         let path_clone = p.clone();
@@ -529,7 +532,10 @@ pub fn render_test_controls<'a, 'render>(
                                         font_scale,
                                         !is_idle,
                                     ) {
-                                        let config = state.lock().unwrap().get_burn_config();
+                                        let mut g = state.lock().unwrap();
+                                        g.is_burning = true;
+                                        g.burn_log_active = true;
+                                        let config = g.get_burn_config();
 
                                         match generate_pattern_gcode(
                                             cmd.label,
@@ -537,7 +543,7 @@ pub fn render_test_controls<'a, 'render>(
                                             false,
                                         ) {
                                             Ok((gcode, _)) => {
-                                                state.lock().unwrap().send_command(gcode);
+                                                g.send_command(gcode);
                                             }
                                             Err(e) => {
                                                 println!("Error generating G-code: {}", e);

@@ -103,6 +103,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         current_preview_power: 1000.0,
         saved_states: Vec::new(),
         load_dialog_open: false,
+        is_burning: false,
+        burn_log_active: false,
     }));
 
     {

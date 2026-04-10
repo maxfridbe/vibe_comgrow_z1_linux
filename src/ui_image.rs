@@ -392,6 +392,8 @@ pub fn render_image_controls<'a, 'render>(
                         ) {
                             let config = {
                                 let mut g = state.lock().unwrap();
+                                g.is_burning = true;
+                                g.burn_log_active = true;
                                 g.is_processing = true;
                                 g.get_image_burn_config()
                             };
