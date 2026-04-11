@@ -1195,12 +1195,13 @@ fn main() -> Result<(), crate::error::TrogdorError> {
 
             // FIXED BOTTOM AREA
             let mut bottom_area = Declaration::<Texture2D, ()>::new();
+            let estop_size = 140.0 * font_scale;
             bottom_area
                 .layout()
                 .width(grow!())
-                .height(fixed!(bottom_bar_height))
+                .height(fixed!(estop_size))
                 .direction(LayoutDirection::LeftToRight)
-                .child_gap(16)
+                .child_gap(0)
                 .end();
 
             clay_scope.with(&bottom_area, |clay_scope| {
@@ -1228,139 +1229,33 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                 }
 
                 let mut estop_b = Declaration::<Texture2D, ()>::new();
-                let estop_size = 140.0 * font_scale;
                 estop_b
                     .id(estop_b_id)
                     .layout()
                     .width(fixed!(estop_size))
                     .height(fixed!(estop_size))
                     .direction(LayoutDirection::LeftToRight)
-                    .child_gap(8)
                     .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
                     .end()
-                    .background_color(estop_b_color)
-                    .corner_radius()
-                    .all(estop_size / 2.0)
-                    .end();
+                    .background_color(estop_b_color);
                 clay_scope.with(&estop_b, |clay_scope| {
-                    clay_scope.text(
-                        ICON_STOP,
-                        clay_layout::text::TextConfig::new()
-                            .font_size((64.0 * font_scale) as u16)
-                            .color(theme.cl_text_main)
-                            .end(),
-                    );
                     clay_scope.text(
                         "E-STOP",
                         clay_layout::text::TextConfig::new()
-                            .font_size((14.0 * font_scale) as u16)
+                            .font_size((28.0 * font_scale) as u16)
                             .color(theme.cl_text_main)
                             .end(),
                     );
                 });
 
-                let mut log_box = Declaration::<Texture2D, ()>::new();
-                let serial_id_node = clay_scope.id("serial_box");
-                log_box
-                    .id(serial_id_node)
-                    .layout()
-                    .width(grow!())
-                    .height(grow!())
-                    .padding(Padding::all(12))
-                    .direction(LayoutDirection::TopToBottom)
-                    .child_gap(4)
-                    .end()
-                    .background_color(theme.cl_bg_dark)
-                    .corner_radius()
-                    .all(16.0 * font_scale)
-                    .end()
-                    .border()
-                    .top((2.0 * font_scale) as u16)
-                    .color(theme.cl_accent)
-                    .end();
-
-                clay_scope.with(&log_box, |clay_scope| {
-                    let mut title_row = Declaration::<Texture2D, ()>::new();
-                    title_row
-                        .layout()
-                        .width(grow!())
-                        .child_alignment(Alignment::new(LayoutAlignmentX::Right, LayoutAlignmentY::Center))
-                        .child_gap(16)
-                        .end();
-                    clay_scope.with(&title_row, |clay_scope| {
-                        clay_scope.text(
-                            "SERIAL LOG",
-                            clay_layout::text::TextConfig::new()
-                                .font_size((12.0 * font_scale) as u16)
-                                .color(theme.cl_text_label)
-                                .end(),
-                        );
-                    });
-
-                    let logs = state.lock().unwrap().serial_logs.clone();
-                    let offset = state.lock().unwrap().log_scroll_offset;
-                    let mut log_scroll = Declaration::<Texture2D, ()>::new();
-                    let log_scroll_id = clay_scope.id("log_scroll");
-                    log_scroll
-                        .id(log_scroll_id)
-                        .layout()
-                        .width(grow!())
-                        .height(grow!())
-                        .direction(LayoutDirection::TopToBottom)
-                        .child_gap(2)
-                        .end()
-                        .clip(
-                            false,
-                            true,
-                            ClayVector2 {
-                                x: 0.0,
-                                y: offset,
-                            },
-                        );
-
-                    if clay_scope.pointer_over(log_scroll_id) {
-                        let mut g = state.lock().unwrap();
-                        g.log_scroll_offset += scroll_delta.y * 40.0;
-                        if g.log_scroll_offset > 0.0 {
-                            g.log_scroll_offset = 0.0;
-                        }
-                        let max_scroll = -(logs.len() as f32 * 20.0);
-                        if g.log_scroll_offset < max_scroll {
-                            g.log_scroll_offset = max_scroll;
-                        }
-                    }
-
-                    clay_scope.with(&log_scroll, |clay_scope| {
-                        for (i, log) in logs.iter().rev().take(1000).enumerate() {
-                            let text_color = if log.is_response {
-                                theme.cl_bg_dark
-                            } else if i == 0 {
-                                theme.cl_text_main
-                            } else {
-                                theme.cl_text_sub
-                            };
-                            let mut row = Declaration::<Texture2D, ()>::new();
-                            row.layout()
-                                .width(grow!())
-                                .padding(Padding::horizontal(8))
-                                .padding(Padding::vertical(2))
-                                .child_gap(10)
-                                .end();
-                            if log.is_response {
-                                row.background_color(theme.cl_text_main).corner_radius().all(4.0 * font_scale).end();
-                            }
-                            clay_scope.with(&row, |clay_scope| {
-                                clay_scope.text(
-                                    arena.push(format!("[{}] {} {}", log.timestamp, log.text, log.explanation)),
-                                    clay_layout::text::TextConfig::new()
-                                        .font_size((11.0 * font_scale) as u16)
-                                        .color(text_color)
-                                        .end(),
-                                );
-                            });
-                        }
-                    });
-                });
+                crate::ui_components::render_log(
+                    clay_scope,
+                    &state,
+                    scroll_delta.into(),
+                    &arena,
+                    font_scale,
+                    &theme,
+                );
                 });
 
             let load_dialog_open = state.lock().unwrap().load_dialog_open;
@@ -1548,18 +1443,44 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                         config.color.b as u8,
                         config.color.a as u8,
                     );
-                    d.draw_rectangle_rounded(
-                        raylib::math::Rectangle::new(
-                            command.bounding_box.x,
-                            command.bounding_box.y,
-                            command.bounding_box.width,
-                            command.bounding_box.height,
-                        ),
-                        config.corner_radii.top_left
-                            / (command.bounding_box.width.min(command.bounding_box.height) / 2.0),
-                        8,
-                        color,
-                    );
+
+                    let estop_id = unsafe {
+                        clay_layout::bindings::Clay_GetElementId(clay_layout::bindings::Clay_String::from("estop_bottom")).id
+                    };
+
+                    if command.id == estop_id {
+                        d.draw_poly(
+                            raylib::math::Vector2::new(
+                                command.bounding_box.x + command.bounding_box.width / 2.0,
+                                command.bounding_box.y + command.bounding_box.height / 2.0,
+                            ),
+                            8,
+                            command.bounding_box.width / 2.0,
+                            22.5,
+                            color,
+                        );
+                    } else if config.corner_radii.top_left > 0.0 {
+                        d.draw_rectangle_rounded(
+                            raylib::math::Rectangle::new(
+                                command.bounding_box.x,
+                                command.bounding_box.y,
+                                command.bounding_box.width,
+                                command.bounding_box.height,
+                            ),
+                            config.corner_radii.top_left
+                                / (command.bounding_box.width.min(command.bounding_box.height) / 2.0),
+                            8,
+                            color,
+                        );
+                    } else {
+                        d.draw_rectangle(
+                            command.bounding_box.x as i32,
+                            command.bounding_box.y as i32,
+                            command.bounding_box.width as i32,
+                            command.bounding_box.height as i32,
+                            color,
+                        );
+                    }
 
                     let canvas_id = unsafe {
                         clay_layout::bindings::Clay_GetElementId(clay_layout::bindings::Clay_String::from("canvas")).id

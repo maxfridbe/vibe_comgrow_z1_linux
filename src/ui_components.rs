@@ -14,6 +14,120 @@ use crate::FontMeasureEx;
 
 pub static mut MEASURE_FONT_PTR: *const raylib::prelude::Font = std::ptr::null();
 
+pub fn render_log<'a, 'render>(
+    clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
+    state: &Arc<Mutex<AppState>>,
+    scroll_delta: raylib::math::Vector2,
+    arena: &StringArena,
+    font_scale: f32,
+    theme: &Theme,
+) where
+    'a: 'render,
+{
+    let mut log_box = Declaration::<Texture2D, ()>::new();
+    let serial_id_node = clay.id("serial_box");
+    log_box
+        .id(serial_id_node)
+        .layout()
+        .width(grow!())
+        .height(grow!())
+        .padding(Padding::new((8.0 * font_scale) as u16, 12, 12, 12))
+        .direction(LayoutDirection::TopToBottom)
+        .child_gap(4)
+        .end()
+        .background_color(theme.cl_bg_dark)
+        .border()
+        .top((2.0 * font_scale) as u16)
+        .color(theme.cl_accent)
+        .end();
+
+    clay.with(&log_box, |clay| {
+        let mut title_decl = Declaration::<Texture2D, ()>::new();
+        title_decl
+            .layout()
+            .width(grow!())
+            .padding(Padding::all(8))
+            .child_alignment(Alignment::new(LayoutAlignmentX::Right, LayoutAlignmentY::Top))
+            .end()
+            .floating()
+            .attach_to(clay_layout::elements::FloatingAttachToElement::Parent)
+            .end();
+        clay.with(&title_decl, |clay| {
+            clay.text(
+                "SERIAL LOG",
+                clay_layout::text::TextConfig::new()
+                    .font_size((12.0 * font_scale) as u16)
+                    .color(theme.cl_text_label)
+                    .end(),
+            );
+        });
+
+        let logs = state.lock().unwrap().serial_logs.clone();
+        let offset = state.lock().unwrap().log_scroll_offset;
+        let mut log_scroll = Declaration::<Texture2D, ()>::new();
+        let log_scroll_id = clay.id("log_scroll");
+        log_scroll
+            .id(log_scroll_id)
+            .layout()
+            .width(grow!())
+            .height(grow!())
+            .direction(LayoutDirection::TopToBottom)
+            .child_gap(2)
+            .end()
+            .clip(
+                false,
+                true,
+                ClayVector2 {
+                    x: 0.0,
+                    y: offset,
+                },
+            );
+
+        if clay.pointer_over(log_scroll_id) {
+            let mut g = state.lock().unwrap();
+            g.log_scroll_offset += scroll_delta.y * 40.0;
+            if g.log_scroll_offset > 0.0 {
+                g.log_scroll_offset = 0.0;
+            }
+            let max_scroll = -(logs.len() as f32 * 20.0);
+            if g.log_scroll_offset < max_scroll {
+                g.log_scroll_offset = max_scroll;
+            }
+        }
+
+        clay.with(&log_scroll, |clay| {
+            for (i, log) in logs.iter().rev().take(1000).enumerate() {
+                let text_color = if log.is_response {
+                    theme.cl_bg_dark
+                } else if i == 0 {
+                    theme.cl_text_main
+                } else {
+                    theme.cl_text_sub
+                };
+                let mut row = Declaration::<Texture2D, ()>::new();
+                row.layout()
+                    .width(grow!())
+                    .padding(Padding::horizontal(8))
+                    .padding(Padding::vertical(2))
+                    .child_gap(10)
+                    .end();
+                if log.is_response {
+                    row.background_color(theme.cl_text_main).corner_radius().all(4.0 * font_scale).end();
+                }
+                clay.with(&row, |clay| {
+                    clay.text(
+                        arena.push(format!("[{}] {} {}", log.timestamp, log.text, log.explanation)),
+                        clay_layout::text::TextConfig::new()
+                            .font_size((11.0 * font_scale) as u16)
+                            .color(text_color)
+                            .end(),
+                    );
+                });
+            }
+        });
+    });
+}
+
 pub fn render_dropdown<'a, 'render, F, G, H>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
     id: &str,
