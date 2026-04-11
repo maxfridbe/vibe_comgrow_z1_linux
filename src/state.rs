@@ -242,6 +242,12 @@ impl AppState {
         crate::theme::THEMES[self.current_theme_index % crate::theme::THEMES.len()]
     }
 
+    pub fn clear_preview(&mut self) {
+        self.preview_pattern = None;
+        self.preview_paths.clear();
+        self.preview_version += 1;
+    }
+
     pub fn add_toast(&mut self, toast_type: ToastType, message: String, seconds: f32, has_dismiss: bool, action: Option<String>) {
         static mut NEXT_ID: u32 = 0;
         let id = unsafe {

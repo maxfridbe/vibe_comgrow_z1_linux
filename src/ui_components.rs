@@ -469,9 +469,9 @@ where
 
     let btn_id = clay.id(id);
     let mut color = if active {
-        theme.cl_primary
+        theme.cl_bg_main
     } else {
-        theme.cl_bg_section
+        ClayColor::rgba(0.0, 0.0, 0.0, 0.0) // Transparent to show tab bar background
     };
     let mut text_color = if active {
         theme.cl_text_main
@@ -494,8 +494,13 @@ where
         .end()
         .background_color(color)
         .corner_radius()
-        .top_left(8.0 * font_scale)
-        .top_right(8.0 * font_scale)
+        .all(0.0)
+        .end()
+        .border()
+        .top((1.0 * font_scale) as u16)
+        .left((1.0 * font_scale) as u16)
+        .right((1.0 * font_scale) as u16)
+        .color(theme.cl_bg_dark)
         .end();
 
     let mut clicked = false;

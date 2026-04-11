@@ -81,6 +81,7 @@ pub fn render_test_controls<'a, 'render>(
                             let mut guard = state.lock().unwrap();
                             guard.custom_svg_path = Some(Arc::new(path.clone()));
                             guard.add_toast(ToastType::Info, format!("Loaded SVG: {}", path), 2.0, true, None);
+                            guard.clear_preview();
                         }
                     }
                 }
@@ -408,18 +409,18 @@ pub fn render_test_controls<'a, 'render>(
             let mut row1 = Declaration::<Texture2D, ()>::new();
             row1.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
             clay_scope.with(&row1, |clay_scope| {
-                render_slider(clay_scope, "p_pwr", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-                render_slider(clay_scope, "p_spd", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                render_slider(clay_scope, "p_pwr", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| { s.power = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                render_slider(clay_scope, "p_spd", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| { s.feed_rate = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
             });
 
             let mut row2 = Declaration::<Texture2D, ()>::new();
             row2.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
             clay_scope.with(&row2, |clay_scope| {
-                render_slider(clay_scope, "p_scl", "Scale", scl, 0.1, 10.0, COLOR_SLIDER_STEP, state, |s, v| s.scale = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-                render_slider(clay_scope, "p_pas", "Passes", passes as f32, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| s.passes = v as u32, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                render_slider(clay_scope, "p_scl", "Scale", scl, 0.1, 10.0, COLOR_SLIDER_STEP, state, |s, v| { s.scale = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                render_slider(clay_scope, "p_pas", "Passes", passes as f32, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| { s.passes = v as u32; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
             });
 
-            render_checkbox(clay_scope, "p_ben", "Enable Bounds", b_en, state, |s, v| s.bounds.enabled = v, mouse_pressed, font_scale, theme);
+            render_checkbox(clay_scope, "p_ben", "Enable Bounds", b_en, state, |s, v| { s.bounds.enabled = v; s.clear_preview(); }, mouse_pressed, font_scale, theme);
 
             if b_en {
                 let mut grid = Declaration::<Texture2D, ()>::new();
@@ -428,14 +429,14 @@ pub fn render_test_controls<'a, 'render>(
                     let mut r1 = Declaration::<Texture2D, ()>::new();
                     r1.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
                     clay_scope.with(&r1, |clay_scope| {
-                        render_slider(clay_scope, "p_bx", "X", bx, 0.0, 400.0, COLOR_SLIDER_X, state, |s, v| s.bounds.x = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-                        render_slider(clay_scope, "p_by", "Y", by, 0.0, 400.0, COLOR_SLIDER_Y, state, |s, v| s.bounds.y = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                        render_slider(clay_scope, "p_bx", "X", bx, 0.0, 400.0, COLOR_SLIDER_X, state, |s, v| { s.bounds.x = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                        render_slider(clay_scope, "p_by", "Y", by, 0.0, 400.0, COLOR_SLIDER_Y, state, |s, v| { s.bounds.y = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
                     });
                     let mut r2 = Declaration::<Texture2D, ()>::new();
                     r2.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
                     clay_scope.with(&r2, |clay_scope| {
-                        render_slider(clay_scope, "p_bw", "W", bw, 1.0, 400.0, COLOR_SLIDER_W, state, |s, v| s.bounds.w = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-                        render_slider(clay_scope, "p_bh", "H", bh, 1.0, 400.0, COLOR_SLIDER_H, state, |s, v| s.bounds.h = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                        render_slider(clay_scope, "p_bw", "W", bw, 1.0, 400.0, COLOR_SLIDER_W, state, |s, v| { s.bounds.w = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                        render_slider(clay_scope, "p_bh", "H", bh, 1.0, 400.0, COLOR_SLIDER_H, state, |s, v| { s.bounds.h = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
                     });
                 });
             }

@@ -668,8 +668,8 @@ fn main() -> Result<(), crate::error::TrogdorError> {
             .layout()
             .width(fixed!(render_width))
             .height(fixed!(render_height))
-            .padding(Padding::all(6))
-            .child_gap(12)
+            .padding(Padding::all(0))
+            .child_gap(0)
             .direction(LayoutDirection::TopToBottom)
             .end()
             .background_color(theme.cl_bg_main);
@@ -678,20 +678,26 @@ fn main() -> Result<(), crate::error::TrogdorError> {
             let bottom_bar_height = 160.0 * font_scale;
             let standard_margin = (20.0 * font_scale) as u16;
 
-            let mut header_decl = Declaration::<Texture2D, ()>::new();
-            header_decl
+            // Combined Header and Tab Bar Container
+            let mut combined_header = Declaration::<Texture2D, ()>::new();
+            combined_header
                 .layout()
                 .width(grow!())
-                .height(fixed!(40.0 * font_scale))
-                .padding(Padding::all(6))
-                .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
+                .direction(LayoutDirection::TopToBottom)
                 .end()
-                .background_color(theme.cl_bg_section)
-                .corner_radius()
-                .all(8.0 * font_scale)
-                .end();
+                .background_color(theme.cl_bg_section);
 
-            clay_scope.with(&header_decl, |clay_scope| {
+            clay_scope.with(&combined_header, |clay_scope| {
+                let mut header_decl = Declaration::<Texture2D, ()>::new();
+                header_decl
+                    .layout()
+                    .width(grow!())
+                    .height(fixed!(40.0 * font_scale))
+                    .padding(Padding::all(6))
+                    .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
+                    .end();
+
+                clay_scope.with(&header_decl, |clay_scope| {
                 let mut title_group = Declaration::<Texture2D, ()>::new();
                 title_group
                     .layout()
@@ -855,13 +861,12 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                 .layout()
                 .width(grow!())
                 .direction(LayoutDirection::LeftToRight)
-                .padding(Padding::horizontal(standard_margin))
                 .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Bottom))
                 .end();
 
             clay_scope.with(&header_row, |clay_scope| {
                 let mut tab_bar = Declaration::<Texture2D, ()>::new();
-                tab_bar.layout().direction(LayoutDirection::LeftToRight).child_gap(10).end();
+                tab_bar.layout().direction(LayoutDirection::LeftToRight).child_gap(0).end();
                 clay_scope.with(&tab_bar, |clay_scope| {
                     let current_tab = state.lock().unwrap().current_tab;
                     if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, &arena, font_scale, &theme) {
@@ -963,6 +968,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                                 .color(theme.cl_text_main)
                                 .end(),
                         );
+                        });
                     });
                 });
             });
