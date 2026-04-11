@@ -88,7 +88,7 @@ impl VirtualDevice {
 
     pub fn process_command(&mut self, cmd: &str) -> Vec<String> {
         let cmd = cmd.trim().to_uppercase();
-        if cmd == "?" {
+        if cmd == crate::gcode::CMD_STATUS_REPORT {
             let p = self.current_interpolated_pos();
             return vec![format!(
                 "<{}|MPos:{:.3},{:.3},0.000|FS:{:.0},{}|WCO:0.000,0.000,0.000>",
@@ -96,34 +96,34 @@ impl VirtualDevice {
             )];
         }
 
-        if self.state == "Alarm" && cmd != "$X" && cmd != "0X18" && cmd != "\x18" {
+        if self.state == "Alarm" && cmd != crate::gcode::CMD_UNLOCK && cmd != "0X18" && cmd != "\x18" {
             return vec!["error:9".to_string()]; // Alarm lock
         }
 
-        if cmd == "$H" {
+        if cmd == crate::gcode::CMD_HOME {
             self.pos = Vector2::new(0.0, 0.0);
             self.target_pos = Vector2::new(0.0, 0.0);
             self.state = "Idle".to_string();
             self.homing_start = None;
             return vec!["ok".to_string()];
         }
-        if cmd == "$X" {
+        if cmd == crate::gcode::CMD_UNLOCK {
             self.state = "Idle".to_string();
             return vec!["[MSG:Caution: Unlocked]".to_string(), "ok".to_string()];
         }
-        if cmd == "!" {
+        if cmd == crate::gcode::CMD_FEED_HOLD {
             self.move_start = None;
             self.homing_start = None;
             self.state = "Hold".to_string();
             return vec!["ok".to_string()];
         }
-        if cmd == "~" {
+        if cmd == crate::gcode::CMD_CYCLE_START {
             if self.state == "Hold" {
                 self.state = "Idle".to_string();
             }
             return vec!["ok".to_string()];
         }
-        if cmd == "\x18" || cmd == "0x18" {
+        if cmd == "\x18" || cmd == "0x18" || cmd == "0X18" {
             self.pos = self.current_interpolated_pos();
             self.target_pos = self.pos;
             self.move_start = None;

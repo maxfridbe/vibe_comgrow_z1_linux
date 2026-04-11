@@ -292,7 +292,7 @@ pub fn generate_image_gcode(
                 let start_x = if left_to_right { fx as f32 } else { lx as f32 + 1.0 };
                 let px = (offset_x + start_x * pixel_scale_x).clamp(0.0, 400.0);
                 
-                gcode_out.push_str(&format!("{}\n{}\nM4 F{}\n", gcode::CMD_LASER_OFF, gcode::move_xy_f(px, actual_y, 3000.0), f_val));
+                gcode_out.push_str(&format!("{}\n{}\n{}\n", gcode::CMD_LASER_OFF, gcode::move_xy_f(px, actual_y, 3000.0), gcode::laser_dynamic_f_only(f_val as f32)));
 
                 if left_to_right {
                     let mut x = fx;
@@ -318,9 +318,9 @@ pub fn generate_image_gcode(
                         let dest_x = offset_x + (end_x as f32 + 1.0) * pixel_scale_x;
                         let actual_x = dest_x.clamp(0.0, 400.0);
                         if s_val > 0 && dest_x >= 0.0 && dest_x <= 400.0 {
-                            writeln!(gcode_out, "G1 X{:.2} S{}", actual_x, s_val).ok();
+                            writeln!(gcode_out, "{}", gcode::burn_xs(actual_x, s_val as f32)).ok();
                         } else {
-                            writeln!(gcode_out, "G1 X{:.2} S0", actual_x).ok();
+                            writeln!(gcode_out, "{}", gcode::burn_xs(actual_x, 0.0)).ok();
                         }
                         x = end_x + 1;
                     }
@@ -347,9 +347,9 @@ pub fn generate_image_gcode(
                         let dest_x = offset_x + (end_x as f32) * pixel_scale_x;
                         let actual_x = dest_x.clamp(0.0, 400.0);
                         if s_val > 0 && dest_x >= 0.0 && dest_x <= 400.0 {
-                            writeln!(gcode_out, "G1 X{:.2} S{}", actual_x, s_val).ok();
+                            writeln!(gcode_out, "{}", gcode::burn_xs(actual_x, s_val as f32)).ok();
                         } else {
-                            writeln!(gcode_out, "G1 X{:.2} S0", actual_x).ok();
+                            writeln!(gcode_out, "{}", gcode::burn_xs(actual_x, 0.0)).ok();
                         }
                         if end_x == 0 { break; }
                         x = end_x - 1;

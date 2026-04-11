@@ -234,14 +234,31 @@ pub const CMD_MILLIMETERS: &str = "G21";
 pub const CMD_INCHES: &str = "G20";
 pub const CMD_SET_ORIGIN: &str = "G92 X0 Y0";
 pub const CMD_SOFT_RESET: &str = "0x18";
+pub const CTRL_X: &str = "\x18";
 pub const CMD_MOVE_RAPID: &str = "G0";
 pub const CMD_MOVE_LINEAR: &str = "G1";
 pub const CMD_ARC_CW: &str = "G2";
 pub const CMD_ARC_CCW: &str = "G3";
 pub const CMD_LASER_CONST: &str = "M3";
 pub const CMD_LASER_DYN: &str = "M4";
+pub const CMD_SETTINGS_REPORT: &str = "$$";
+
+pub const SET_MAX_S_1000: &str = "$30=1000";
+pub const SET_LASER_MODE_1: &str = "$32=1";
+pub const SET_Y_STEPS_80: &str = "$101=80";
+pub const SET_Y_STEPS_65: &str = "$101=65";
+pub const SET_X_STEPS_80: &str = "$100=80";
+pub const SET_GYRO_16: &str = "$140=16";
+pub const SET_HARD_LIMITS_1: &str = "$21=1";
+pub const SET_SOFT_LIMITS_1: &str = "$20=1";
+pub const SET_X_MAX_TRAVEL_400: &str = "$130=400";
+pub const SET_Y_MAX_TRAVEL_400: &str = "$131=400";
 
 // --- G-Code Functions ---
+pub fn set_grbl_setting(id: u32, value: &str) -> String {
+    format!("${}={}", id, value)
+}
+
 pub fn move_xyz(x: f32, y: f32, z: f32) -> String {
     format!("{} X{:.2} Y{:.2} Z{:.2}", CMD_MOVE_RAPID, x, y, z)
 }

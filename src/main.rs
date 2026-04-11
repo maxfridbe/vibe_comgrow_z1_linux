@@ -209,7 +209,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 },
                 Command {
                     label: "Settings",
-                    cmd: "$$",
+                    cmd: gcode::CMD_SETTINGS_REPORT,
                 },
                 Command {
                     label: "Hold",
@@ -255,23 +255,23 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             commands: vec![
                 Command {
                     label: "Max S",
-                    cmd: "$30=1000",
+                    cmd: gcode::SET_MAX_S_1000,
                 },
                 Command {
                     label: "Laser Mode",
-                    cmd: "$32=1",
+                    cmd: gcode::SET_LASER_MODE_1,
                 },
                 Command {
                     label: "Y-Steps",
-                    cmd: "$101=80",
+                    cmd: gcode::SET_Y_STEPS_80,
                 },
                 Command {
                     label: "Rotary",
-                    cmd: "$101=65",
+                    cmd: gcode::SET_Y_STEPS_65,
                 },
                 Command {
                     label: "X-Steps",
-                    cmd: "$100=80",
+                    cmd: gcode::SET_X_STEPS_80,
                 },
             ],
         },
@@ -282,23 +282,23 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             commands: vec![
                 Command {
                     label: "Gyro",
-                    cmd: "$140=16",
+                    cmd: gcode::SET_GYRO_16,
                 },
                 Command {
                     label: "Hard Lmt",
-                    cmd: "$21=1",
+                    cmd: gcode::SET_HARD_LIMITS_1,
                 },
                 Command {
                     label: "Soft Lmt",
-                    cmd: "$20=1",
+                    cmd: gcode::SET_SOFT_LIMITS_1,
                 },
                 Command {
                     label: "X-Travel",
-                    cmd: "$130=400",
+                    cmd: gcode::SET_X_MAX_TRAVEL_400,
                 },
                 Command {
                     label: "Y-Travel",
-                    cmd: "$131=400",
+                    cmd: gcode::SET_Y_MAX_TRAVEL_400,
                 },
             ],
         },
@@ -428,11 +428,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         {
             let mut g = state.lock().unwrap();
             if g.is_text_input_active {
+                if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+                    g.is_text_input_active = false;
+                }
                 while let Some(c) = rl.get_char_pressed() {
                     g.text_content.push(c);
                 }
                 if rl.is_key_pressed(KeyboardKey::KEY_BACKSPACE) {
                     g.text_content.pop();
+                }
+                // Blur if clicking outside
+                if mouse_pressed && !clay.pointer_over(clay_scope_id("text_input")) {
+                    g.is_text_input_active = false;
                 }
                 // Stop scroll from bubbling when typing
                 scroll_delta.y = 0.0;

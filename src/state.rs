@@ -226,15 +226,15 @@ impl AppState {
                         x: 0.0,
                         y: 0.0,
                     };
-                } else if *part == "G0" {
+                } else if *part == crate::gcode::CMD_MOVE_RAPID {
                     has_g0 = true;
-                } else if *part == "G1" {
+                } else if *part == crate::gcode::CMD_MOVE_LINEAR {
                     has_g1 = true;
-                } else if *part == "G2" {
+                } else if *part == crate::gcode::CMD_ARC_CW {
                     has_g2 = true;
-                } else if *part == "G3" {
+                } else if *part == crate::gcode::CMD_ARC_CCW {
                     has_g3 = true;
-                } else if *part == "M3" || *part == "M4" {
+                } else if *part == crate::gcode::CMD_LASER_CONST || *part == crate::gcode::CMD_LASER_DYN {
                     // Check if there's an S value in the same command
                 } else if *part == crate::gcode::CMD_LASER_OFF {
                     has_m5 = true;
