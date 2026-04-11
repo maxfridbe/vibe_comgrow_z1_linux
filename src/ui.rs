@@ -2,6 +2,7 @@ use crate::cli_and_helpers;
 use crate::icons::*;
 use crate::state::{AppState, StringArena, ToastType};
 use crate::styles::*;
+use crate::theme::Theme;
 use arboard::Clipboard;
 use clay_layout::layout::{Alignment, LayoutAlignmentX, LayoutAlignmentY, LayoutDirection, Padding};
 use clay_layout::{Color as ClayColor, Declaration, fixed, grow};
@@ -14,9 +15,19 @@ pub fn render_toasts<'a, 'render>(
     arena: &StringArena,
     font_scale: f32,
     mouse_pressed: bool,
+    theme: &Theme,
 ) where
     'a: 'render,
 {
+    let active_toasts = {
+        let guard = state.lock().unwrap();
+        guard.active_toasts.clone()
+    };
+
+    if active_toasts.is_empty() {
+        return;
+    }
+
     let mut toasts_container = Declaration::<Texture2D, ()>::new();
     toasts_container
         .layout()
@@ -27,22 +38,19 @@ pub fn render_toasts<'a, 'render>(
         .padding(Padding::all(16))
         .end()
         .floating()
+        .attach_to(clay_layout::elements::FloatingAttachToElement::Root)
+        .z_index(2000)
         .end();
 
     let mut dismiss_ids = Vec::new();
     let mut action_ids = Vec::new();
 
     clay.with(&toasts_container, |clay_scope| {
-        let active_toasts = {
-            let guard = state.lock().unwrap();
-            guard.active_toasts.clone()
-        };
-
         for toast in active_toasts {
             let bg_color = match toast.toast_type {
-                ToastType::Info => COLOR_PRIMARY,
-                ToastType::Warning => COLOR_ACCENT_PURPLE,
-                ToastType::Error => COLOR_DANGER,
+                ToastType::Info => theme.cl_primary,
+                ToastType::Warning => theme.cl_accent,
+                ToastType::Error => theme.cl_danger,
             };
 
             let mut toast_decl = Declaration::<Texture2D, ()>::new();
@@ -69,16 +77,16 @@ pub fn render_toasts<'a, 'render>(
                     arena.push(format!("{}  {}", icon, toast.message)),
                     clay_layout::text::TextConfig::new()
                         .font_size((14.0 * font_scale) as u16)
-                        .color(COLOR_TEXT_WHITE)
+                        .color(theme.cl_text_main)
                         .end(),
                 );
 
                 if let Some(ref action) = toast.action_label {
                     let action_btn_id = clay_scope.id(arena.push(format!("toast_action_{}", toast.id)));
                     let mut action_btn = Declaration::<Texture2D, ()>::new();
-                    let mut btn_bg = COLOR_BG_DARK;
+                    let mut btn_bg = theme.cl_bg_dark;
                     if clay_scope.pointer_over(action_btn_id) {
-                        btn_bg = COLOR_PRIMARY_HOVER;
+                        btn_bg = theme.cl_primary_hover;
                         if mouse_pressed {
                             action_ids.push(toast.id);
                         }
@@ -97,7 +105,7 @@ pub fn render_toasts<'a, 'render>(
                             arena.push(action.clone()),
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
-                                .color(COLOR_TEXT_WHITE)
+                                .color(theme.cl_text_main)
                                 .end(),
                         );
                     });
@@ -106,9 +114,9 @@ pub fn render_toasts<'a, 'render>(
                 if toast.has_dismiss {
                     let dismiss_btn_id = clay_scope.id(arena.push(format!("toast_dismiss_{}", toast.id)));
                     let mut dismiss_btn = Declaration::<Texture2D, ()>::new();
-                    let mut btn_bg = COLOR_BG_DARK;
+                    let mut btn_bg = theme.cl_bg_dark;
                     if clay_scope.pointer_over(dismiss_btn_id) {
-                        btn_bg = COLOR_DANGER;
+                        btn_bg = theme.cl_danger;
                         if mouse_pressed {
                             dismiss_ids.push(toast.id);
                         }
@@ -127,7 +135,7 @@ pub fn render_toasts<'a, 'render>(
                             "X",
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
-                                .color(COLOR_TEXT_WHITE)
+                                .color(theme.cl_text_main)
                                 .end(),
                         );
                     });
@@ -157,6 +165,7 @@ pub fn render_tab_btn<'a, 'render>(
     active: bool,
     arena: &StringArena,
     font_scale: f32,
+    theme: &Theme,
 ) -> bool
 where
     'a: 'render,
@@ -170,19 +179,19 @@ where
 
     let btn_id = clay.id(id);
     let mut color = if active {
-        COLOR_PRIMARY
+        theme.cl_primary
     } else {
-        COLOR_BG_SECTION
+        theme.cl_bg_section
     };
     let mut text_color = if active {
-        COLOR_TEXT_WHITE
+        theme.cl_text_main
     } else {
-        COLOR_TEXT_MUTED
+        theme.cl_text_sub
     };
 
     if !active && clay.pointer_over(btn_id) {
-        color = COLOR_PRIMARY_HOVER;
-        text_color = COLOR_TEXT_WHITE;
+        color = theme.cl_primary_hover;
+        text_color = theme.cl_text_main;
     }
 
     let mut btn = Declaration::<Texture2D, ()>::new();
@@ -237,6 +246,7 @@ pub fn render_jog_btn<'a, 'render>(
     clipboard: &mut Option<Clipboard>,
     font_scale: f32,
     disabled: bool,
+    theme: &Theme,
 ) -> bool
 where
     'a: 'render,
@@ -245,11 +255,11 @@ where
     let mut color = if disabled {
         COLOR_BG_DISABLED
     } else {
-        COLOR_BG_SECTION
+        theme.cl_bg_section
     };
     let mut clicked = false;
     if !disabled && clay.pointer_over(btn_id) {
-        color = COLOR_PRIMARY;
+        color = theme.cl_primary;
         if mouse_pressed {
             clicked = true;
             let mut guard = state.lock().unwrap();
@@ -278,7 +288,7 @@ where
     let text_color = if disabled {
         COLOR_TEXT_DISABLED
     } else {
-        COLOR_TEXT_WHITE
+        theme.cl_text_main
     };
     clay.with(&btn, |clay| {
         clay.text(
@@ -301,6 +311,7 @@ pub fn render_burn_btn<'a, 'render>(
     arena: &StringArena,
     font_scale: f32,
     disabled: bool,
+    theme: &Theme,
 ) -> bool
 where
     'a: 'render,
@@ -309,11 +320,11 @@ where
     let mut color = if disabled {
         COLOR_BG_DISABLED
     } else {
-        COLOR_ACCENT_PURPLE
+        theme.cl_accent
     };
     let mut clicked = false;
     if !disabled && clay.pointer_over(btn_id) {
-        color = COLOR_ACCENT_PURPLE_LIGHT;
+        color = theme.cl_primary_hover; // or some light accent
         if mouse_pressed {
             clicked = true;
             let mut guard = state.lock().unwrap();
@@ -354,7 +365,7 @@ where
     let text_color = if disabled {
         COLOR_TEXT_DISABLED
     } else {
-        COLOR_TEXT_WHITE
+        theme.cl_text_main
     };
     clay.with(&btn, |clay| {
         clay.text(
@@ -373,6 +384,7 @@ pub fn render_outline_btn<'a, 'render, F>(
     mouse_pressed: bool,
     font_scale: f32,
     disabled: bool,
+    theme: &Theme,
 ) -> bool
 where
     F: FnOnce() -> Option<String>,
@@ -382,11 +394,11 @@ where
     let mut color = if disabled {
         COLOR_BG_DISABLED
     } else {
-        COLOR_BG_DARK
+        theme.cl_bg_dark
     };
     let mut clicked = false;
     if !disabled && clay.pointer_over(btn_id) {
-        color = COLOR_PRIMARY_HOVER;
+        color = theme.cl_primary_hover;
         if mouse_pressed {
             clicked = true;
             if let Some(gcode) = action() {
@@ -417,7 +429,7 @@ where
     let text_color = if disabled {
         COLOR_TEXT_DISABLED
     } else {
-        COLOR_TEXT_WHITE
+        theme.cl_text_main
     };
     clay.with(&btn, |clay| {
         clay.text(
@@ -437,6 +449,7 @@ pub fn render_checkbox<'a, 'render, F>(
     update: F,
     mouse_pressed: bool,
     font_scale: f32,
+    theme: &Theme,
 ) where
     F: FnOnce(&mut AppState, bool),
     'a: 'render,
@@ -449,7 +462,7 @@ pub fn render_checkbox<'a, 'render, F>(
         .child_gap(12)
         .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
         .end()
-        .background_color(COLOR_BG_SECTION)
+        .background_color(theme.cl_bg_section)
         .corner_radius()
         .all(8.0 * font_scale)
         .end();
@@ -462,14 +475,15 @@ pub fn render_checkbox<'a, 'render, F>(
     clay.with(&btn, |clay_scope| {
         let mut box_decl = Declaration::<Texture2D, ()>::new();
         let box_color = if checked {
-            COLOR_PRIMARY
+            theme.cl_primary
         } else {
-            COLOR_BG_DARK
+            theme.cl_bg_dark
         };
         box_decl
             .layout()
-            .width(fixed!(20.0 * font_scale))
-            .height(fixed!(20.0 * font_scale))
+            .width(fixed!(16.0 * font_scale))
+            .height(fixed!(16.0 * font_scale))
+            .direction(LayoutDirection::TopToBottom)
             .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
             .end()
             .background_color(box_color)
@@ -483,7 +497,7 @@ pub fn render_checkbox<'a, 'render, F>(
                     ICON_CHECK,
                     clay_layout::text::TextConfig::new()
                         .font_size((14.0 * font_scale) as u16)
-                        .color(COLOR_TEXT_WHITE)
+                        .color(theme.cl_text_main)
                         .end(),
                 );
             }
@@ -491,7 +505,7 @@ pub fn render_checkbox<'a, 'render, F>(
 
         clay_scope.text(
             label,
-            clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(COLOR_TEXT_MUTED).end(),
+            clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(theme.cl_text_sub).end(),
         );
     });
 }
@@ -511,6 +525,7 @@ pub fn render_slider<'a, 'render, F>(
     _scroll_y: f32,
     arena: &StringArena,
     font_scale: f32,
+    theme: &Theme,
 ) where
     F: FnOnce(&mut AppState, f32),
     'a: 'render,
@@ -557,7 +572,7 @@ pub fn render_slider<'a, 'render, F>(
                 arena.push(val_str),
                 clay_layout::text::TextConfig::new()
                     .font_size((14.0 * font_scale) as u16)
-                    .color(COLOR_TEXT_LABEL)
+                    .color(theme.cl_text_label)
                     .end(),
             );
         });
@@ -573,9 +588,9 @@ pub fn render_slider<'a, 'render, F>(
         clay.with(&slider_row, |clay| {
             // Minus Button
             let mut minus_box = Declaration::<Texture2D, ()>::new();
-            let mut minus_bg = COLOR_BG_DARK;
+            let mut minus_bg = theme.cl_bg_dark;
             if clay.pointer_over(btn_minus_id) {
-                minus_bg = COLOR_PRIMARY_HOVER;
+                minus_bg = theme.cl_primary_hover;
                 if unsafe { raylib::ffi::IsMouseButtonPressed(raylib::ffi::MouseButton::MOUSE_BUTTON_LEFT as i32) } {
                     let mut nv = value - step;
                     if max - min > 10.0 {
@@ -602,7 +617,7 @@ pub fn render_slider<'a, 'render, F>(
                     "-",
                     clay_layout::text::TextConfig::new()
                         .font_size((14.0 * font_scale) as u16)
-                        .color(COLOR_TEXT_WHITE)
+                        .color(theme.cl_text_main)
                         .end(),
                 );
             });
@@ -615,7 +630,7 @@ pub fn render_slider<'a, 'render, F>(
                 .width(grow!())
                 .height(fixed!(16.0 * font_scale))
                 .end()
-                .background_color(COLOR_BG_DARK)
+                .background_color(theme.cl_bg_dark)
                 .corner_radius()
                 .all(4.0 * font_scale)
                 .end();
@@ -643,7 +658,7 @@ pub fn render_slider<'a, 'render, F>(
                     .width(fixed!(percent * 130.0 * font_scale))
                     .height(grow!())
                     .end()
-                    .background_color(color)
+                    .background_color(color) // We keep custom slider color for now
                     .corner_radius()
                     .all(4.0 * font_scale)
                     .end();
@@ -652,9 +667,9 @@ pub fn render_slider<'a, 'render, F>(
 
             // Plus Button
             let mut plus_box = Declaration::<Texture2D, ()>::new();
-            let mut plus_bg = COLOR_BG_DARK;
+            let mut plus_bg = theme.cl_bg_dark;
             if clay.pointer_over(btn_plus_id) {
-                plus_bg = COLOR_PRIMARY_HOVER;
+                plus_bg = theme.cl_primary_hover;
                 if unsafe { raylib::ffi::IsMouseButtonPressed(raylib::ffi::MouseButton::MOUSE_BUTTON_LEFT as i32) } {
                     let mut nv = value + step;
                     if max - min > 10.0 {
@@ -681,7 +696,7 @@ pub fn render_slider<'a, 'render, F>(
                     "+",
                     clay_layout::text::TextConfig::new()
                         .font_size((14.0 * font_scale) as u16)
-                        .color(COLOR_TEXT_WHITE)
+                        .color(theme.cl_text_main)
                         .end(),
                 );
             });

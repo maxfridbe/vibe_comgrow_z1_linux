@@ -153,6 +153,7 @@ pub struct AppState {
     pub is_burning: bool,
     pub burn_log_active: bool,
     pub active_toasts: Vec<Toast>,
+    pub current_theme_index: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -174,6 +175,10 @@ pub struct Toast {
 }
 
 impl AppState {
+    pub fn get_theme(&self) -> crate::theme::Theme {
+        crate::theme::THEMES[self.current_theme_index % crate::theme::THEMES.len()]
+    }
+
     pub fn add_toast(&mut self, toast_type: ToastType, message: String, seconds: f32, has_dismiss: bool, action: Option<String>) {
         static mut NEXT_ID: u32 = 0;
         let id = unsafe {

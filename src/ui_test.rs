@@ -2,19 +2,19 @@ use crate::cli_and_helpers::generate_pattern_gcode;
 use crate::icons::*;
 use crate::state::{AppState, StringArena, ToastType};
 use crate::styles::*;
-use crate::ui::{Section, render_burn_btn, render_checkbox, render_outline_btn, render_slider};
+use crate::theme::Theme;
+use crate::ui::{Command, Section, render_burn_btn, render_checkbox, render_outline_btn, render_slider};
 use arboard::Clipboard;
 use clay_layout::layout::{Alignment, LayoutAlignmentX, LayoutAlignmentY, LayoutDirection, Padding};
-use clay_layout::{Declaration, grow};
-use raylib::prelude::*;
+use clay_layout::{Declaration, fixed, grow};
 use rfd::FileDialog;
-use std::path::Path;
+use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
 
 pub fn render_test_controls<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
     state: &Arc<Mutex<AppState>>,
-    sections: &[Section],
+    _sections: &[Section],
     mouse_pos: raylib::math::Vector2,
     mouse_down: bool,
     mouse_pressed: bool,
@@ -22,20 +22,17 @@ pub fn render_test_controls<'a, 'render>(
     clipboard: &mut Option<Clipboard>,
     arena: &StringArena,
     font_scale: f32,
+    theme: &Theme,
 ) where
     'a: 'render,
 {
-    let mut left_col = Declaration::<Texture2D, ()>::new();
-    left_col.layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
-
     let is_idle = { state.lock().unwrap().machine_state == "Idle" };
-    let (enabled, bx, by, bw, bh) = {
-        let g = state.lock().unwrap();
-        (g.bounds.enabled, g.bounds.x, g.bounds.y, g.bounds.w, g.bounds.h)
-    };
 
-    clay.with(&left_col, |clay_scope| {
-        // 1. Boundary Settings (At the top)
+    let mut container = Declaration::<Texture2D, ()>::new();
+    container.layout().width(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
+
+    clay.with(&container, |clay_scope| {
+        // 1. SVG Picker Section
         let mut bounds_box = Declaration::<Texture2D, ()>::new();
         bounds_box
             .layout()
@@ -44,135 +41,24 @@ pub fn render_test_controls<'a, 'render>(
             .padding(Padding::all(12))
             .child_gap(12)
             .end()
-            .background_color(COLOR_BG_SECTION)
+            .background_color(theme.cl_bg_section)
             .corner_radius()
             .all(16.0 * font_scale)
             .end();
 
         clay_scope.with(&bounds_box, |clay_scope| {
             clay_scope.text(
-                "BOUNDARY SETTINGS",
+                "CUSTOM SVG",
                 clay_layout::text::TextConfig::new()
-                    .font_size((14.0 * font_scale) as u16)
-                    .color(COLOR_TEXT_MUTED)
-                    .end(),
-            );
-
-            render_checkbox(
-                clay_scope,
-                "bounds_enabled",
-                "Enable Boundary Clipping",
-                enabled,
-                state,
-                |s, v| s.bounds.enabled = v,
-                mouse_pressed,
-                font_scale,
-            );
-
-            let mut grid = Declaration::<Texture2D, ()>::new();
-            grid.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(16).end();
-            clay_scope.with(&grid, |clay_scope| {
-                let mut col1 = Declaration::<Texture2D, ()>::new();
-                col1.layout().direction(LayoutDirection::TopToBottom).child_gap(8).end();
-                clay_scope.with(&col1, |clay_scope| {
-                    render_slider(
-                        clay_scope,
-                        "bound_x",
-                        "X Pos",
-                        bx,
-                        0.0,
-                        400.0,
-                        COLOR_SLIDER_X,
-                        state,
-                        |s, v| s.bounds.x = v,
-                        mouse_pos,
-                        mouse_down,
-                        scroll_y,
-                        arena,
-                        font_scale,
-                    );
-                    render_slider(
-                        clay_scope,
-                        "bound_w",
-                        "Width",
-                        bw,
-                        1.0,
-                        400.0,
-                        COLOR_SLIDER_W,
-                        state,
-                        |s, v| s.bounds.w = v,
-                        mouse_pos,
-                        mouse_down,
-                        scroll_y,
-                        arena,
-                        font_scale,
-                    );
-                });
-                let mut col2 = Declaration::<Texture2D, ()>::new();
-                col2.layout().direction(LayoutDirection::TopToBottom).child_gap(8).end();
-                clay_scope.with(&col2, |clay_scope| {
-                    render_slider(
-                        clay_scope,
-                        "bound_y",
-                        "Y Pos",
-                        by,
-                        0.0,
-                        400.0,
-                        COLOR_SLIDER_Y,
-                        state,
-                        |s, v| s.bounds.y = v,
-                        mouse_pos,
-                        mouse_down,
-                        scroll_y,
-                        arena,
-                        font_scale,
-                    );
-                    render_slider(
-                        clay_scope,
-                        "bound_h",
-                        "Height",
-                        bh,
-                        1.0,
-                        400.0,
-                        COLOR_SLIDER_H,
-                        state,
-                        |s, v| s.bounds.h = v,
-                        mouse_pos,
-                        mouse_down,
-                        scroll_y,
-                        arena,
-                        font_scale,
-                    );
-                });
-            });
-        });
-
-        // 2. SVG Controls
-        let mut svg_box = Declaration::<Texture2D, ()>::new();
-        svg_box
-            .layout()
-            .width(grow!())
-            .direction(LayoutDirection::TopToBottom)
-            .padding(Padding::all(12))
-            .child_gap(12)
-            .end()
-            .background_color(COLOR_BG_SECTION)
-            .corner_radius()
-            .all(16.0 * font_scale)
-            .end();
-
-        clay_scope.with(&svg_box, |clay_scope| {
-            clay_scope.text(
-                "SVG LOADING",
-                clay_layout::text::TextConfig::new()
-                    .font_size((14.0 * font_scale) as u16)
-                    .color(COLOR_TEXT_MUTED)
+                    .font_size((12.0 * font_scale) as u16)
+                    .color(theme.cl_text_sub)
                     .end(),
             );
 
             let mut pick_row = Declaration::<Texture2D, ()>::new();
             pick_row
                 .layout()
+                .width(grow!())
                 .direction(LayoutDirection::LeftToRight)
                 .child_gap(12)
                 .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
@@ -183,10 +69,10 @@ pub fn render_test_controls<'a, 'render>(
                 let mut load_color = if !is_idle {
                     COLOR_BG_DISABLED
                 } else {
-                    COLOR_PRIMARY_HOVER
+                    theme.cl_primary_hover
                 };
                 if is_idle && clay_scope.pointer_over(load_id) {
-                    load_color = COLOR_PRIMARY;
+                    load_color = theme.cl_primary;
                     if mouse_pressed {
                         if let Some(path_buf) =
                             FileDialog::new().add_filter("Scalable Vector Graphics", &["svg"]).pick_file()
@@ -203,9 +89,8 @@ pub fn render_test_controls<'a, 'render>(
                 load_btn
                     .id(load_id)
                     .layout()
+                    .width(grow!())
                     .padding(Padding::all(10))
-                    .direction(LayoutDirection::LeftToRight)
-                    .child_gap(8)
                     .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
                     .end()
                     .background_color(load_color)
@@ -213,173 +98,278 @@ pub fn render_test_controls<'a, 'render>(
                     .all(8.0 * font_scale)
                     .end();
 
-                let load_text_color = if !is_idle {
-                    COLOR_TEXT_DISABLED
-                } else {
-                    COLOR_TEXT_WHITE
+                let (path_label, path_color) = {
+                    let g = state.lock().unwrap();
+                    match &g.custom_svg_path {
+                        Some(p) => (p.split('/').last().unwrap_or("SVG").to_string(), theme.cl_text_main),
+                        None => ("No SVG loaded".to_string(), theme.cl_text_sub),
+                    }
                 };
+
                 clay_scope.with(&load_btn, |clay| {
                     clay.text(
-                        arena.push(format!("{}   Pick Custom SVG", ICON_FILE)),
+                        arena.push(format!("{}   {}", ICON_IMAGE, path_label)),
                         clay_layout::text::TextConfig::new()
                             .font_size((14.0 * font_scale) as u16)
-                            .color(load_text_color)
+                            .color(path_color)
                             .end(),
                     );
                 });
+            });
 
-                let custom_path = { state.lock().unwrap().custom_svg_path.clone() };
-                if let Some(p) = custom_path {
-                    let filename = Path::new(&p).file_name().and_then(|f| f.to_str()).unwrap_or("unknown");
+            let custom_path = { state.lock().unwrap().custom_svg_path.clone() };
+            if let Some(p) = custom_path {
+                let mut action_row = Declaration::<Texture2D, ()>::new();
+                action_row
+                    .layout()
+                    .width(grow!())
+                    .direction(LayoutDirection::LeftToRight)
+                    .child_gap(12)
+                    .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+                    .end();
+
+                clay_scope.with(&action_row, |clay_scope| {
+                    let preview_id = clay_scope.id("preview_custom_svg");
+                    let is_active_preview = {
+                        let g = state.lock().unwrap();
+                        g.preview_pattern == Some("custom_svg".to_string())
+                    };
+                    let mut preview_color = if is_active_preview { theme.cl_primary } else { theme.cl_bg_dark };
+                    if clay_scope.pointer_over(preview_id) {
+                        preview_color = theme.cl_primary_hover;
+                        if mouse_pressed {
+                            let mut g = state.lock().unwrap();
+                            if is_active_preview {
+                                g.preview_pattern = None;
+                                g.preview_paths.clear();
+                                g.preview_version += 1;
+                            } else {
+                                g.preview_pattern = Some("custom_svg".to_string());
+                                g.preview_paths.clear();
+                                let config = g.get_burn_config();
+                                let p_inner = p.clone();
+                                let state_clone = Arc::clone(state);
+                                std::thread::spawn(move || {
+                                    if let Ok((gcode, _)) = generate_pattern_gcode(&p_inner, &config, true) {
+                                        let mut g = state_clone.lock().unwrap();
+                                        g.process_command_for_preview(&gcode);
+                                    }
+                                });
+                            }
+                        }
+                    }
+
+                    let mut preview_btn = Declaration::<Texture2D, ()>::new();
+                    preview_btn
+                        .id(preview_id)
+                        .layout()
+                        .width(fixed!(32.0 * font_scale))
+                        .height(fixed!(32.0 * font_scale))
+                        .direction(LayoutDirection::TopToBottom)
+                        .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+                        .padding(Padding::all(2))
+                        .end()
+                        .background_color(preview_color)
+                        .corner_radius()
+                        .all(8.0 * font_scale)
+                        .end();
+                    clay_scope.with(&preview_btn, |clay| {
+                        clay.text(
+                            ICON_EYE,
+                            clay_layout::text::TextConfig::new()
+                                .font_size((18.0 * font_scale) as u16)
+                                .color(theme.cl_text_main)
+                                .end(),
+                        );
+                    });
+
+                    if render_burn_btn(
+                        clay_scope,
+                        "burn_custom_svg",
+                        "BURN",
+                        state,
+                        0.0,
+                        0.0,
+                        mouse_pressed,
+                        clipboard,
+                        arena,
+                        font_scale,
+                        !is_idle,
+                        theme,
+                    ) {
+                        let mut g = state.lock().unwrap();
+                        g.is_burning = true;
+                        g.burn_log_active = true;
+                        let config = g.get_burn_config();
+                        if let Ok((gcode, _)) = generate_pattern_gcode(&p, &config, false) {
+                            g.send_command(gcode);
+                        }
+                    }
+                    let path_clone = p.clone();
+                    render_outline_btn(
+                        clay_scope,
+                        "outline_custom_svg",
+                        state,
+                        || {
+                            let config = state.lock().unwrap().get_burn_config();
+                            generate_pattern_gcode(&path_clone, &config, false).ok().map(|(g, _)| g)
+                        },
+                        mouse_pressed,
+                        font_scale,
+                        !is_idle,
+                        theme,
+                    );
+                });
+            }
+        });
+
+        // 2. Built-in Patterns Section
+        let mut pattern_box = Declaration::<Texture2D, ()>::new();
+        pattern_box
+            .layout()
+            .width(grow!())
+            .direction(LayoutDirection::TopToBottom)
+            .padding(Padding::all(12))
+            .child_gap(12)
+            .end()
+            .background_color(theme.cl_bg_section)
+            .corner_radius()
+            .all(16.0 * font_scale)
+            .end();
+
+        clay_scope.with(&pattern_box, |clay_scope| {
+            clay_scope.text(
+                "TEST PATTERNS",
+                clay_layout::text::TextConfig::new()
+                    .font_size((12.0 * font_scale) as u16)
+                    .color(theme.cl_text_sub)
+                    .end(),
+            );
+
+            let built_in = vec![
+                Command { label: "Square", cmd: "" },
+                Command { label: "Heart", cmd: "" },
+                Command { label: "Star", cmd: "" },
+                Command { label: "Car", cmd: "" },
+                Command { label: "Stars8", cmd: "" },
+                Command { label: "Stars9", cmd: "" },
+            ];
+
+            for cmd in built_in {
+                let mut row = Declaration::<Texture2D, ()>::new();
+                row.layout()
+                    .width(grow!())
+                    .direction(LayoutDirection::LeftToRight)
+                    .child_gap(12)
+                    .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
+                    .end();
+
+                clay_scope.with(&row, |clay_scope| {
                     clay_scope.text(
-                        arena.push(filename.to_string()),
+                        arena.push(cmd.label.to_uppercase()),
                         clay_layout::text::TextConfig::new()
                             .font_size((14.0 * font_scale) as u16)
-                            .color(COLOR_TEXT_WHITE)
+                            .color(theme.cl_text_main)
                             .end(),
                     );
 
-                    // Burn and Eye buttons
-                    let mut action_row = Declaration::<Texture2D, ()>::new();
-                    action_row
-                        .layout()
-                        .child_gap(8)
-                        .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
-                        .end();
-                    clay_scope.with(&action_row, |clay| {
-                        if render_burn_btn(
-                            clay,
-                            "burn_custom_svg",
-                            "BURN",
-                            state,
-                            0.0,
-                            0.0,
-                            mouse_pressed,
-                            clipboard,
-                            arena,
-                            font_scale,
-                            !is_idle,
-                        ) {
+                    let mut spacer = Declaration::<Texture2D, ()>::new();
+                    spacer.layout().width(grow!()).end();
+                    clay_scope.with(&spacer, |_| {});
+
+                    let preview_id = clay_scope.id(arena.push(format!("preview_{}", cmd.label)));
+                    let is_active_preview = {
+                        let g = state.lock().unwrap();
+                        g.preview_pattern == Some(cmd.label.to_string())
+                    };
+                    let mut preview_color = if is_active_preview { theme.cl_primary } else { theme.cl_bg_dark };
+                    if clay_scope.pointer_over(preview_id) {
+                        preview_color = theme.cl_primary_hover;
+                        if mouse_pressed {
                             let mut g = state.lock().unwrap();
-                            g.is_burning = true;
-                            g.burn_log_active = true;
-                            let config = g.get_burn_config();
-                            let result: Result<(String, String), Box<dyn std::error::Error + Send + Sync>> =
-                                generate_pattern_gcode(
-                                    &p,
-                                    &config,
-                                    false,
-                                );
-                            if let Ok((gcode, _)) = result {
-                                g.send_command(gcode);
-                            }
-                        }
-                        let path_clone = p.clone();
-                        render_outline_btn(
-                            clay,
-                            "outline_custom_svg",
-                            state,
-                            move || {
-                                let config = state.lock().unwrap().get_burn_config();
-                                generate_pattern_gcode(
-                                    &path_clone,
-                                    &config,
-                                    false,
-                                )
-                                .ok()
-                                .map(|(g, _)| g)
-                            },
-                            mouse_pressed,
-                            font_scale,
-                            !is_idle,
-                        );
-
-                        // Preview Eyeball
-                        let eye_id = clay.id("eye_custom_svg");
-                        let is_previewing = { state.lock().unwrap().preview_pattern.as_deref() == Some("custom_svg") };
-                        let mut eye_color = if is_previewing {
-                            COLOR_SUCCESS
-                        } else {
-                            COLOR_TEXT_MUTED
-                        };
-                        let is_processing = { state.lock().unwrap().is_processing };
-                        if !is_processing && clay.pointer_over(eye_id) {
-                            eye_color = COLOR_TEXT_WHITE;
-                            if mouse_pressed {
-                                let mut g = state.lock().unwrap();
-                                if is_previewing {
-                                    g.preview_pattern = None;
-                                    g.preview_paths.clear();
-                                    g.preview_version += 1;
-                                } else {
-                                    g.preview_pattern = Some("custom_svg".to_string());
-                                    g.preview_paths.clear();
-                                    g.preview_version += 1;
-                                    g.is_processing = true;                                    let config = g.get_burn_config();
-                                    let state_clone = Arc::clone(state);
-                                    let path_clone = p.clone();
-
-                                    std::thread::spawn(move || {
-                                        use std::panic;
-                                        let result = panic::catch_unwind(|| {
-                                            generate_pattern_gcode(
-                                                &path_clone,
-                                                &config,
-                                                true,
-                                            )
-                                        });
-
-                                        if let Ok(Ok((gcode, _))) = result {
-                                            let (v_pos, is_abs, power) = {
-                                                let g = state_clone.lock().unwrap();
-                                                (g.v_pos, g.is_absolute, g.current_preview_power)
-                                            };
-
-                                            let (segments, new_v_pos, new_is_abs, new_power) = AppState::get_preview_segments(
-                                                &gcode,
-                                                v_pos,
-                                                is_abs,
-                                                power
-                                            );
-
-                                            let mut g = state_clone.lock().unwrap();
-                                            g.preview_version += 1;
-                                            g.preview_paths.extend(segments);
-                                            g.v_pos = new_v_pos;
-                                            g.is_absolute = new_is_abs;
-                                            g.current_preview_power = new_power;
-                                        }
-                                        state_clone.lock().unwrap().is_processing = false;
-                                    });                                }
-                            }
-                        }
-                        let mut eye_btn = Declaration::<Texture2D, ()>::new();
-                        eye_btn.id(eye_id).layout().padding(Padding::all(4)).end();
-                        clay.with(&eye_btn, |clay| {
-                            if is_processing {
-                                clay.text(
-                                    ICON_SPINNER,
-                                    clay_layout::text::TextConfig::new()
-                                        .font_size((20.0 * font_scale) as u16)
-                                        .color(COLOR_SUCCESS)
-                                        .end(),
-                                );
+                            if is_active_preview {
+                                g.preview_pattern = None;
+                                g.preview_paths.clear();
+                                g.preview_version += 1;
                             } else {
-                                clay.text(
-                                    ICON_EYE,
-                                    clay_layout::text::TextConfig::new()
-                                        .font_size((20.0 * font_scale) as u16)
-                                        .color(eye_color)
-                                        .end(),
-                                );
+                                g.preview_pattern = Some(cmd.label.to_string());
+                                g.preview_paths.clear();
+                                let config = g.get_burn_config();
+                                let lbl = cmd.label;
+                                let state_clone = Arc::clone(state);
+                                std::thread::spawn(move || {
+                                    if let Ok((gcode, _)) = generate_pattern_gcode(lbl, &config, true) {
+                                        let mut g = state_clone.lock().unwrap();
+                                        g.process_command_for_preview(&gcode);
+                                    }
+                                });
                             }
-                        });
+                        }
+                    }
+                    let mut preview_btn = Declaration::<Texture2D, ()>::new();
+                    preview_btn
+                        .id(preview_id)
+                        .layout()
+                        .width(fixed!(32.0 * font_scale))
+                        .height(fixed!(32.0 * font_scale))
+                        .direction(LayoutDirection::TopToBottom)
+                        .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+                        .padding(Padding::all(2))
+                        .end()
+                        .background_color(preview_color)
+                        .corner_radius()
+                        .all(8.0 * font_scale)
+                        .end();
+                    clay_scope.with(&preview_btn, |clay| {
+                        clay.text(
+                            ICON_EYE,
+                            clay_layout::text::TextConfig::new()
+                                .font_size((18.0 * font_scale) as u16)
+                                .color(theme.cl_text_main)
+                                .end(),
+                        );
                     });
-                }
-            });
+
+                    if render_burn_btn(
+                        clay_scope,
+                        arena.push(format!("test_{}", cmd.label)),
+                        "BURN",
+                        state,
+                        0.0,
+                        0.0,
+                        mouse_pressed,
+                        clipboard,
+                        arena,
+                        font_scale,
+                        !is_idle,
+                        theme,
+                    ) {
+                        let mut g = state.lock().unwrap();
+                        g.is_burning = true;
+                        g.burn_log_active = true;
+                        let config = g.get_burn_config();
+                        if let Ok((gcode, _)) = generate_pattern_gcode(cmd.label, &config, false) {
+                            g.send_command(gcode);
+                        }
+                    }
+                    render_outline_btn(
+                        clay_scope,
+                        arena.push(format!("outline_{}", cmd.label)),
+                        state,
+                        || {
+                            let config = state.lock().unwrap().get_burn_config();
+                            generate_pattern_gcode(cmd.label, &config, false).ok().map(|(g, _)| g)
+                        },
+                        mouse_pressed,
+                        font_scale,
+                        !is_idle,
+                        theme,
+                    );
+                });
+            }
         });
 
-        // 3. Sliders (TROGDOR)
+        // 3. Settings Section
         let mut controls_box = Declaration::<Texture2D, ()>::new();
         controls_box
             .layout()
@@ -388,280 +378,60 @@ pub fn render_test_controls<'a, 'render>(
             .padding(Padding::all(12))
             .child_gap(16)
             .end()
-            .background_color(COLOR_BG_SECTION)
+            .background_color(theme.cl_bg_section)
             .corner_radius()
             .all(16.0 * font_scale)
             .end();
 
         clay_scope.with(&controls_box, |clay_scope| {
             clay_scope.text(
-                "TROGDOR",
+                "PATTERN SETTINGS",
                 clay_layout::text::TextConfig::new()
-                    .font_size((14.0 * font_scale) as u16)
-                    .color(COLOR_TEXT_MUTED)
+                    .font_size((12.0 * font_scale) as u16)
+                    .color(theme.cl_text_sub)
                     .end(),
             );
 
-            let (pwr, spd, scl, pas) = {
+            let (pwr, spd, scl, passes, bx, by, bw, bh, b_en) = {
                 let g = state.lock().unwrap();
-                (g.power, g.feed_rate, g.scale, g.passes)
+                (
+                    g.power,
+                    g.feed_rate,
+                    g.scale,
+                    g.passes,
+                    g.bounds.x,
+                    g.bounds.y,
+                    g.bounds.w,
+                    g.bounds.h,
+                    g.bounds.enabled,
+                )
             };
 
-            let mut grid = Declaration::<Texture2D, ()>::new();
-            grid.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(16).end();
-            clay_scope.with(&grid, |clay_scope| {
-                let mut col1 = Declaration::<Texture2D, ()>::new();
-                col1.layout().direction(LayoutDirection::TopToBottom).child_gap(8).end();
-                clay_scope.with(&col1, |clay_scope| {
-                    render_slider(
-                        clay_scope,
-                        "test_power",
-                        "Power",
-                        pwr,
-                        0.0,
-                        1000.0,
-                        COLOR_SLIDER_POWER,
-                        state,
-                        |s, v| s.power = v,
-                        mouse_pos,
-                        mouse_down,
-                        scroll_y,
-                        arena,
-                        font_scale,
-                    );
-                    render_slider(
-                        clay_scope,
-                        "test_scale",
-                        "Scale",
-                        scl,
-                        0.1,
-                        5.0,
-                        COLOR_SLIDER_STEP,
-                        state,
-                        |s, v| s.scale = v,
-                        mouse_pos,
-                        mouse_down,
-                        scroll_y,
-                        arena,
-                        font_scale,
-                    );
-                });
-                let mut col2 = Declaration::<Texture2D, ()>::new();
-                col2.layout().direction(LayoutDirection::TopToBottom).child_gap(8).end();
-                clay_scope.with(&col2, |clay_scope| {
-                    render_slider(
-                        clay_scope,
-                        "test_speed",
-                        "Speed",
-                        spd,
-                        10.0,
-                        6000.0,
-                        COLOR_SLIDER_SPEED,
-                        state,
-                        |s, v| s.feed_rate = v,
-                        mouse_pos,
-                        mouse_down,
-                        scroll_y,
-                        arena,
-                        font_scale,
-                    );
-                    render_slider(
-                        clay_scope,
-                        "test_passes",
-                        "Passes",
-                        pas as f32,
-                        1.0,
-                        20.0,
-                        COLOR_SLIDER_PASSES,
-                        state,
-                        |s, v| s.passes = v as u32,
-                        mouse_pos,
-                        mouse_down,
-                        scroll_y,
-                        arena,
-                        font_scale,
-                    );
-                });
-            });
-        });
+            render_slider(clay_scope, "p_pwr", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+            render_slider(clay_scope, "p_spd", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+            render_slider(clay_scope, "p_scl", "Scale", scl, 0.1, 10.0, COLOR_SLIDER_STEP, state, |s, v| s.scale = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+            render_slider(clay_scope, "p_pas", "Passes", passes as f32, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| s.passes = v as u32, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
 
-        // 4. Test Patterns (2 Column Layout)
-        for section in sections {
-            if section.title == "Test Patterns" {
-                let mut section_box = Declaration::<Texture2D, ()>::new();
-                section_box
-                    .layout()
-                    .width(grow!())
-                    .direction(LayoutDirection::TopToBottom)
-                    .padding(Padding::all(16))
-                    .child_gap(12)
-                    .end()
-                    .background_color(COLOR_BG_SECTION)
-                    .corner_radius()
-                    .all(16.0 * font_scale)
-                    .end();
+            render_checkbox(clay_scope, "p_ben", "Enable Bounds", b_en, state, |s, v| s.bounds.enabled = v, mouse_pressed, font_scale, theme);
 
-                clay_scope.with(&section_box, |clay| {
-                    clay.text(
-                        section.title,
-                        clay_layout::text::TextConfig::new()
-                            .font_size((18.0 * font_scale) as u16)
-                            .color(section.color)
-                            .end(),
-                    );
-
-                    for row_chunk in section.commands.chunks(2) {
-                        let mut row = Declaration::<Texture2D, ()>::new();
-                        row.layout().width(grow!()).child_gap(12).end();
-                        clay.with(&row, |clay| {
-                            for cmd in row_chunk {
-                                let mut btn_row = Declaration::<Texture2D, ()>::new();
-                                btn_row
-                                    .layout()
-                                    .child_gap(4)
-                                    .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
-                                    .end();
-                                clay.with(&btn_row, |clay| {
-                                    if render_burn_btn(
-                                        clay,
-                                        arena.push(format!("test_{}", cmd.label)),
-                                        cmd.label,
-                                        state,
-                                        0.0,
-                                        0.0,
-                                        mouse_pressed,
-                                        clipboard,
-                                        arena,
-                                        font_scale,
-                                        !is_idle,
-                                    ) {
-                                        let mut g = state.lock().unwrap();
-                                        g.is_burning = true;
-                                        g.burn_log_active = true;
-                                        let config = g.get_burn_config();
-
-                                        match generate_pattern_gcode(
-                                            cmd.label,
-                                            &config,
-                                            false,
-                                        ) {
-                                            Ok((gcode, _)) => {
-                                                g.send_command(gcode);
-                                            }
-                                            Err(e) => {
-                                                println!("Error generating G-code: {}", e);
-                                            }
-                                        }
-                                    }
-                                    let label_clone = cmd.label.to_string();
-                                    render_outline_btn(
-                                        clay,
-                                        arena.push(format!("outline_test_{}", cmd.label)),
-                                        state,
-                                        move || {
-                                            let config = state.lock().unwrap().get_burn_config();
-                                            generate_pattern_gcode(
-                                                &label_clone,
-                                                &config,
-                                                false,
-                                            )
-                                            .ok()
-                                            .map(|(g, _)| g)
-                                        },
-                                        mouse_pressed,
-                                        font_scale,
-                                        !is_idle,
-                                    );
-
-                                    // Preview Eyeball
-                                    let eye_id = clay.id(arena.push(format!("eye_{}", cmd.label)));
-                                    let is_previewing =
-                                        { state.lock().unwrap().preview_pattern.as_deref() == Some(cmd.label) };
-                                    let mut eye_color = if is_previewing {
-                                        COLOR_SUCCESS
-                                    } else {
-                                        COLOR_TEXT_MUTED
-                                    };
-                                    let is_processing = { state.lock().unwrap().is_processing };
-                                    if !is_processing && clay.pointer_over(eye_id) {
-                                        eye_color = COLOR_TEXT_WHITE;
-                                        if mouse_pressed {
-                                            let mut g = state.lock().unwrap();
-                                            if is_previewing {
-                                                g.preview_pattern = None;
-                                                g.preview_paths.clear();
-                                                g.preview_version += 1;
-                                            } else {
-                                                g.preview_pattern = Some(cmd.label.to_string());
-                                                g.preview_paths.clear();
-                                                g.preview_version += 1;
-                                                g.is_processing = true;
-                                                let config = g.get_burn_config();
-                                                let label_clone = cmd.label.to_string();
-                                                let state_clone = Arc::clone(state);
-
-                                                std::thread::spawn(move || {
-                                                    use std::panic;
-                                                    let result = panic::catch_unwind(|| {
-                                                        generate_pattern_gcode(
-                                                            &label_clone,
-                                                            &config,
-                                                            true,
-                                                        )
-                                                    });
-
-                                                    if let Ok(Ok((gcode, _))) = result {
-                                                        let (v_pos, is_abs, power) = {
-                                                            let g = state_clone.lock().unwrap();
-                                                            (g.v_pos, g.is_absolute, g.current_preview_power)
-                                                        };
-                                                        
-                                                        let (segments, new_v_pos, new_is_abs, new_power) = AppState::get_preview_segments(
-                                                            &gcode,
-                                                            v_pos,
-                                                            is_abs,
-                                                            power
-                                                        );
-
-                                                        let mut g = state_clone.lock().unwrap();
-                                                        g.preview_version += 1;
-                                                        g.preview_paths.extend(segments);
-                                                        g.v_pos = new_v_pos;
-                                                        g.is_absolute = new_is_abs;
-                                                        g.current_preview_power = new_power;
-                                                    }
-                                                    state_clone.lock().unwrap().is_processing = false;
-                                                });
-                                            }
-                                        }
-                                    }
-                                    let mut eye_btn = Declaration::<Texture2D, ()>::new();
-                                    eye_btn.id(eye_id).layout().padding(Padding::all(4)).end();
-                                    clay.with(&eye_btn, |clay| {
-                                        if is_processing {
-                                            clay.text(
-                                                ICON_SPINNER,
-                                                clay_layout::text::TextConfig::new()
-                                                    .font_size((20.0 * font_scale) as u16)
-                                                    .color(COLOR_SUCCESS)
-                                                    .end(),
-                                            );
-                                        } else {
-                                            clay.text(
-                                                ICON_EYE,
-                                                clay_layout::text::TextConfig::new()
-                                                    .font_size((20.0 * font_scale) as u16)
-                                                    .color(eye_color)
-                                                    .end(),
-                                            );
-                                        }
-                                    });
-                                });
-                            }
-                        });
-                    }
+            if b_en {
+                let mut grid = Declaration::<Texture2D, ()>::new();
+                grid.layout().width(grow!()).direction(LayoutDirection::TopToBottom).child_gap(8).end();
+                clay_scope.with(&grid, |clay_scope| {
+                    let mut r1 = Declaration::<Texture2D, ()>::new();
+                    r1.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
+                    clay_scope.with(&r1, |clay_scope| {
+                        render_slider(clay_scope, "p_bx", "X", bx, 0.0, 400.0, COLOR_SLIDER_X, state, |s, v| s.bounds.x = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                        render_slider(clay_scope, "p_by", "Y", by, 0.0, 400.0, COLOR_SLIDER_Y, state, |s, v| s.bounds.y = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                    });
+                    let mut r2 = Declaration::<Texture2D, ()>::new();
+                    r2.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
+                    clay_scope.with(&r2, |clay_scope| {
+                        render_slider(clay_scope, "p_bw", "W", bw, 1.0, 400.0, COLOR_SLIDER_W, state, |s, v| s.bounds.w = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                        render_slider(clay_scope, "p_bh", "H", bh, 1.0, 400.0, COLOR_SLIDER_H, state, |s, v| s.bounds.h = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                    });
                 });
             }
-        }
+        });
     });
 }

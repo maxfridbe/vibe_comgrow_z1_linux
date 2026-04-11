@@ -3,6 +3,7 @@ use crate::gcode;
 use crate::icons::*;
 use crate::state::{AppState, StringArena};
 use crate::styles::*;
+use crate::theme::Theme;
 use crate::ui::{Section, render_burn_btn, render_jog_btn, render_outline_btn, render_slider};
 use arboard::Clipboard;
 use clay_layout::layout::{Alignment, LayoutAlignmentX, LayoutAlignmentY, LayoutDirection, Padding};
@@ -18,6 +19,7 @@ pub fn render_manual_left_subcol<'a, 'render>(
     _clipboard: &mut Option<Clipboard>,
     arena: &StringArena,
     font_scale: f32,
+    theme: &Theme,
 ) where
     'a: 'render,
 {
@@ -36,7 +38,7 @@ pub fn render_manual_left_subcol<'a, 'render>(
                 .direction(LayoutDirection::TopToBottom)
                 .child_gap(12)
                 .end()
-                .background_color(COLOR_BG_SECTION)
+                .background_color(theme.cl_bg_section)
                 .corner_radius()
                 .all(16.0 * font_scale)
                 .end();
@@ -77,16 +79,16 @@ pub fn render_manual_left_subcol<'a, 'render>(
                             let mut btn_color = if disabled {
                                 COLOR_BG_DISABLED
                             } else {
-                                COLOR_BG_DARK
+                                theme.cl_bg_dark
                             };
                             let mut text_color = if disabled {
-                                COLOR_TEXT_DISABLED
+                                theme.cl_text_sub
                             } else {
-                                COLOR_TEXT_MUTED
+                                theme.cl_text_sub
                             };
                             if !disabled && clay_scope.pointer_over(btn_id) {
-                                btn_color = COLOR_PRIMARY_HOVER;
-                                text_color = COLOR_TEXT_WHITE;
+                                btn_color = theme.cl_primary_hover;
+                                text_color = theme.cl_text_main;
                                 if mouse_pressed {
                                     if section.title == "Test Patterns" {
                                         let config = state.lock().unwrap().get_burn_config();
@@ -113,11 +115,11 @@ pub fn render_manual_left_subcol<'a, 'render>(
                                 .end();
 
                             let subtext_color = if disabled {
-                                COLOR_BG_SECTION
-                            } else if btn_color == COLOR_PRIMARY_HOVER {
-                                COLOR_TEXT_WHITE
+                                theme.cl_bg_section
+                            } else if btn_color == theme.cl_primary_hover {
+                                theme.cl_text_main
                             } else {
-                                COLOR_TEXT_DISABLED
+                                theme.cl_text_sub
                             };
                             clay_scope.with(&btn, |clay_scope| {
                                 let mut text_stack = Declaration::<Texture2D, ()>::new();
@@ -158,6 +160,7 @@ pub fn render_manual_right_col<'a, 'render>(
     clipboard: &mut Option<Clipboard>,
     arena: &StringArena,
     font_scale: f32,
+    theme: &Theme,
 ) where
     'a: 'render,
 {
@@ -183,7 +186,7 @@ pub fn render_manual_right_col<'a, 'render>(
             .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
             .child_gap(12)
             .end()
-            .background_color(COLOR_BG_SECTION)
+            .background_color(theme.cl_bg_section)
             .corner_radius()
             .all(16.0 * font_scale)
             .end();
@@ -193,7 +196,7 @@ pub fn render_manual_right_col<'a, 'render>(
                 "BURN JOG",
                 clay_layout::text::TextConfig::new()
                     .font_size((12.0 * font_scale) as u16)
-                    .color(COLOR_TEXT_LABEL)
+                    .color(theme.cl_text_sub)
                     .end(),
             );
 
@@ -218,6 +221,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         arena,
                         font_scale,
                         !is_idle,
+                        theme,
                     );
                 });
 
@@ -236,6 +240,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         arena,
                         font_scale,
                         !is_idle,
+                        theme,
                     );
                 });
 
@@ -254,6 +259,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         arena,
                         font_scale,
                         !is_idle,
+                        theme,
                     );
                 });
             });
@@ -278,6 +284,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         arena,
                         font_scale,
                         !is_idle,
+                        theme,
                     );
                 });
 
@@ -292,16 +299,16 @@ pub fn render_manual_right_col<'a, 'render>(
                     let mut btn_color = if !is_idle {
                         COLOR_BG_DISABLED
                     } else {
-                        COLOR_DANGER
+                        theme.cl_danger
                     };
                     let mut fire_text_color = if !is_idle {
-                        COLOR_TEXT_DISABLED
+                        theme.cl_text_sub
                     } else {
-                        COLOR_TEXT_WHITE
+                        theme.cl_text_main
                     };
                     if is_idle && clay_scope.pointer_over(btn_id) {
                         btn_color = COLOR_DANGER_BRIGHT;
-                        fire_text_color = COLOR_TEXT_WHITE;
+                        fire_text_color = theme.cl_text_main;
                         if mouse_pressed {
                             let mut guard = state.lock().unwrap();
                             let s = guard.power;
@@ -334,11 +341,11 @@ pub fn render_manual_right_col<'a, 'render>(
                     });
 
                     let off_id = clay_scope.id("burn_off_btn");
-                    let mut off_color = COLOR_BG_DARK;
-                    let mut off_text_color = COLOR_TEXT_WHITE;
+                    let mut off_color = theme.cl_bg_dark;
+                    let mut off_text_color = theme.cl_text_main;
                     if clay_scope.pointer_over(off_id) {
-                        off_color = COLOR_PRIMARY_HOVER;
-                        off_text_color = COLOR_TEXT_WHITE;
+                        off_color = theme.cl_primary_hover;
+                        off_text_color = theme.cl_text_main;
                         if mouse_pressed {
                             state.lock().unwrap().send_command(gcode::CMD_LASER_OFF.to_string());
                         }
@@ -383,6 +390,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         arena,
                         font_scale,
                         !is_idle,
+                        theme,
                     );
                 });
             });
@@ -407,6 +415,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         arena,
                         font_scale,
                         !is_idle,
+                        theme,
                     );
                 });
 
@@ -425,6 +434,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         arena,
                         font_scale,
                         !is_idle,
+                        theme,
                     );
                 });
 
@@ -443,6 +453,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         arena,
                         font_scale,
                         !is_idle,
+                        theme,
                     );
                 });
             });
@@ -467,16 +478,16 @@ pub fn render_manual_right_col<'a, 'render>(
                     let mut btn_color = if disabled {
                         COLOR_BG_DISABLED
                     } else {
-                        COLOR_BG_DARK
+                        theme.cl_bg_dark
                     };
                     let mut btn_text_color = if disabled {
-                        COLOR_TEXT_DISABLED
+                        theme.cl_text_sub
                     } else {
-                        COLOR_TEXT_MUTED
+                        theme.cl_text_sub
                     };
                     if !disabled && clay.pointer_over(btn_id) {
-                        btn_color = COLOR_PRIMARY_HOVER;
-                        btn_text_color = COLOR_TEXT_WHITE;
+                        btn_color = theme.cl_primary_hover;
+                        btn_text_color = theme.cl_text_main;
                         if mouse_pressed {
                             state.lock().unwrap().send_command(cmd.to_string());
                         }
@@ -517,7 +528,7 @@ pub fn render_manual_right_col<'a, 'render>(
             .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
             .child_gap(16)
             .end()
-            .background_color(COLOR_BG_SECTION)
+            .background_color(theme.cl_bg_section)
             .corner_radius()
             .all(16.0 * font_scale)
             .end();
@@ -544,6 +555,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         clipboard,
                         font_scale,
                         !is_idle,
+                        theme,
                     );
                 });
 
@@ -564,16 +576,17 @@ pub fn render_manual_right_col<'a, 'render>(
                         clipboard,
                         font_scale,
                         !is_idle,
+                        theme,
                     );
 
                     let center_id = clay_scope.id("center");
                     let mut center_color = if !is_idle {
                         COLOR_BG_DISABLED
                     } else {
-                        COLOR_TEXT_BLACK
+                        theme.cl_bg_dark
                     };
                     if is_idle && clay_scope.pointer_over(center_id) {
-                        center_color = COLOR_BG_SECTION;
+                        center_color = theme.cl_bg_section;
                         if mouse_pressed {
                             let mut guard = state.lock().unwrap();
                             guard.v_pos = raylib::prelude::Vector2::new(0.0, 0.0);
@@ -599,9 +612,9 @@ pub fn render_manual_right_col<'a, 'render>(
                         .end();
 
                     let icon_color = if !is_idle {
-                        COLOR_BG_SECTION
+                        theme.cl_bg_section
                     } else {
-                        COLOR_PRIMARY
+                        theme.cl_primary
                     };
                     clay_scope.with(&center_btn, |clay_scope| {
                         clay_scope.text(
@@ -617,10 +630,10 @@ pub fn render_manual_right_col<'a, 'render>(
                     let mut home_zero_color = if !is_idle {
                         COLOR_BG_DISABLED
                     } else {
-                        COLOR_TEXT_BLACK
+                        theme.cl_bg_dark
                     };
                     if is_idle && clay_scope.pointer_over(home_zero_id) {
-                        home_zero_color = COLOR_BG_SECTION;
+                        home_zero_color = theme.cl_bg_section;
                         if mouse_pressed {
                             let mut guard = state.lock().unwrap();
                             guard.v_pos = raylib::prelude::Vector2::new(0.0, 0.0);
@@ -647,7 +660,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         .end();
 
                     let home_icon_color = if !is_idle {
-                        COLOR_BG_SECTION
+                        theme.cl_bg_section
                     } else {
                         COLOR_SUCCESS_LIGHT
                     };
@@ -672,6 +685,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         clipboard,
                         font_scale,
                         !is_idle,
+                        theme,
                     );
                 });
 
@@ -689,6 +703,7 @@ pub fn render_manual_right_col<'a, 'render>(
                         clipboard,
                         font_scale,
                         !is_idle,
+                        theme,
                     );
                 });
             });
@@ -703,7 +718,7 @@ pub fn render_manual_right_col<'a, 'render>(
             .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
             .child_gap(16)
             .end()
-            .background_color(COLOR_BG_SECTION)
+            .background_color(theme.cl_bg_section)
             .corner_radius()
             .all(16.0 * font_scale)
             .end();
@@ -727,6 +742,7 @@ pub fn render_manual_right_col<'a, 'render>(
                 scroll_y,
                 arena,
                 font_scale,
+                theme,
             );
             render_slider(
                 clay_scope,
@@ -743,6 +759,7 @@ pub fn render_manual_right_col<'a, 'render>(
                 scroll_y,
                 arena,
                 font_scale,
+                theme,
             );
             render_slider(
                 clay_scope,
@@ -759,6 +776,7 @@ pub fn render_manual_right_col<'a, 'render>(
                 scroll_y,
                 arena,
                 font_scale,
+                theme,
             );
         });
     });

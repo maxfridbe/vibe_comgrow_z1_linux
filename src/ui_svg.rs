@@ -1,5 +1,6 @@
 use crate::state::{AppState, StringArena};
 use crate::styles::*;
+use crate::theme::Theme;
 use crate::ui::render_burn_btn;
 use arboard::Clipboard;
 use clay_layout::{Declaration, fixed, grow};
@@ -13,6 +14,7 @@ pub fn render_svg_left_col<'a, 'render>(
     clipboard: &mut Option<Clipboard>,
     _arena: &StringArena,
     font_scale: f32,
+    theme: &Theme,
 ) where
     'a: 'render,
 {
@@ -30,7 +32,7 @@ pub fn render_svg_left_col<'a, 'render>(
             .padding(clay_layout::layout::Padding::all(16))
             .child_gap(16)
             .end()
-            .background_color(COLOR_BG_SECTION)
+            .background_color(theme.cl_bg_section)
             .corner_radius()
             .all(16.0 * font_scale)
             .end();
@@ -40,7 +42,7 @@ pub fn render_svg_left_col<'a, 'render>(
                 "SVG Path Mode",
                 clay_layout::text::TextConfig::new()
                     .font_size((20.0 * font_scale) as u16)
-                    .color(COLOR_ACCENT_PURPLE_VIRTUAL)
+                    .color(theme.cl_accent)
                     .end(),
             );
 
@@ -56,6 +58,7 @@ pub fn render_svg_left_col<'a, 'render>(
                 _arena,
                 font_scale,
                 !is_idle,
+                theme,
             ) {
                 println!("Load SVG Dialog Triggered");
             }
@@ -68,7 +71,7 @@ pub fn render_svg_left_col<'a, 'render>(
                 .width(grow!())
                 .height(fixed!(300.0 * font_scale))
                 .end()
-                .background_color(COLOR_BG_MAIN)
+                .background_color(theme.cl_bg_main)
                 .corner_radius()
                 .all(12.0 * font_scale)
                 .end();
@@ -78,7 +81,7 @@ pub fn render_svg_left_col<'a, 'render>(
                     "SVG PREVIEW",
                     clay_layout::text::TextConfig::new()
                         .font_size((14.0 * font_scale) as u16)
-                        .color(COLOR_TEXT_LABEL)
+                        .color(theme.cl_text_label)
                         .end(),
                 );
             });

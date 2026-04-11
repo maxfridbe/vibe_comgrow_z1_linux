@@ -5,6 +5,7 @@ mod gcode;
 mod icons;
 mod state;
 mod styles;
+mod theme;
 mod svg_helper;
 mod ui;
 mod ui_image;
@@ -106,6 +107,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         is_burning: false,
         burn_log_active: false,
         active_toasts: Vec::new(),
+        current_theme_index: 0,
     }));
 
     {
@@ -408,6 +410,18 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let mouse_down = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
         let mouse_pressed = rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
+
+        let theme = state.lock().unwrap().get_theme();
+
+        if rl.is_key_pressed(KeyboardKey::KEY_T) && (rl.is_key_down(KeyboardKey::KEY_LEFT_ALT) || rl.is_key_down(KeyboardKey::KEY_RIGHT_ALT)) {
+            let mut guard = state.lock().unwrap();
+            if !guard.is_text_input_active {
+                guard.current_theme_index = (guard.current_theme_index + 1) % crate::theme::THEMES.len();
+                let theme_name = crate::theme::THEMES[guard.current_theme_index].name;
+                guard.add_toast(crate::state::ToastType::Info, format!("Theme: {}", theme_name), 1.5, false, None);
+            }
+        }
+
         let mut scroll_delta = rl.get_mouse_wheel_move_v();
 
         // Handle text input
@@ -436,7 +450,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 td.clear_background(raylib::color::Color::BLANK);
                 let guard = state.lock().unwrap();
                 let scale = 2000.0 / 400.0;
-                let preview_thickness = (2000.0 / (400.0 * guard.text_lines_per_mm)).max(2.0);
+                let preview_thickness = (2000.0 / (400.0 * guard.text_lines_per_mm)).max(6.0);
                 for p in &guard.preview_paths {
                     // Draw Y-down in the texture (standard coordinate space)
                     // We will flip the entire texture once during draw_texture_pro
@@ -449,7 +463,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         2000.0 - p.y2 * scale,
                     );
                     // Boost visibility for preview by using a higher base alpha
-                    let intensity = (p.intensity * 0.7 + 0.3).clamp(0.0, 1.0);
+                    let intensity = (p.intensity * 0.4 + 0.6).clamp(0.0, 1.0);
                     td.draw_line_ex(start, end, preview_thickness, raylib::color::Color::new(0, 255, 0, (intensity * 255.0) as u8));
                 }
                 last_preview_version = current_version;
@@ -484,8 +498,6 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let mut clay_scope = clay.begin::<Texture2D, ()>();
 
-        crate::ui::render_toasts(&mut clay_scope, &state, &arena, font_scale, mouse_pressed);
-
         // 1. MAIN APP LAYER
         let mut main_app_decl = Declaration::<Texture2D, ()>::new();
         main_app_decl
@@ -497,7 +509,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .child_gap(12)
             .direction(LayoutDirection::TopToBottom)
             .end()
-            .background_color(COLOR_BG_MAIN);
+            .background_color(theme.cl_bg_main);
 
         clay_scope.with(&main_app_decl, |clay_scope| {
             let bottom_bar_height = 160.0 * font_scale;
@@ -511,7 +523,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .padding(Padding::all(6))
                 .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
                 .end()
-                .background_color(COLOR_BG_SECTION)
+                .background_color(theme.cl_bg_section)
                 .corner_radius()
                 .all(8.0 * font_scale)
                 .end();
@@ -529,7 +541,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .layout()
                         .padding(Padding::all(4))
                         .end()
-                        .background_color(COLOR_PRIMARY_HOVER)
+                        .background_color(theme.cl_primary_hover)
                         .corner_radius()
                         .all(6.0 * font_scale)
                         .end();
@@ -538,7 +550,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             ICON_LASER,
                             clay_layout::text::TextConfig::new()
                                 .font_size((16.0 * font_scale) as u16)
-                                .color(COLOR_TEXT_WHITE)
+                                .color(theme.cl_text_main)
                                 .end(),
                         );
                     });
@@ -546,7 +558,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         "TROGDOR",
                         clay_layout::text::TextConfig::new()
                             .font_size((16.0 * font_scale) as u16)
-                            .color(COLOR_TEXT_WHITE)
+                            .color(theme.cl_text_main)
                             .end(),
                     );
                 });
@@ -567,11 +579,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         let g = state.lock().unwrap();
                         (g.port.clone(), g.wattage.clone())
                     };
-                    let mut port_bg = COLOR_BG_DARK;
+                    let mut port_bg = theme.cl_bg_dark;
                     let mut port_text_color = COLOR_PORT_TEXT;
                     if clay_scope.pointer_over(port_h_id) {
-                        port_bg = COLOR_PRIMARY_HOVER;
-                        port_text_color = COLOR_TEXT_WHITE;
+                        port_bg = theme.cl_primary_hover;
+                        port_text_color = theme.cl_text_main;
                         if mouse_pressed {
                             let mut g = state.lock().unwrap();
                             if g.port == "VIRTUAL" {
@@ -584,8 +596,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         }
                     }
                     if port == "VIRTUAL" {
-                        port_bg = COLOR_ACCENT_PURPLE_VIRTUAL;
-                        port_text_color = COLOR_TEXT_WHITE;
+                        port_bg = theme.cl_accent;
+                        port_text_color = theme.cl_text_main;
                     }
 
                     let mut input_box = Declaration::<Texture2D, ()>::new();
@@ -616,7 +628,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .child_gap(8)
                         .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
                         .end()
-                        .background_color(COLOR_BG_DARK)
+                        .background_color(theme.cl_bg_dark)
                         .corner_radius()
                         .all(6.0 * font_scale)
                         .end();
@@ -634,9 +646,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let mstate = { state.lock().unwrap().machine_state.clone() };
                     let is_emergency = mstate == "Alarm" || mstate == "Hold";
                     let mut estop_h_color = if is_emergency {
-                        COLOR_SUCCESS
+                        theme.cl_success
                     } else {
-                        COLOR_DANGER_DARK
+                        theme.cl_danger
                     };
                     if clay_scope.pointer_over(estop_h_id) {
                         estop_h_color = if is_emergency {
@@ -667,7 +679,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             arena.push(format!("{}   E-STOP", ICON_FLAME)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
-                                .color(COLOR_TEXT_WHITE)
+                                .color(theme.cl_text_main)
                                 .end(),
                         );
                     });
@@ -688,16 +700,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 tab_bar.layout().direction(LayoutDirection::LeftToRight).child_gap(10).end();
                 clay_scope.with(&tab_bar, |clay_scope| {
                     let current_tab = state.lock().unwrap().current_tab.clone();
-                    if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, &arena, font_scale) {
+                    if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, &arena, font_scale, &theme) {
                         state.lock().unwrap().current_tab = UITab::Manual;
                     }
-                    if render_tab_btn(clay_scope, "tab_pattern", "Pattern", current_tab == UITab::Pattern, &arena, font_scale) {
+                    if render_tab_btn(clay_scope, "tab_pattern", "Pattern", current_tab == UITab::Pattern, &arena, font_scale, &theme) {
                         state.lock().unwrap().current_tab = UITab::Pattern;
                     }
-                    if render_tab_btn(clay_scope, "tab_image", "Image", current_tab == UITab::Image, &arena, font_scale) {
+                    if render_tab_btn(clay_scope, "tab_image", "Image", current_tab == UITab::Image, &arena, font_scale, &theme) {
                         state.lock().unwrap().current_tab = UITab::Image;
                     }
-                    if render_tab_btn(clay_scope, "tab_text", "Text", current_tab == UITab::Text, &arena, font_scale) {
+                    if render_tab_btn(clay_scope, "tab_text", "Text", current_tab == UITab::Text, &arena, font_scale, &theme) {
                         state.lock().unwrap().current_tab = UITab::Text;
                     }
                 });
@@ -715,9 +727,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     .end();
                 clay_scope.with(&persist_group, |clay_scope| {
                     let save_id = clay_scope.id("btn_save_state");
-                    let mut save_color = COLOR_BG_SECTION;
+                    let mut save_color = theme.cl_bg_section;
                     if clay_scope.pointer_over(save_id) {
-                        save_color = COLOR_PRIMARY_HOVER;
+                        save_color = theme.cl_primary_hover;
                         if mouse_pressed {
                             let mut g = state.lock().unwrap();
                             let label = match g.current_tab {
@@ -745,15 +757,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             arena.push(format!("{}   SAVE", ICON_COPY)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((14.0 * font_scale) as u16)
-                                .color(COLOR_TEXT_WHITE)
+                                .color(theme.cl_text_main)
                                 .end(),
                         );
                     });
 
                     let load_id = clay_scope.id("btn_load_state");
-                    let mut load_color = COLOR_BG_SECTION;
+                    let mut load_color = theme.cl_bg_section;
                     if clay_scope.pointer_over(load_id) {
-                        load_color = COLOR_PRIMARY_HOVER;
+                        load_color = theme.cl_primary_hover;
                         if mouse_pressed {
                             let mut g = state.lock().unwrap();
                             g.load_dialog_open = !g.load_dialog_open;
@@ -774,7 +786,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             arena.push(format!("{}   LOAD", ICON_LAYERS)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((14.0 * font_scale) as u16)
-                                .color(COLOR_TEXT_WHITE)
+                                .color(theme.cl_text_main)
                                 .end(),
                         );
                     });
@@ -811,7 +823,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .width(grow!())
                         .height(grow!())
                         .end()
-                        .background_color(COLOR_BG_SECTION)
+                        .background_color(theme.cl_bg_section)
                         .corner_radius()
                         .all(16.0 * font_scale)
                         .end();
@@ -842,14 +854,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             arena.push(format!("M:   X: {:.1}   Y: {:.1}", mx, my)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
-                                .color(COLOR_TEXT_MUTED)
+                                .color(theme.cl_text_sub)
                                 .end(),
                         );
                         let status_color = match mstate.as_str() {
-                            "Idle" => COLOR_SUCCESS,
-                            "Alarm" => COLOR_DANGER,
+                            "Idle" => theme.cl_success,
+                            "Alarm" => theme.cl_danger,
                             "Hold" => COLOR_SLIDER_POWER, // Yellowish
-                            _ => COLOR_TEXT_MUTED,
+                            _ => theme.cl_text_sub,
                         };
                         clay_scope.text(
                             arena.push(format!("Status: {}", mstate)),
@@ -860,9 +872,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         );
 
                         let tidy_id = clay_scope.id("tidy_grid");
-                        let mut tidy_color = COLOR_TEXT_LABEL;
+                        let mut tidy_color = theme.cl_text_label;
                         if clay_scope.pointer_over(tidy_id) {
-                            tidy_color = COLOR_TEXT_WHITE;
+                            tidy_color = theme.cl_text_main;
                             if mouse_pressed {
                                 let mut guard = state.lock().unwrap();
                                 guard.paths.clear();
@@ -877,7 +889,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             .child_gap(8)
                             .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
                             .end()
-                            .background_color(COLOR_BG_DARK)
+                            .background_color(theme.cl_bg_dark)
                             .corner_radius()
                             .all(6.0 * font_scale)
                             .end();
@@ -943,6 +955,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             &mut clipboard,
                             &arena,
                             font_scale,
+                            &theme,
                         );
                         ui_manual::render_manual_right_col(
                             clay_scope,
@@ -955,6 +968,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             &mut clipboard,
                             &arena,
                             font_scale,
+                            &theme,
                         );
                     }
                     UITab::Pattern => ui_test::render_test_controls(
@@ -968,6 +982,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         &mut clipboard,
                         &arena,
                         font_scale,
+                        &theme,
                     ),
                     UITab::Image => ui_image::render_image_controls(
                         clay_scope,
@@ -980,6 +995,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         &mut clipboard,
                         &arena,
                         font_scale,
+                        &theme,
                     ),
                     UITab::Text => ui_text::render_text_controls(
                         clay_scope,
@@ -992,6 +1008,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         &mut clipboard,
                         &arena,
                         font_scale,
+                        &theme,
                     ),
                 });
             });
@@ -1010,9 +1027,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let mstate = { state.lock().unwrap().machine_state.clone() };
                 let is_emergency = mstate == "Alarm" || mstate == "Hold";
                 let mut estop_b_color = if is_emergency {
-                    COLOR_SUCCESS
+                    theme.cl_success
                 } else {
-                    COLOR_DANGER
+                    theme.cl_danger
                 };
                 let estop_b_id = clay_scope.id("estop_bottom");
 
@@ -1048,7 +1065,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         arena.push(format!("{}   E-STOP", ICON_FLAME)),
                         clay_layout::text::TextConfig::new()
                             .font_size((24.0 * font_scale) as u16)
-                            .color(COLOR_TEXT_WHITE)
+                            .color(theme.cl_text_main)
                             .end(),
                     );
                 });
@@ -1064,13 +1081,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     .direction(LayoutDirection::TopToBottom)
                     .child_gap(4)
                     .end()
-                    .background_color(COLOR_BG_DARK)
+                    .background_color(theme.cl_bg_dark)
                     .corner_radius()
                     .all(16.0 * font_scale)
                     .end()
                     .border()
                     .top((2.0 * font_scale) as u16)
-                    .color(COLOR_ACCENT_PURPLE_LIGHT)
+                    .color(theme.cl_accent)
                     .end();
 
                 clay_scope.with(&log_box, |clay_scope| {
@@ -1127,11 +1144,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     clay_scope.with(&log_scroll, |clay_scope| {
                         for (i, log) in logs.iter().rev().take(1000).enumerate() {
                             let text_color = if log.is_response {
-                                COLOR_TEXT_BLACK
+                                theme.cl_bg_dark
                             } else if i == 0 {
-                                COLOR_TEXT_WHITE
+                                theme.cl_text_main
                             } else {
-                                COLOR_TEXT_MUTED
+                                theme.cl_text_sub
                             };
                             let mut row = Declaration::<Texture2D, ()>::new();
                             row.layout()
@@ -1141,7 +1158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 .child_gap(10)
                                 .end();
                             if log.is_response {
-                                row.background_color(COLOR_TEXT_WHITE).corner_radius().all(4.0 * font_scale).end();
+                                row.background_color(theme.cl_text_main).corner_radius().all(4.0 * font_scale).end();
                             }
                             clay_scope.with(&row, |clay_scope| {
                                 clay_scope.text(
@@ -1183,7 +1200,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .direction(LayoutDirection::TopToBottom)
                         .child_gap(16)
                         .end()
-                        .background_color(COLOR_BG_SECTION)
+                        .background_color(theme.cl_bg_section)
                         .corner_radius()
                         .all(16.0 * font_scale)
                         .end();
@@ -1196,7 +1213,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 "SAVED STATES",
                                 clay_layout::text::TextConfig::new()
                                     .font_size((18.0 * font_scale) as u16)
-                                    .color(COLOR_PRIMARY)
+                                    .color(theme.cl_primary)
                                     .end(),
                             );
                             let mut spacer = Declaration::<Texture2D, ()>::new();
@@ -1204,9 +1221,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             clay_scope.with(&spacer, |_| {});
 
                             let close_id = clay_scope.id("btn_close_load");
-                            let mut close_color = COLOR_TEXT_MUTED;
+                            let mut close_color = theme.cl_text_sub;
                             if clay_scope.pointer_over(close_id) {
-                                close_color = COLOR_TEXT_WHITE;
+                                close_color = theme.cl_text_main;
                                 if mouse_pressed {
                                     state.lock().unwrap().load_dialog_open = false;
                                 }
@@ -1243,15 +1260,15 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                     "No saved states found.",
                                     clay_layout::text::TextConfig::new()
                                         .font_size((14.0 * font_scale) as u16)
-                                        .color(COLOR_TEXT_DISABLED)
+                                        .color(theme.cl_text_sub)
                                         .end(),
                                 );
                             }
                             for (idx, s) in saved_states.iter().enumerate().rev() {
                                 let item_id = clay_scope.id(arena.push(format!("load_item_{}", idx)));
-                                let mut item_bg = COLOR_BG_DARK;
+                                let mut item_bg = theme.cl_bg_dark;
                                 if clay_scope.pointer_over(item_id) {
-                                    item_bg = COLOR_PRIMARY_HOVER;
+                                    item_bg = theme.cl_primary_hover;
                                 }
 
                                 let mut item_row = Declaration::<Texture2D, ()>::new();
@@ -1271,9 +1288,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                                 clay_scope.with(&item_row, |clay_scope| {
                                     let del_id = clay_scope.id(arena.push(format!("del_item_{}", idx)));
-                                    let mut del_color = COLOR_TEXT_MUTED;
+                                    let mut del_color = theme.cl_text_sub;
                                     if clay_scope.pointer_over(del_id) {
-                                        del_color = COLOR_DANGER;
+                                        del_color = theme.cl_danger;
                                         if mouse_pressed {
                                             let mut g = state.lock().unwrap();
                                             g.saved_states.remove(idx);
@@ -1294,14 +1311,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                             arena.push(s.label.clone()),
                                             clay_layout::text::TextConfig::new()
                                                 .font_size((14.0 * font_scale) as u16)
-                                                .color(COLOR_TEXT_WHITE)
+                                                .color(theme.cl_text_main)
                                                 .end(),
                                         );
                                         clay_scope.text(
                                             arena.push(s.timestamp.clone()),
                                             clay_layout::text::TextConfig::new()
                                                 .font_size((10.0 * font_scale) as u16)
-                                                .color(COLOR_TEXT_DISABLED)
+                                                .color(theme.cl_text_sub)
                                                 .end(),
                                         );
                                     });
@@ -1322,10 +1339,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         });
                     });
                 });
-                }
-                });
+            }
+        });
 
-                let render_commands = clay_scope.end();
+        crate::ui::render_toasts(&mut clay_scope, &state, &arena, font_scale, mouse_pressed, &theme);
+        let render_commands = clay_scope.end();
 
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(raylib::color::Color::BLACK);
