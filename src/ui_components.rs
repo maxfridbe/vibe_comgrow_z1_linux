@@ -14,6 +14,162 @@ use crate::FontMeasureEx;
 
 pub static mut MEASURE_FONT_PTR: *const raylib::prelude::Font = std::ptr::null();
 
+pub fn render_dropdown<'a, 'render, F, G, H>(
+    clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
+    id: &str,
+    selected_label: &str,
+    items: &[String],
+    is_open: bool,
+    scroll_offset: f32,
+    state: &Arc<Mutex<AppState>>,
+    arena: &StringArena,
+    font_scale: f32,
+    theme: &Theme,
+    mouse_pressed: bool,
+    scroll_y: f32,
+    on_toggle: F,
+    on_select: G,
+    on_scroll: H,
+) where
+    F: Fn(&mut AppState),
+    G: Fn(&mut AppState, String),
+    H: Fn(&mut AppState, f32),
+    'a: 'render,
+{
+    let dropdown_id = clay.id(id);
+    let mut dropdown_color = if is_open {
+        theme.cl_primary
+    } else {
+        theme.cl_bg_dark
+    };
+
+    if clay.pointer_over(dropdown_id) {
+        dropdown_color = theme.cl_primary_hover;
+        if mouse_pressed {
+            let mut g = state.lock().unwrap();
+            on_toggle(&mut g);
+        }
+    }
+
+    let mut dropdown_btn = Declaration::<Texture2D, ()>::new();
+    dropdown_btn
+        .id(dropdown_id)
+        .layout()
+        .width(grow!())
+        .height(fixed!(theme.sz_btn_height * font_scale))
+        .padding(Padding::horizontal(10))
+        .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Center))
+        .end()
+        .background_color(dropdown_color)
+        .corner_radius()
+        .top_left(8.0 * font_scale)
+        .top_right(8.0 * font_scale)
+        .bottom_left(if is_open { 0.0 } else { 8.0 * font_scale })
+        .bottom_right(if is_open { 0.0 } else { 8.0 * font_scale })
+        .end();
+
+    if is_open {
+        dropdown_btn
+            .border()
+            .top((1.0 * font_scale) as u16)
+            .left((1.0 * font_scale) as u16)
+            .right((1.0 * font_scale) as u16)
+            .color(theme.cl_primary)
+            .end();
+    }
+
+    clay.with(&dropdown_btn, |clay| {
+        clay.text(
+            arena.push(format!("{}   {}", ICON_FONT, selected_label)),
+            clay_layout::text::TextConfig::new()
+                .font_size((14.0 * font_scale) as u16)
+                .color(theme.cl_text_main)
+                .end(),
+        );
+    });
+
+    if is_open {
+        let dropdown_list_id = clay.id(arena.push(format!("{}_list", id)));
+        let mut dropdown_list = Declaration::<Texture2D, ()>::new();
+        dropdown_list
+            .id(dropdown_list_id)
+            .layout()
+            .width(grow!())
+            .height(fixed!(200.0 * font_scale))
+            .direction(LayoutDirection::TopToBottom)
+            .end()
+            .floating()
+            .attach_to(clay_layout::elements::FloatingAttachToElement::Parent)
+            .offset(ClayVector2 { x: 0.0, y: theme.sz_btn_height * font_scale })
+            .z_index(1000)
+            .end()
+            .background_color(theme.cl_bg_dark)
+            .border()
+            .left((1.0 * font_scale) as u16)
+            .right((1.0 * font_scale) as u16)
+            .bottom((1.0 * font_scale) as u16)
+            .color(theme.cl_primary)
+            .end()
+            .corner_radius()
+            .bottom_left(8.0 * font_scale)
+            .bottom_right(8.0 * font_scale)
+            .end()
+            .clip(
+                false,
+                true,
+                ClayVector2 {
+                    x: 0.0,
+                    y: scroll_offset,
+                },
+            );
+
+        if clay.pointer_over(dropdown_list_id) {
+            let mut g = state.lock().unwrap();
+            let mut new_offset = scroll_offset + scroll_y * 40.0;
+            if new_offset > 0.0 {
+                new_offset = 0.0;
+            }
+            let items_count = items.len();
+            let max_scroll = -((items_count as f32 * 32.0 * font_scale) - (200.0 * font_scale)).max(0.0);
+            if new_offset < max_scroll {
+                new_offset = max_scroll;
+            }
+            on_scroll(&mut g, new_offset);
+        }
+
+        clay.with(&dropdown_list, |clay_scope| {
+            for item in items.iter() {
+                let item_id = clay_scope.id(arena.push(format!("{}_item_{}", id, item)));
+                let mut item_color = theme.cl_bg_dark;
+                if clay_scope.pointer_over(item_id) {
+                    item_color = theme.cl_bg_section;
+                    if mouse_pressed {
+                        let mut g = state.lock().unwrap();
+                        on_select(&mut g, item.clone());
+                    }
+                }
+                let mut item_box = Declaration::<Texture2D, ()>::new();
+                item_box
+                    .id(item_id)
+                    .layout()
+                    .width(grow!())
+                    .padding(Padding::all(8))
+                    .end()
+                    .background_color(item_color);
+                clay_scope.with(&item_box, |clay_scope| {
+                    clay_scope.text(
+                        arena.push(item.clone()),
+                        clay_layout::text::TextConfig::new()
+                            .font_size((12.0 * font_scale) as u16)
+                            .color(theme.cl_text_main)
+                            .end(),
+                    );
+                });
+            }
+        });
+    }
+}
+
 pub fn render_text_input<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
     _id: &str,

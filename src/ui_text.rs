@@ -6,7 +6,6 @@ use crate::theme::Theme;
 use crate::ui_components::{Section, render_burn_btn, render_checkbox, render_outline_btn, render_slider};
 use arboard::Clipboard;
 use clay_layout::layout::{Alignment, LayoutAlignmentX, LayoutAlignmentY, LayoutDirection, Padding};
-use clay_layout::math::Vector2 as ClayVector2;
 use clay_layout::{Declaration, fixed, grow};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -189,119 +188,37 @@ pub fn render_text_controls<'a, 'render>(
             let mut font_row = Declaration::<Texture2D, ()>::new();
             font_row.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(8).end();
             clay_scope.with(&font_row, |clay_scope| {
-                let dropdown_id = clay_scope.id("font_selector");
-                let is_open = state.lock().unwrap().text_font_dropdown_open;
-                let mut dropdown_color = if is_open {
-                    theme.cl_primary
-                } else {
-                    theme.cl_bg_dark
+                let (font_name, is_open, available_fonts, scroll_offset) = {
+                    let g = state.lock().unwrap();
+                    (
+                        (*g.text_font).clone(),
+                        g.text_font_dropdown_open,
+                        (*g.available_fonts).clone(),
+                        g.text_font_scroll_offset,
+                    )
                 };
-                if clay_scope.pointer_over(dropdown_id) {
-                    dropdown_color = theme.cl_primary_hover;
-                    if mouse_pressed {
-                        let mut g = state.lock().unwrap();
-                        g.text_font_dropdown_open = !g.text_font_dropdown_open;
-                    }
-                }
 
-                let mut dropdown_btn = Declaration::<Texture2D, ()>::new();
-                dropdown_btn
-                    .id(dropdown_id)
-                    .layout()
-                    .width(grow!())
-                    .padding(Padding::all(10))
-                    .end()
-                    .background_color(dropdown_color)
-                    .corner_radius()
-                    .all(8.0 * font_scale)
-                    .end();
-
-                let font_name = state.lock().unwrap().text_font.clone();
-                clay_scope.with(&dropdown_btn, |clay| {
-                    clay.text(
-                        arena.push(format!("{}   {}", ICON_FONT, font_name)),
-                        clay_layout::text::TextConfig::new()
-                            .font_size((14.0 * font_scale) as u16)
-                            .color(theme.cl_text_main)
-                            .end(),
-                    );
-                });
+                crate::ui_components::render_dropdown(
+                    clay_scope,
+                    "font_selector",
+                    &font_name,
+                    &available_fonts,
+                    is_open,
+                    scroll_offset,
+                    state,
+                    arena,
+                    font_scale,
+                    theme,
+                    mouse_pressed,
+                    scroll_y,
+                    |s| s.text_font_dropdown_open = !s.text_font_dropdown_open,
+                    |s, val| {
+                        s.text_font = Arc::new(val);
+                        s.text_font_dropdown_open = false;
+                    },
+                    |s, offset| s.text_font_scroll_offset = offset,
+                );
             });
-
-            // Restored Dropdown List Rendering
-            let (dropdown_open, available_fonts, scroll_offset) = {
-                let g = state.lock().unwrap();
-                (g.text_font_dropdown_open, g.available_fonts.clone(), g.text_font_scroll_offset)
-            };
-
-            if dropdown_open {
-                let mut dropdown_list = Declaration::<Texture2D, ()>::new();
-                let dropdown_list_id = clay_scope.id("font_dropdown_list");
-                dropdown_list
-                    .id(dropdown_list_id)
-                    .layout()
-                    .width(grow!())
-                    .height(fixed!(200.0 * font_scale))
-                    .direction(LayoutDirection::TopToBottom)
-                    .end()
-                    .background_color(theme.cl_bg_dark)
-                    .corner_radius()
-                    .all(4.0 * font_scale)
-                    .end()
-                    .clip(
-                        false,
-                        true,
-                        ClayVector2 {
-                            x: 0.0,
-                            y: scroll_offset,
-                        },
-                    );
-
-                if clay_scope.pointer_over(dropdown_list_id) {
-                    let mut g = state.lock().unwrap();
-                    g.text_font_scroll_offset += scroll_y * 40.0;
-                    if g.text_font_scroll_offset > 0.0 {
-                        g.text_font_scroll_offset = 0.0;
-                    }
-                    let fonts_count = available_fonts.len();
-                    let max_scroll = -((fonts_count as f32 * 32.0 * font_scale) - (200.0 * font_scale)).max(0.0);
-                    if g.text_font_scroll_offset < max_scroll {
-                        g.text_font_scroll_offset = max_scroll;
-                    }
-                }
-
-                clay_scope.with(&dropdown_list, |clay_scope| {
-                    for font in available_fonts.iter() {
-                        let item_id = clay_scope.id(arena.push(format!("font_item_{}", font)));
-                        let mut item_color = theme.cl_bg_dark;
-                        if clay_scope.pointer_over(item_id) {
-                            item_color = theme.cl_bg_section;
-                            if mouse_pressed {
-                                let mut g = state.lock().unwrap();
-                                g.text_font = Arc::new(font.clone());
-                                g.text_font_dropdown_open = false;
-                            }
-                        }
-                        let mut item_box = Declaration::<Texture2D, ()>::new();
-                        item_box
-                            .id(item_id)
-                            .layout()
-                            .width(grow!())
-                            .padding(Padding::all(8))
-                            .end()
-                            .background_color(item_color);
-                        clay_scope.with(&item_box, |clay_scope| {
-                            clay_scope.text(
-                                arena.push(font.clone()),
-                                clay_layout::text::TextConfig::new()
-                                    .font_size((12.0 * font_scale) as u16)
-                                    .color(theme.cl_text_main)
-                                    .end(),
-                            );
-                        });
-                    }
-                });
-            }
 
             // Input Box
             crate::ui_components::render_text_input(
