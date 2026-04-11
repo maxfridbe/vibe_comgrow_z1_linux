@@ -21,11 +21,14 @@ pub fn render_log<'a, 'render>(
     arena: &StringArena,
     font_scale: f32,
     theme: &Theme,
+    mouse_pressed: bool,
 ) where
     'a: 'render,
 {
     let mut log_box = Declaration::<Texture2D, ()>::new();
     let serial_id_node = clay.id("serial_box");
+    let is_collapsed = state.lock().unwrap().bottom_bar_height <= 65.0;
+
     log_box
         .id(serial_id_node)
         .layout()
@@ -42,8 +45,20 @@ pub fn render_log<'a, 'render>(
         .end();
 
     clay.with(&log_box, |clay| {
+        let toggle_id = clay.id("serial_log_toggle");
+        if clay.pointer_over(toggle_id) && mouse_pressed {
+            let mut g = state.lock().unwrap();
+            if g.bottom_bar_height > 65.0 {
+                g.bottom_bar_height = 60.0;
+            } else {
+                g.bottom_bar_height = 140.0;
+            }
+            g.save_user_config();
+        }
+
         let mut title_decl = Declaration::<Texture2D, ()>::new();
         title_decl
+            .id(toggle_id)
             .layout()
             .width(grow!())
             .padding(Padding::all(8))
@@ -53,8 +68,9 @@ pub fn render_log<'a, 'render>(
             .attach_to(clay_layout::elements::FloatingAttachToElement::Parent)
             .end();
         clay.with(&title_decl, |clay| {
+            let arrow_icon = if is_collapsed { ICON_ARROW_UP } else { ICON_ARROW_DOWN };
             clay.text(
-                "SERIAL LOG",
+                arena.push(format!("{} SERIAL LOG", arrow_icon)),
                 clay_layout::text::TextConfig::new()
                     .font_size((12.0 * font_scale) as u16)
                     .color(theme.cl_text_label)
@@ -63,9 +79,31 @@ pub fn render_log<'a, 'render>(
         });
 
         let logs = state.lock().unwrap().serial_logs.clone();
+        let log_scroll_id = clay.id("log_scroll");
+
+        {
+            let mut g = state.lock().unwrap();
+            if clay.pointer_over(log_scroll_id) {
+                g.log_scroll_offset += scroll_delta.y * 40.0;
+            }
+            
+            if g.log_scroll_offset > 0.0 {
+                g.log_scroll_offset = 0.0;
+            }
+            
+            let row_height = 18.0 * font_scale;
+            let content_height = logs.len().min(1000) as f32 * row_height;
+            let bottom_bar_height = g.bottom_bar_height * font_scale;
+            let container_height = bottom_bar_height - 24.0 - (6.0 * font_scale);
+            let max_scroll = (container_height - content_height).min(0.0);
+            
+            if g.log_scroll_offset < max_scroll {
+                g.log_scroll_offset = max_scroll;
+            }
+        }
+
         let offset = state.lock().unwrap().log_scroll_offset;
         let mut log_scroll = Declaration::<Texture2D, ()>::new();
-        let log_scroll_id = clay.id("log_scroll");
         log_scroll
             .id(log_scroll_id)
             .layout()
@@ -83,24 +121,10 @@ pub fn render_log<'a, 'render>(
                 },
             );
 
-        if clay.pointer_over(log_scroll_id) {
-            let mut g = state.lock().unwrap();
-            g.log_scroll_offset += scroll_delta.y * 40.0;
-            if g.log_scroll_offset > 0.0 {
-                g.log_scroll_offset = 0.0;
-            }
-            let max_scroll = -(logs.len() as f32 * 20.0);
-            if g.log_scroll_offset < max_scroll {
-                g.log_scroll_offset = max_scroll;
-            }
-        }
-
         clay.with(&log_scroll, |clay| {
-            for (i, log) in logs.iter().rev().take(1000).enumerate() {
+            for log in logs.iter().rev().take(1000) {
                 let text_color = if log.is_response {
                     theme.cl_bg_dark
-                } else if i == 0 {
-                    theme.cl_text_main
                 } else {
                     theme.cl_text_sub
                 };

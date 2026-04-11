@@ -209,6 +209,7 @@ pub struct AppState {
     pub active_toasts: Vec<Toast>,
     pub current_theme_index: usize,
     pub zoom_size: i32,
+    pub bottom_bar_height: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -217,6 +218,7 @@ pub struct UserConfig {
     pub current_theme_name: String,
     pub zoom_size: i32,
     pub port: String,
+    pub bottom_bar_height: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -691,6 +693,7 @@ impl AppState {
                 current_theme_name: self.get_theme().name.to_string(),
                 zoom_size: self.zoom_size,
                 port: (*self.port).clone(),
+                bottom_bar_height: self.bottom_bar_height,
             };
             if let Ok(yaml) = serde_yaml::to_string(&config) {
                 let _ = std::fs::write(path, yaml);
@@ -709,6 +712,7 @@ impl AppState {
                     }
                     self.zoom_size = config.zoom_size;
                     self.port = Arc::new(config.port);
+                    self.bottom_bar_height = if config.bottom_bar_height > 0.0 { config.bottom_bar_height } else { 140.0 };
                 }
             }
         }

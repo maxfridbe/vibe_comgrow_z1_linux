@@ -111,6 +111,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
         active_toasts: Vec::new(),
         current_theme_index: 0,
         zoom_size: 64,
+        bottom_bar_height: 140.0,
     }));
 
     {
@@ -675,8 +676,17 @@ fn main() -> Result<(), crate::error::TrogdorError> {
             .background_color(theme.cl_bg_main);
 
         clay_scope.with(&main_app_decl, |clay_scope| {
-            let bottom_bar_height = 160.0 * font_scale;
-            let standard_margin = (20.0 * font_scale) as u16;
+            let mut main_container = Declaration::<Texture2D, ()>::new();
+            main_container
+                .layout()
+                .width(fixed!(render_width))
+                .height(fixed!(render_height))
+                .direction(LayoutDirection::TopToBottom)
+                .end();
+
+            clay_scope.with(&main_container, |clay_scope| {
+                let bottom_bar_height = state.lock().unwrap().bottom_bar_height * font_scale;
+                let standard_margin = (20.0 * font_scale) as u16;
 
             // Combined Header and Tab Bar Container
             let mut combined_header = Declaration::<Texture2D, ()>::new();
@@ -1195,12 +1205,12 @@ fn main() -> Result<(), crate::error::TrogdorError> {
 
             // FIXED BOTTOM AREA
             let mut bottom_area = Declaration::<Texture2D, ()>::new();
-            let estop_size = 140.0 * font_scale;
             bottom_area
                 .layout()
                 .width(grow!())
-                .height(fixed!(estop_size))
+                .height(fixed!(bottom_bar_height))
                 .direction(LayoutDirection::LeftToRight)
+                .padding(Padding::all(0))
                 .child_gap(0)
                 .end();
 
@@ -1228,6 +1238,10 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                     }
                 }
 
+                let is_collapsed = state.lock().unwrap().bottom_bar_height <= 65.0;
+                let estop_size = if is_collapsed { 60.0 } else { 140.0 } * font_scale;
+                let estop_font_size = if is_collapsed { 12.0 } else { 24.0 } * font_scale;
+
                 let mut estop_b = Declaration::<Texture2D, ()>::new();
                 estop_b
                     .id(estop_b_id)
@@ -1242,7 +1256,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                     clay_scope.text(
                         "E-STOP",
                         clay_layout::text::TextConfig::new()
-                            .font_size((28.0 * font_scale) as u16)
+                            .font_size(estop_font_size as u16)
                             .color(theme.cl_text_main)
                             .end(),
                     );
@@ -1255,8 +1269,11 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                     &arena,
                     font_scale,
                     &theme,
+                    mouse_pressed,
                 );
-                });
+            });
+        });
+    });
 
             let load_dialog_open = state.lock().unwrap().load_dialog_open;
             if load_dialog_open {
@@ -1426,7 +1443,6 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                     });
                 });
             }
-        });
 
         crate::ui_components::render_toasts(&mut clay_scope, &state, &arena, font_scale, mouse_pressed, &theme);
         let render_commands = clay_scope.end();
