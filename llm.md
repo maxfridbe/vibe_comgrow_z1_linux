@@ -10,44 +10,57 @@ Trogdor is a high-fidelity GRBL runner and engineering tool designed specificall
 - **Image/SVG Processing**: `image`, `usvg`, `lyon_geom`
 - **Typography**: `font-kit` for system font access and outline extraction.
 
+## UI Architecture (Clay + Raylib)
+
+### The Clay Layout Model
+Trogdor uses the **Clay** layout engine, which follows a declarative, high-performance model inspired by Flexbox. 
+- **Frame-based Rebuild**: The entire UI hierarchy is re-declared every frame within `src/main.rs` and the `ui_*.rs` modules. This allows the UI to be perfectly reactive to the `AppState` without complex change detection.
+- **Declarative Syntax**: Elements are defined using builders (`Declaration::new()`) that specify layout properties (width, height, direction, padding, gap) and styling (background color, corner radius).
+- **Floating Elements**: Toasts and modal overlays use Clay's `floating()` feature, which allows elements to be positioned relative to the root or other elements without affecting the standard flow. Trogdor specifically uses `attach_to(Root)` and high Z-indexes for these notifications.
+
+### The Renderer
+Clay handles the layout math but is platform-agnostic. `src/main.rs` implements the renderer by iterating over Clay's generated `render_commands`:
+- **Rectangle**: Mapped to `d.draw_rectangle_rounded` for backgrounds and buttons.
+- **Text**: Mapped to `d.draw_text_ex`. Custom logic handles FontAwesome icons and specialized animations like the `ICON_SPINNER`.
+- **Image**: Mapped to `d.draw_texture_pro`. This is used both for UI icons and for the complex real-time grid visualizer.
+- **Scissor**: Mapped to Raylib's `BeginScissorMode` and `EndScissorMode`, enabling efficient scrollable areas.
+- **Custom Canvas**: The central grid visualizer is triggered by a specific element ID ("canvas"). When the renderer encounters this ID, it injects custom Raylib drawing code to render the machine state, real-time paths, and the cached G-code preview texture.
+
 ## Project Structure
 
 ### Core Logic
-- `src/main.rs`: Entry point. Manages the Raylib window, main render loop, input handling (including theme switching via Alt-T), and coordinates between UI modules and the state.
+- `src/main.rs`: Entry point. Manages the Raylib window, main render loop, and the Clay-to-Raylib render pass.
 - `src/comm.rs`: Handles serial communication. Spawns a dedicated thread to manage the G-code command queue and status polling. Includes a `Logger` for session-based burn logging to `~/.trogdor/burnlog/`.
-- `src/state.rs`: Defines `AppState`, the central source of truth. Manages tab selection, machine position, command queue, preview paths, and persistence (loading/saving states to `~/.config/trogdor/saved_states.json`).
+- `src/state.rs`: Defines `AppState`, the central source of truth. Manages tab selection, machine position, command queue, preview paths, and persistence.
 - `src/theme.rs`: Defines the `Theme` struct and 20 selectable themes (10 dark, 10 light).
 - `src/styles.rs`: Contains fixed color constants and UI style parameters.
-- `src/gcode.rs`: Helper functions for generating standardized G-code commands (jogging, burning, homing, etc.).
-- `src/cli_and_helpers.rs`: Contains logic for CLI mode, pattern generation, image-to-G-code conversion, and bounding box calculations.
-- `src/virtual_device.rs`: A virtual GRBL machine emulator for testing without physical hardware.
-- `src/svg_helper.rs`: Specialized logic for parsing SVG files and converting them to laser-compatible G-code paths.
+- `src/gcode.rs`: Centralized source of truth for G-code strings, constants, and generator functions.
+- `src/cli_and_helpers.rs`: Logic for CLI mode, pattern generation, and image-to-G-code rasterization.
+- `src/virtual_device.rs`: A virtual GRBL machine emulator for hardware-free testing.
 
 ### UI Modules
-- `src/ui.rs`: Common UI components (buttons, sliders, checkboxes, toasts). Implements the floating toast notification system.
-- `src/ui_manual.rs`: The "Manual" tab. Provides 40+ quick commands, jog controls, and manual laser firing.
-- `src/ui_test.rs`: The "Pattern" tab. Handles built-in test patterns and custom SVG loading with toggleable previews.
-- `src/ui_image.rs`: The "Image" tab. Manages image loading, fidelity/scale adjustment, and raster processing.
-- `src/ui_text.rs`: The "Text" tab. Features an interactive text input, font selector, and advanced vector/raster engraving controls.
-- `src/ui_svg.rs`: (Placeholder/Auxiliary) Specialized SVG path management.
-- `src/icons.rs`: FontAwesome icon constants.
+- `src/ui.rs`: Common UI components (buttons, sliders, checkboxes, toasts).
+- `src/ui_manual.rs`: The "Manual" tab. Provides quick commands and jog controls.
+- `src/ui_test.rs`: The "Pattern" tab. Handles built-in patterns and custom SVGs.
+- `src/ui_image.rs`: The "Image" tab. Raster processing with fidelity and scale controls.
+- `src/ui_text.rs`: The "Text" tab. Interactive text engraving with system font support.
 
 ## Key Architectures
 
 ### State Management
-The application uses an `Arc<Mutex<AppState>>` to share state safely between the main render thread and the serial communication thread. UI updates are immediate in the state, and the `comm` thread polls the state/queue for work.
+Safe shared state between the render thread and the serial thread using `Arc<Mutex<AppState>>`.
 
 ### G-Code Generation & Preview
-Operations like Text, Image, and SVG generate G-code strings. These strings are passed to `process_command_for_preview`, which parses them into `PathSegment` vectors for the real-time grid visualizer. The `preview_version` counter triggers texture refreshes in the main loop for high-performance rendering of complex paths.
+Generates G-code on the fly, which is then parsed into `PathSegment` vectors. A `preview_version` counter in `AppState` notifies the main loop to re-render the vector data into a 2000x2000 `RenderTexture2D` for performant display.
 
 ### Safety & Calibration
-- **Homing**: Every burn operation is automatically wrapped in a homing sequence (`$H`).
-- **Laser Safety**: Explicit `M5` (Laser Off) commands are issued before homing and on any safety-related reset.
-- **SafetyGuard**: On exit or interrupt, the software attempts to send a hard stop sequence to the machine.
+- **Homing**: Every burn operation ends with an `$H` sequence.
+- **Laser Safety**: Explicit `M5` commands ensure the laser is off during transitions and resets.
+- **SafetyGuard**: Automatic emergency sequences sent on application exit or interrupt.
 
 ## Operational Modes
-- **GUI**: Run with no arguments.
-- **CLI**: Pass a command label (e.g., `Home`), a raw G-code string, or use the `test-pattern` sub-command for parameter-driven pattern generation.
+- **GUI**: Standard interactive mode.
+- **CLI**: Supports command execution via labels, raw G-code, or parameterized test patterns.
 
 ## Themes
-Users can cycle through 20 UI themes using `Alt + T`. Themes adapt both background and text colors (`cl_text_main`, `cl_text_sub`) to ensure legibility in both light and dark modes.
+20 UI themes selectable via `Alt + T`. Themes adapt background, primary accents, and text colors (`cl_text_main`, `cl_text_sub`) for full light/dark mode support.
