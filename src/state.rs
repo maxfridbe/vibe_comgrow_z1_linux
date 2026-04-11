@@ -208,6 +208,15 @@ pub struct AppState {
     pub burn_log_active: bool,
     pub active_toasts: Vec<Toast>,
     pub current_theme_index: usize,
+    pub zoom_size: i32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UserConfig {
+    pub current_tab: UITab,
+    pub current_theme_name: String,
+    pub zoom_size: i32,
+    pub port: String,
 }
 
 #[derive(Clone, Debug)]
@@ -666,12 +675,53 @@ impl AppState {
         }
     }
 
+    pub fn save_user_config(&self) {
+        if let Ok(path) = self.get_user_config_path() {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let config = UserConfig {
+                current_tab: self.current_tab,
+                current_theme_name: self.get_theme().name.to_string(),
+                zoom_size: self.zoom_size,
+                port: (*self.port).clone(),
+            };
+            if let Ok(yaml) = serde_yaml::to_string(&config) {
+                let _ = std::fs::write(path, yaml);
+            }
+        }
+    }
+
+    pub fn load_user_config(&mut self) {
+        if let Ok(path) = self.get_user_config_path() {
+            if let Ok(yaml) = std::fs::read_to_string(path) {
+                if let Ok(config) = serde_yaml::from_str::<UserConfig>(&yaml) {
+                    self.current_tab = config.current_tab;
+                    // Find theme index by name
+                    if let Some(idx) = crate::theme::THEMES.iter().position(|t| t.name == config.current_theme_name) {
+                        self.current_theme_index = idx;
+                    }
+                    self.zoom_size = config.zoom_size;
+                    self.port = Arc::new(config.port);
+                }
+            }
+        }
+    }
+
     fn get_config_path(&self) -> Result<std::path::PathBuf, crate::error::TrogdorError> {
         let home = std::env::var("HOME")?;
         Ok(std::path::PathBuf::from(home)
             .join(".config")
             .join("trogdor")
             .join("saved_states.json"))
+    }
+
+    fn get_user_config_path(&self) -> Result<std::path::PathBuf, crate::error::TrogdorError> {
+        let home = std::env::var("HOME")?;
+        Ok(std::path::PathBuf::from(home)
+            .join(".config")
+            .join("trogdor")
+            .join("config.yml"))
     }
 
     fn add_path_segment(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, s: f32) {

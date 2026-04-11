@@ -110,11 +110,13 @@ fn main() -> Result<(), crate::error::TrogdorError> {
         burn_log_active: false,
         active_toasts: Vec::new(),
         current_theme_index: 0,
+        zoom_size: 64,
     }));
 
     {
         let mut g = state.lock().unwrap();
         g.load_persistence();
+        g.load_user_config();
     }
 
     let (tx, rx) = mpsc::channel();
@@ -188,9 +190,9 @@ fn main() -> Result<(), crate::error::TrogdorError> {
     });
     let arena = StringArena::new();
     let mut clipboard = Clipboard::new().ok();
-    let mut zoom_size: i32 = 64;
+    let initial_zoom = state.lock().unwrap().zoom_size;
     let mut font = rl
-        .load_font_from_memory(&thread, ".ttf", FONT_DATA, zoom_size, Some(&font_chars))
+        .load_font_from_memory(&thread, ".ttf", FONT_DATA, initial_zoom, Some(&font_chars))
         .expect("Failed to load font");
 
     unsafe {
@@ -386,18 +388,28 @@ fn main() -> Result<(), crate::error::TrogdorError> {
 
         if rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL) {
             if rl.is_key_pressed(KeyboardKey::KEY_EQUAL) {
-                zoom_size = (zoom_size + 16).min(128);
+                let mut g = state.lock().unwrap();
+                g.zoom_size = (g.zoom_size + 16).min(128);
+                let new_zoom = g.zoom_size;
+                g.save_user_config();
+                drop(g);
+                
                 font = rl
-                    .load_font_from_memory(&thread, ".ttf", FONT_DATA, zoom_size, Some(&font_chars))
+                    .load_font_from_memory(&thread, ".ttf", FONT_DATA, new_zoom, Some(&font_chars))
                     .expect("Failed to load font");
                 unsafe {
                     ui_components::MEASURE_FONT_PTR = &font as *const Font;
                 }
             }
             if rl.is_key_pressed(KeyboardKey::KEY_MINUS) {
-                zoom_size = (zoom_size - 16).max(32);
+                let mut g = state.lock().unwrap();
+                g.zoom_size = (g.zoom_size - 16).max(32);
+                let new_zoom = g.zoom_size;
+                g.save_user_config();
+                drop(g);
+
                 font = rl
-                    .load_font_from_memory(&thread, ".ttf", FONT_DATA, zoom_size, Some(&font_chars))
+                    .load_font_from_memory(&thread, ".ttf", FONT_DATA, new_zoom, Some(&font_chars))
                     .expect("Failed to load font");
                 unsafe {
                     ui_components::MEASURE_FONT_PTR = &font as *const Font;
@@ -405,9 +417,10 @@ fn main() -> Result<(), crate::error::TrogdorError> {
             }
         }
 
-        let font_scale = zoom_size as f32 / 64.0;
-        let _header_font_size = (zoom_size + 6) as u16;
-        let _base_font_size = zoom_size as u16;
+        let (font_scale, theme) = {
+            let g = state.lock().unwrap();
+            (g.zoom_size as f32 / 64.0, g.get_theme())
+        };
 
         let mouse_pos = rl.get_mouse_position();
         let frame_time_total = rl.get_time() as f32;
@@ -415,14 +428,13 @@ fn main() -> Result<(), crate::error::TrogdorError> {
         let mouse_down = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
         let mouse_pressed = rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
 
-        let theme = state.lock().unwrap().get_theme();
-
         if rl.is_key_pressed(KeyboardKey::KEY_T) && (rl.is_key_down(KeyboardKey::KEY_LEFT_ALT) || rl.is_key_down(KeyboardKey::KEY_RIGHT_ALT)) {
             let mut guard = state.lock().unwrap();
             if !guard.is_text_input_active {
                 guard.current_theme_index = (guard.current_theme_index + 1) % crate::theme::THEMES.len();
                 let theme_name = crate::theme::THEMES[guard.current_theme_index].name;
                 guard.add_toast(crate::state::ToastType::Info, format!("Theme: {}", theme_name), 1.5, false, None);
+                guard.save_user_config();
             }
         }
 
@@ -744,6 +756,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                                 g.machine_state = MachineState::Idle;
                                 g.machine_pos = Vector2::new(0.0, 0.0);
                             }
+                            g.save_user_config();
                         }
                     }
                     if *port == "VIRTUAL" {
@@ -852,16 +865,24 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                 clay_scope.with(&tab_bar, |clay_scope| {
                     let current_tab = state.lock().unwrap().current_tab;
                     if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, &arena, font_scale, &theme) {
-                        state.lock().unwrap().current_tab = UITab::Manual;
+                        let mut g = state.lock().unwrap();
+                        g.current_tab = UITab::Manual;
+                        g.save_user_config();
                     }
                     if render_tab_btn(clay_scope, "tab_pattern", "Pattern", current_tab == UITab::Pattern, &arena, font_scale, &theme) {
-                        state.lock().unwrap().current_tab = UITab::Pattern;
+                        let mut g = state.lock().unwrap();
+                        g.current_tab = UITab::Pattern;
+                        g.save_user_config();
                     }
                     if render_tab_btn(clay_scope, "tab_image", "Image", current_tab == UITab::Image, &arena, font_scale, &theme) {
-                        state.lock().unwrap().current_tab = UITab::Image;
+                        let mut g = state.lock().unwrap();
+                        g.current_tab = UITab::Image;
+                        g.save_user_config();
                     }
                     if render_tab_btn(clay_scope, "tab_text", "Text", current_tab == UITab::Text, &arena, font_scale, &theme) {
-                        state.lock().unwrap().current_tab = UITab::Text;
+                        let mut g = state.lock().unwrap();
+                        g.current_tab = UITab::Text;
+                        g.save_user_config();
                     }
                 });
 
