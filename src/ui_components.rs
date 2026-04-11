@@ -5,9 +5,143 @@ use crate::styles::*;
 use crate::theme::Theme;
 use arboard::Clipboard;
 use clay_layout::layout::{Alignment, LayoutAlignmentX, LayoutAlignmentY, LayoutDirection, Padding};
+use clay_layout::math::Vector2 as ClayVector2;
 use clay_layout::{Color as ClayColor, Declaration, fixed, grow};
 use raylib::prelude::*;
 use std::sync::{Arc, Mutex};
+
+use crate::FontMeasureEx;
+
+pub static mut MEASURE_FONT_PTR: *const raylib::prelude::Font = std::ptr::null();
+
+pub fn render_text_input<'a, 'render>(
+    clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
+    _id: &str,
+    state: &Arc<Mutex<AppState>>,
+    arena: &StringArena,
+    font_scale: f32,
+    theme: &Theme,
+    mouse_pressed: bool,
+) where
+    'a: 'render,
+{
+    let (is_active, content, cursor_idx) = {
+        let g = state.lock().unwrap();
+        (g.is_text_input_active, (*g.text_content).clone(), g.text_cursor_index)
+    };
+
+    let mut input_color = theme.cl_bg_dark;
+    let border_color = if is_active {
+        theme.cl_primary
+    } else {
+        theme.cl_bg_section
+    };
+
+    let input_id = unsafe { clay_layout::id::Id { id: clay_layout::bindings::Clay__HashString(clay_layout::bindings::Clay_String::from("text_input_global"), 0, 0) } };
+    
+    if clay.pointer_over(input_id) {
+        if !is_active {
+            input_color = theme.cl_bg_section;
+        }
+        if mouse_pressed {
+            let mut g = state.lock().unwrap();
+            if !g.is_text_input_active {
+                g.is_text_input_active = true;
+                g.text_cursor_index = (*g.text_content).len();
+            }
+            g.text_font_dropdown_open = false;
+        }
+    }
+
+    let mut input_box_decl = Declaration::<Texture2D, ()>::new();
+    input_box_decl
+        .id(input_id)
+        .layout()
+        .width(grow!())
+        .height(fixed!(100.0 * font_scale))
+        .padding(Padding::all(12))
+        .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Top))
+        .end()
+        .background_color(input_color)
+        .corner_radius()
+        .all(8.0 * font_scale)
+        .end()
+        .border()
+        .top((2.0 * font_scale) as u16)
+        .bottom((2.0 * font_scale) as u16)
+        .left((2.0 * font_scale) as u16)
+        .right((2.0 * font_scale) as u16)
+        .color(border_color)
+        .end();
+
+    clay.with(&input_box_decl, |clay| {
+        let is_empty = content.is_empty();
+        let display_text = if is_empty && !is_active {
+            "Type here..."
+        } else {
+            &content
+        };
+        let display_color = if is_empty && !is_active {
+            theme.cl_text_sub
+        } else {
+            theme.cl_text_main
+        };
+
+        let font_size = 16.0 * font_scale;
+        
+        clay.text(
+            arena.push(display_text.to_string()),
+            clay_layout::text::TextConfig::new()
+                .font_size(font_size as u16)
+                .color(display_color)
+                .end(),
+        );
+
+        // Render Caret (Floating relative to the input box)
+        if is_active && (unsafe { raylib::ffi::GetTime() } * 2.0) as i32 % 2 == 0 {
+            let mut caret_x = 0.0;
+            let mut caret_y = 0.0;
+            
+            unsafe {
+                if !MEASURE_FONT_PTR.is_null() {
+                    let f = &*MEASURE_FONT_PTR;
+                    let lines: Vec<&str> = content.split('\n').collect();
+                    let mut current_byte_idx = 0;
+                    
+                    let cursor = cursor_idx.min(content.len());
+                    
+                    for (i, line) in lines.iter().enumerate() {
+                        let line_len = line.len();
+                        if cursor >= current_byte_idx && cursor <= current_byte_idx + line_len {
+                            let prefix_len = cursor - current_byte_idx;
+                            let prefix = &line[..prefix_len];
+                            let m = f.measure_text_ex(prefix, font_size, 0.0);
+                            caret_x = m.x;
+                            caret_y = i as f32 * font_size;
+                            break;
+                        }
+                        current_byte_idx += line_len + 1;
+                    }
+                }
+            }
+
+            let mut caret = Declaration::<Texture2D, ()>::new();
+            caret.layout()
+                .width(fixed!(2.0 * font_scale))
+                .height(fixed!(font_size))
+                .end()
+                .floating()
+                .attach_to(clay_layout::elements::FloatingAttachToElement::Parent)
+                // Add 12.0 padding manually because we are floating relative to the box start
+                .offset(ClayVector2 { x: 12.0 + caret_x, y: 12.0 + caret_y })
+                .end()
+                .background_color(theme.cl_primary);
+            
+            clay.with(&caret, |_| {});
+        }
+    });
+}
+
 
 pub fn render_toasts<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,

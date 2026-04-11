@@ -304,76 +304,15 @@ pub fn render_text_controls<'a, 'render>(
             }
 
             // Input Box
-            let input_id = clay_scope.id("text_input");
-            let is_active = state.lock().unwrap().is_text_input_active;
-            let mut input_color = theme.cl_bg_dark;
-            let border_color = if is_active {
-                theme.cl_primary
-            } else {
-                theme.cl_bg_section
-            };
-
-            if clay_scope.pointer_over(input_id) {
-                if !is_active {
-                    input_color = theme.cl_bg_section;
-                }
-                if mouse_pressed {
-                    let mut g = state.lock().unwrap();
-                    g.is_text_input_active = true;
-                    g.text_font_dropdown_open = false; // Close font list if typing
-                }
-            }
-
-            let mut input_box_decl = Declaration::<Texture2D, ()>::new();
-            input_box_decl
-                .id(input_id)
-                .layout()
-                .width(grow!())
-                .height(fixed!(100.0 * font_scale))
-                .padding(Padding::all(12))
-                .end()
-                .background_color(input_color)
-                .corner_radius()
-                .all(8.0 * font_scale)
-                .end()
-                .border()
-                .top((2.0 * font_scale) as u16)
-                .bottom((2.0 * font_scale) as u16)
-                .left((2.0 * font_scale) as u16)
-                .right((2.0 * font_scale) as u16)
-                .color(border_color)
-                .end();
-
-            let (content, cursor_idx) = {
-                let g = state.lock().unwrap();
-                (g.text_content.clone(), g.text_cursor_index)
-            };
-            clay_scope.with(&input_box_decl, |clay| {
-                let display_text = if content.is_empty() && !is_active {
-                    "Type here..."
-                } else {
-                    &content
-                };
-                let display_color = if content.is_empty() && !is_active {
-                    theme.cl_text_sub
-                } else {
-                    theme.cl_text_main
-                };
-
-                let mut text_arena = display_text.to_string();
-                if is_active && (unsafe { raylib::ffi::GetTime() } * 2.0) as i32 % 2 == 0 {
-                    let cursor = cursor_idx.min(text_arena.len());
-                    text_arena.insert(cursor, '|');
-                }
-
-                clay.text(
-                    arena.push(text_arena),
-                    clay_layout::text::TextConfig::new()
-                        .font_size((16.0 * font_scale) as u16)
-                        .color(display_color)
-                        .end(),
-                );
-            });
+            crate::ui_components::render_text_input(
+                clay_scope,
+                "text_input",
+                state,
+                arena,
+                font_scale,
+                theme,
+                mouse_pressed,
+            );
         });
 
         // 3. Settings Section

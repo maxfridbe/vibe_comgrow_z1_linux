@@ -172,14 +172,12 @@ fn main() -> Result<(), crate::error::TrogdorError> {
 
     let font_chars: String = chars.iter().collect();
 
-    static mut MEASURE_FONT_PTR: *const Font = std::ptr::null();
-
     let mut clay = Clay::new(Dimensions::new(1280.0, 800.0));
     clay.set_measure_text_function(|text, config| {
         let size = config.font_size as f32;
         unsafe {
-            if !MEASURE_FONT_PTR.is_null() {
-                let f = &*MEASURE_FONT_PTR;
+            if !ui_components::MEASURE_FONT_PTR.is_null() {
+                let f = &*ui_components::MEASURE_FONT_PTR;
                 let m = f.measure_text_ex(text, size, 0.0);
                 Dimensions::new(m.x, m.y)
             } else {
@@ -196,7 +194,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
         .expect("Failed to load font");
 
     unsafe {
-        MEASURE_FONT_PTR = &font as *const Font;
+        ui_components::MEASURE_FONT_PTR = &font as *const Font;
     }
 
     let mut sections = vec![
@@ -393,7 +391,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                     .load_font_from_memory(&thread, ".ttf", FONT_DATA, zoom_size, Some(&font_chars))
                     .expect("Failed to load font");
                 unsafe {
-                    MEASURE_FONT_PTR = &font as *const Font;
+                    ui_components::MEASURE_FONT_PTR = &font as *const Font;
                 }
             }
             if rl.is_key_pressed(KeyboardKey::KEY_MINUS) {
@@ -402,7 +400,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                     .load_font_from_memory(&thread, ".ttf", FONT_DATA, zoom_size, Some(&font_chars))
                     .expect("Failed to load font");
                 unsafe {
-                    MEASURE_FONT_PTR = &font as *const Font;
+                    ui_components::MEASURE_FONT_PTR = &font as *const Font;
                 }
             }
         }
@@ -443,6 +441,60 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                 // Ensure cursor is at a valid char boundary
                 if !content.is_char_boundary(cursor) {
                     cursor = content.len();
+                }
+
+                // Mouse click to position cursor
+                if mouse_pressed {
+                    let input_id = unsafe { clay_layout::id::Id { id: clay_layout::bindings::Clay__HashString(clay_layout::bindings::Clay_String::from("text_input_global"), 0, 0) } };
+                    let data = unsafe { clay_layout::bindings::Clay_GetElementData(input_id.id) };
+                    if data.found {
+                        let rect = data.boundingBox;
+                        if mouse_pos.x >= rect.x && mouse_pos.x <= rect.x + rect.width &&
+                           mouse_pos.y >= rect.y && mouse_pos.y <= rect.y + rect.height {
+                            // Hit test characters
+                            let local_x = mouse_pos.x - (rect.x + 12.0); // 12.0 is padding
+                            let local_y = mouse_pos.y - (rect.y + 12.0);
+                            let font_size = 16.0 * font_scale;
+                            
+                            let lines: Vec<&str> = content.split('\n').collect();
+                            // Line index based on Y position, clamped to available lines
+                            let line_idx = (local_y / font_size).floor().max(0.0) as usize;
+                            
+                            if line_idx < lines.get(line_idx).map_or(0, |_| line_idx + 1) {
+                                let line = lines[line_idx];
+                                let mut best_cursor = 0;
+                                let mut min_dist = local_x.abs();
+                                
+                                unsafe {
+                                    if !ui_components::MEASURE_FONT_PTR.is_null() {
+                                        let f = &*ui_components::MEASURE_FONT_PTR;
+                                        for i in 1..=line.len() {
+                                            if line.is_char_boundary(i) {
+                                                let m = f.measure_text_ex(&line[..i], font_size, 0.0);
+                                                let dist = (m.x - local_x).abs();
+                                                if dist < min_dist {
+                                                    min_dist = dist;
+                                                    best_cursor = i;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                let mut byte_offset = 0;
+                                for i in 0..line_idx {
+                                    byte_offset += lines[i].len() + 1;
+                                }
+                                cursor = byte_offset + best_cursor;
+                            } else {
+                                // Clicked below the last line, move to end of text
+                                cursor = content.len();
+                            }
+                        } else {
+                            // Clicked outside the box
+                            g.is_text_input_active = false;
+                        }
+                    }
                 }
 
                 // Arrow keys
@@ -533,10 +585,6 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                 g.text_content = Arc::new(content);
                 g.text_cursor_index = cursor;
 
-                // Blur if clicking outside
-                if mouse_pressed && !clay.pointer_over(clay_scope_id("text_input")) {
-                    g.is_text_input_active = false;
-                }
                 // Stop scroll from bubbling when typing
                 scroll_delta.y = 0.0;
             }
@@ -1668,7 +1716,6 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                         let mut origin = raylib::math::Vector2::new(text_size.x / 2.0, text_size.y / 2.0);
                         if let Some(c) = text_str.chars().next() {
                             if c as u32 > 127 {
-                                // eye and eye-slash (\u{f06e}, \u{f070}) need more nudge
                                 let nudge_factor = if c == '\u{f06e}' || c == '\u{f070}' { 0.22 } else { 0.10 };
                                 origin.x += font_size * nudge_factor;
                             }
@@ -1676,8 +1723,8 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                         d.draw_text_pro(&font, text_str, center, origin, rotation, font_size, 0.0, color);
                     } else {
                         let pos = raylib::math::Vector2::new(
-                            command.bounding_box.x + (command.bounding_box.width - text_size.x) / 2.0,
-                            command.bounding_box.y + (command.bounding_box.height - text_size.y) / 2.0,
+                            command.bounding_box.x,
+                            command.bounding_box.y,
                         );
                         d.draw_text_ex(&font, text_str, pos, font_size, 0.0, color);
                     }
@@ -1742,12 +1789,4 @@ fn main() -> Result<(), crate::error::TrogdorError> {
         }
     }
     Ok(())
-}
-
-fn clay_scope_id(id: &str) -> clay_layout::id::Id {
-    unsafe {
-        clay_layout::id::Id {
-            id: clay_layout::bindings::Clay__HashString(clay_layout::bindings::Clay_String::from(id), 0, 0),
-        }
-    }
 }
