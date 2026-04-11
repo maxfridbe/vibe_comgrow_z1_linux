@@ -991,7 +991,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                 .width(grow!())
                 .height(grow!())
                 .direction(LayoutDirection::LeftToRight)
-                .padding(Padding::new(standard_margin, standard_margin, standard_margin, 0))
+                .padding(Padding::new(standard_margin, 0, standard_margin, 0))
                 .child_gap(16)
                 .end();
             clay_scope.with(&content_area, |clay_scope| {
@@ -1216,21 +1216,21 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                     ),
                 });
 
+                let is_dragging = state.lock().unwrap().col2_dragging;
                 let sb_area_id = clay_scope.id("col2_scrollbar_area");
                 let mut sb_area = Declaration::<Texture2D, ()>::new();
                 sb_area
                     .id(sb_area_id)
                     .layout()
-                    .width(fixed!(8.0 * font_scale))
+                    .width(fixed!(16.0 * font_scale))
                     .height(grow!())
                     .padding(Padding::vertical(4))
                     .direction(LayoutDirection::TopToBottom)
                     .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
                     .end();
 
-                let is_dragging = state.lock().unwrap().col2_dragging;
-                if clay_scope.pointer_over(col2_outer_id) || is_dragging {
-                    clay_scope.with(&sb_area, |clay_scope| {
+                clay_scope.with(&sb_area, |clay_scope| {
+                    if clay_scope.pointer_over(sb_area_id) || is_dragging {
                         let handle_height = 40.0 * font_scale;
                         let track_height = 800.0 * font_scale;
                         let max_scroll = 1500.0;
@@ -1278,10 +1278,8 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                             
                             clay_scope.with(&handle, |_| {});
                         });
-                    });
-                } else {
-                    clay_scope.with(&sb_area, |_| {});
-                }
+                    }
+                });
             });
             });
 
