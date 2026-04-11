@@ -1,6 +1,6 @@
 use crate::gcode;
 use crate::svg_helper;
-use crate::ui::Section;
+use crate::ui_components::Section;
 use crate::virtual_device::VirtualDevice;
 use font_kit::family_name::FamilyName;
 use font_kit::font::Font;
@@ -46,7 +46,7 @@ fn get_ts() -> String {
     format!("{:02}:{:02}:{:02}", hh, mm, ss)
 }
 
-fn parse_dimension(s: &str) -> Result<f32, Box<dyn std::error::Error + Send + Sync>> {
+fn parse_dimension(s: &str) -> Result<f32, crate::error::TrogdorError> {
     let s = s.to_lowercase();
     if s.ends_with("in") {
         let val: f32 = s.trim_end_matches("in").parse()?;
@@ -60,7 +60,7 @@ fn parse_dimension(s: &str) -> Result<f32, Box<dyn std::error::Error + Send + Sy
     }
 }
 
-pub fn run_cli_mode(target_label: &str, _sections: &[Section]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub fn run_cli_mode(target_label: &str, _sections: &[Section]) -> Result<(), crate::error::TrogdorError> {
     let home = std::env::var("HOME")?;
     let path = std::path::PathBuf::from(home).join(".config").join("trogdor").join("saved_states.json");
     if let Ok(json) = std::fs::read_to_string(path) {
@@ -74,7 +74,7 @@ pub fn run_cli_mode(target_label: &str, _sections: &[Section]) -> Result<(), Box
     Ok(())
 }
 
-pub fn run_dynamic_pattern_cli(args: &[OsString]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub fn run_dynamic_pattern_cli(args: &[OsString]) -> Result<(), crate::error::TrogdorError> {
     let mut opts = pico_args::Arguments::from_vec(args.to_vec());
     let shape: String = opts.value_from_str("--shape")?;
     let pwr: String = opts.value_from_str("--power")?;
@@ -99,7 +99,7 @@ pub fn generate_pattern_gcode(
     shape: &str,
     config: &BurnConfig,
     is_preview: bool,
-) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(String, String), crate::error::TrogdorError> {
     let pwr_val = config.power;
     let spd_val = if is_preview { config.feed_rate.min(1000.0) } else { config.feed_rate };
     let scl_val = config.scale;
@@ -194,7 +194,7 @@ pub fn generate_image_gcode(
     config: &ImageBurnConfig,
     intensity_override: Option<f32>,
     is_preview: bool,
-) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(String, String), crate::error::TrogdorError> {
     let pwr_max = config.base.power;
     let speed = if is_preview { config.base.feed_rate.min(1000.0) } else { config.base.feed_rate };
     let low_fid = config.low_fid;
@@ -366,7 +366,7 @@ pub fn generate_image_gcode(
 pub fn generate_text_gcode(
     config: &TextBurnConfig,
     is_preview: bool,
-) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(String, String), crate::error::TrogdorError> {
     let pwr_max = config.base.power;
     let speed = config.base.feed_rate;
     let scale = config.base.scale;
@@ -598,7 +598,7 @@ pub fn get_gcode_bounds(gcode: &str) -> Option<(f32, f32, f32, f32)> {
     if found { Some((min_x, min_y, max_x - min_x, max_y - min_y)) } else { None }
 }
 
-pub fn run_serial_cmd(cmd_str: &str, label: &str, _tx: mpsc::Sender<String>, use_virtual: bool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub fn run_serial_cmd(cmd_str: &str, label: &str, _tx: mpsc::Sender<String>, use_virtual: bool) -> Result<(), crate::error::TrogdorError> {
     if use_virtual { println!("[{}] VIRTUAL: {} -> {}", get_ts(), label, cmd_str); }
     else { println!("[{}] SENDING: {}...", get_ts(), label); }
     Ok(())

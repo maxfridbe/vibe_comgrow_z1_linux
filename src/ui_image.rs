@@ -1,9 +1,9 @@
 use crate::cli_and_helpers::{generate_image_gcode, get_image_outline_gcode};
 use crate::icons::*;
-use crate::state::{AppState, StringArena, ToastType};
+use crate::state::{AppState, MachineState, StringArena, ToastType};
 use crate::styles::*;
 use crate::theme::Theme;
-use crate::ui::{Section, render_burn_btn, render_checkbox, render_outline_btn, render_slider};
+use crate::ui_components::{Section, render_burn_btn, render_checkbox, render_outline_btn, render_slider};
 use arboard::Clipboard;
 use clay_layout::layout::{Alignment, LayoutAlignmentX, LayoutAlignmentY, LayoutDirection, Padding};
 use clay_layout::{Declaration, fixed, grow};
@@ -26,8 +26,8 @@ pub fn render_image_controls<'a, 'render>(
 ) where
     'a: 'render,
 {
-    let is_idle = { state.lock().unwrap().machine_state == "Idle" };
-    let is_processing = { state.lock().unwrap().is_processing };
+    let is_idle = state.lock().unwrap().machine_state == MachineState::Idle;
+    let is_processing = state.lock().unwrap().is_processing;
 
     let mut container = Declaration::<Texture2D, ()>::new();
     container.layout().width(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
@@ -80,7 +80,7 @@ pub fn render_image_controls<'a, 'render>(
                         {
                             let path = path_buf.to_string_lossy().to_string();
                             let mut guard = state.lock().unwrap();
-                            guard.custom_image_path = Some(path.clone());
+                            guard.custom_image_path = Some(Arc::new(path.clone()));
                             guard.add_toast(ToastType::Info, format!("Loaded image: {}", path), 2.0, true, None);
                         }
                     }
@@ -136,7 +136,7 @@ pub fn render_image_controls<'a, 'render>(
                 }
             });
 
-            let custom_path = { state.lock().unwrap().custom_image_path.clone() };
+            let custom_path = state.lock().unwrap().custom_image_path.clone();
             if let Some(p) = custom_path {
                 // Fidelity Sliders
                 let (low_fid, high_fid) = {
@@ -159,7 +159,7 @@ pub fn render_image_controls<'a, 'render>(
                     let preview_id = clay_scope.id("preview_custom_image");
                     let is_active_preview = {
                         let g = state.lock().unwrap();
-                        g.preview_pattern == Some("custom_image".to_string())
+                        g.preview_pattern.as_ref().map(|p| **p == "custom_image").unwrap_or(false)
                     };
                     let mut preview_color = if is_active_preview { theme.cl_primary } else { theme.cl_bg_dark };
                     if !is_processing && clay_scope.pointer_over(preview_id) {
@@ -171,13 +171,13 @@ pub fn render_image_controls<'a, 'render>(
                                 g.preview_paths.clear();
                                 g.preview_version += 1;
                             } else {
-                                g.preview_pattern = Some("custom_image".to_string());
+                                g.preview_pattern = Some(Arc::new("custom_image".to_string()));
                                 g.preview_paths.clear();
                                 g.preview_version += 1;
                                 g.is_processing = true;
                                 let config = g.get_image_burn_config();
                                 let state_clone = Arc::clone(state);
-                                let path_clone = p.clone();
+                                let path_clone = (*p).clone();
                                 std::thread::spawn(move || {
                                     if let Ok((gcode, _)) = generate_image_gcode(&path_clone, &config, None, true) {
                                         let mut g = state_clone.lock().unwrap();
@@ -195,8 +195,8 @@ pub fn render_image_controls<'a, 'render>(
                     preview_btn
                         .id(preview_id)
                         .layout()
-                        .width(fixed!(32.0 * font_scale))
-                        .height(fixed!(32.0 * font_scale))
+                        .width(fixed!(theme.sz_btn_height * font_scale))
+                        .height(fixed!(theme.sz_btn_height * font_scale))
                         .direction(LayoutDirection::TopToBottom)
                         .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
                         .padding(Padding::all(2))
@@ -207,9 +207,9 @@ pub fn render_image_controls<'a, 'render>(
                         .end();
                     clay_scope.with(&preview_btn, |clay| {
                         clay.text(
-                            ICON_EYE,
+                            if is_active_preview { ICON_EYE } else { ICON_EYE_SLASH },
                             clay_layout::text::TextConfig::new()
-                                .font_size((18.0 * font_scale) as u16)
+                                .font_size((24.0 * font_scale) as u16)
                                 .color(theme.cl_text_white)
                                 .end(),
                         );
@@ -309,10 +309,19 @@ pub fn render_image_controls<'a, 'render>(
                 )
             };
 
-            render_slider(clay_scope, "i_pwr", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-            render_slider(clay_scope, "i_spd", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-            render_slider(clay_scope, "i_scl", "Scale", scl, 0.1, 10.0, COLOR_SLIDER_STEP, state, |s, v| s.scale = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-            render_slider(clay_scope, "i_lpm", "Lines/mm", lines, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| s.img_lines_per_mm = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+            let mut row1 = Declaration::<Texture2D, ()>::new();
+            row1.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
+            clay_scope.with(&row1, |clay_scope| {
+                render_slider(clay_scope, "i_pwr", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                render_slider(clay_scope, "i_spd", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+            });
+
+            let mut row2 = Declaration::<Texture2D, ()>::new();
+            row2.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
+            clay_scope.with(&row2, |clay_scope| {
+                render_slider(clay_scope, "i_scl", "Scale", scl, 0.1, 10.0, COLOR_SLIDER_STEP, state, |s, v| s.scale = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                render_slider(clay_scope, "i_lpm", "Lines/mm", lines, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| s.img_lines_per_mm = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+            });
 
             render_checkbox(clay_scope, "i_ben", "Enable Bounds", b_en, state, |s, v| s.bounds.enabled = v, mouse_pressed, font_scale, theme);
 

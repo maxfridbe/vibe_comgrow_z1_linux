@@ -22,6 +22,7 @@ pub struct Theme {
     pub cl_head: Color,
     pub cl_preview: Color,
     pub cl_overlay: Color,
+    pub sz_btn_height: f32,
 }
 
 pub const THEMES: [Theme; 20] = [
@@ -47,6 +48,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(59, 130, 246),
         cl_preview: Color::u_rgb(0, 255, 0),
         cl_overlay: Color::rgba(0.0, 0.0, 0.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Cyberpunk",
@@ -69,6 +71,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(255, 255, 255),
         cl_preview: Color::u_rgb(0, 255, 255),
         cl_overlay: Color::rgba(0.0, 0.0, 0.0, 200.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Nordic",
@@ -91,6 +94,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(136, 192, 208),
         cl_preview: Color::u_rgb(163, 190, 140),
         cl_overlay: Color::rgba(46.0, 52.0, 64.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Solarized Dark",
@@ -113,6 +117,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(38, 139, 210),
         cl_preview: Color::u_rgb(133, 153, 0),
         cl_overlay: Color::rgba(0.0, 43.0, 54.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Dracula",
@@ -135,6 +140,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(139, 233, 253),
         cl_preview: Color::u_rgb(80, 250, 123),
         cl_overlay: Color::rgba(40.0, 42.0, 54.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Gruvbox Dark",
@@ -157,6 +163,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(254, 128, 25),
         cl_preview: Color::u_rgb(184, 187, 38),
         cl_overlay: Color::rgba(40.0, 40.0, 40.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Forest",
@@ -179,6 +186,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(34, 197, 94),
         cl_preview: Color::u_rgb(74, 222, 128),
         cl_overlay: Color::rgba(20.0, 28.0, 20.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Ocean",
@@ -201,6 +209,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(0, 191, 255),
         cl_preview: Color::u_rgb(0, 250, 154),
         cl_overlay: Color::rgba(10.0, 25.0, 40.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Monokai",
@@ -223,6 +232,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(102, 217, 239),
         cl_preview: Color::u_rgb(166, 226, 46),
         cl_overlay: Color::rgba(39.0, 40.0, 34.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Minimalist Red",
@@ -245,6 +255,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(220, 38, 38),
         cl_preview: Color::u_rgb(220, 38, 38),
         cl_overlay: Color::rgba(0.0, 0.0, 0.0, 220.0),
+        sz_btn_height: 32.0,
     },
 
     // --- LIGHT THEMES ---
@@ -269,6 +280,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(37, 99, 235),
         cl_preview: Color::u_rgb(22, 163, 74),
         cl_overlay: Color::rgba(255.0, 255.0, 255.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Solarized Light",
@@ -291,6 +303,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(38, 139, 210),
         cl_preview: Color::u_rgb(133, 153, 0),
         cl_overlay: Color::rgba(253.0, 246.0, 227.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "GitHub Light",
@@ -313,6 +326,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(9, 105, 218),
         cl_preview: Color::u_rgb(26, 127, 55),
         cl_overlay: Color::rgba(255.0, 255.0, 255.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "One Light",
@@ -335,6 +349,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(64, 120, 242),
         cl_preview: Color::u_rgb(80, 161, 79),
         cl_overlay: Color::rgba(250.0, 250.0, 250.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Nord Light",
@@ -357,6 +372,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(136, 192, 208),
         cl_preview: Color::u_rgb(163, 190, 140),
         cl_overlay: Color::rgba(236.0, 239.0, 244.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Gruvbox Light",
@@ -379,6 +395,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(175, 58, 3),
         cl_preview: Color::u_rgb(121, 116, 14),
         cl_overlay: Color::rgba(251.0, 241.0, 199.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Sandstone",
@@ -401,6 +418,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(139, 69, 19),
         cl_preview: Color::u_rgb(34, 139, 34),
         cl_overlay: Color::rgba(245.0, 245.0, 220.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Everforest Light",
@@ -423,6 +441,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(147, 160, 111),
         cl_preview: Color::u_rgb(167, 192, 128),
         cl_overlay: Color::rgba(251.0, 249.0, 232.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "Rose Pine Dawn",
@@ -445,6 +464,7 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(144, 122, 169),
         cl_preview: Color::u_rgb(40, 105, 131),
         cl_overlay: Color::rgba(250.0, 244.0, 237.0, 180.0),
+        sz_btn_height: 32.0,
     },
     Theme {
         name: "High Contrast Light",
@@ -467,5 +487,6 @@ pub const THEMES: [Theme; 20] = [
         cl_head: Color::u_rgb(0, 0, 255),
         cl_preview: Color::u_rgb(0, 128, 0),
         cl_overlay: Color::rgba(255.0, 255.0, 255.0, 200.0),
+        sz_btn_height: 32.0,
     },
 ];

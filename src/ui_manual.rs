@@ -1,10 +1,10 @@
 use crate::cli_and_helpers::generate_pattern_gcode;
 use crate::gcode;
 use crate::icons::*;
-use crate::state::{AppState, StringArena};
+use crate::state::{AppState, MachineState, StringArena};
 use crate::styles::*;
 use crate::theme::Theme;
-use crate::ui::{Section, render_burn_btn, render_jog_btn, render_outline_btn, render_slider};
+use crate::ui_components::{Section, render_burn_btn, render_jog_btn, render_outline_btn, render_slider};
 use arboard::Clipboard;
 use clay_layout::layout::{Alignment, LayoutAlignmentX, LayoutAlignmentY, LayoutDirection, Padding};
 use clay_layout::{Declaration, fixed, grow};
@@ -26,7 +26,7 @@ pub fn render_manual_left_subcol<'a, 'render>(
     let mut left_col = Declaration::<Texture2D, ()>::new();
     left_col.layout().width(grow!()).height(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
 
-    let is_idle = { state.lock().unwrap().machine_state == "Idle" };
+    let is_idle = state.lock().unwrap().machine_state == MachineState::Idle;
 
     clay.with(&left_col, |clay_scope| {
         for section in sections.iter().filter(|s| s.title != "Safety") {
@@ -174,7 +174,7 @@ pub fn render_manual_right_col<'a, 'render>(
         .width(grow!())
         .end();
 
-    let is_idle = { state.lock().unwrap().machine_state == "Idle" };
+    let is_idle = state.lock().unwrap().machine_state == MachineState::Idle;
 
     clay.with(&right_col, |clay_scope| {
         // 1. Burn Controls (at the very top)

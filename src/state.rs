@@ -1,3 +1,5 @@
+use std::fmt;
+use std::sync::Arc;
 use crate::gcode::decode_gcode;
 use raylib::prelude::Vector2;
 use serde::{Deserialize, Serialize};
@@ -97,12 +99,63 @@ pub struct PathSegment {
     pub intensity: f32,
 }
 
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum UITab {
     Manual,
     Pattern,
     Image,
     Text,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
+pub enum MachineState {
+    Idle,
+    Run,
+    Hold,
+    Alarm,
+    Door,
+    Check,
+    Home,
+    Sleep,
+    Disconnected,
+    Unknown,
+}
+
+impl MachineState {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "Idle" => MachineState::Idle,
+            "Run" => MachineState::Run,
+            "Hold" => MachineState::Hold,
+            "Alarm" => MachineState::Alarm,
+            "Door" => MachineState::Door,
+            "Check" => MachineState::Check,
+            "Home" => MachineState::Home,
+            "Sleep" => MachineState::Sleep,
+            _ => MachineState::Unknown,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MachineState::Idle => "Idle",
+            MachineState::Run => "Run",
+            MachineState::Hold => "Hold",
+            MachineState::Alarm => "Alarm",
+            MachineState::Door => "Door",
+            MachineState::Check => "Check",
+            MachineState::Home => "Home",
+            MachineState::Sleep => "Sleep",
+            MachineState::Disconnected => "Disconnected",
+            MachineState::Unknown => "Unknown",
+        }
+    }
+}
+
+impl fmt::Display for MachineState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 pub struct AppState {
@@ -115,19 +168,19 @@ pub struct AppState {
     pub log_scroll_offset: f32,
     pub col2_scroll_offset: f32,
     pub is_absolute: bool,
-    pub port: String,
-    pub wattage: String,
+    pub port: Arc<String>,
+    pub wattage: Arc<String>,
     pub v_pos: Vector2,
     pub machine_pos: Vector2,
-    pub machine_state: String,
+    pub machine_state: MachineState,
     pub paths: Vec<PathSegment>,
     pub preview_paths: Vec<PathSegment>,
-    pub preview_pattern: Option<String>,
-    pub custom_svg_path: Option<String>,
-    pub custom_image_path: Option<String>,
+    pub preview_pattern: Option<Arc<String>>,
+    pub custom_svg_path: Option<Arc<String>>,
+    pub custom_image_path: Option<Arc<String>>,
     pub last_command: String,
     pub copied_at: Option<std::time::Instant>,
-    pub serial_logs: VecDeque<LogEntry>,
+    pub serial_logs: Arc<VecDeque<LogEntry>>,
     pub tx: Sender<String>,
     pub bounds: Bounds,
     pub img_low_fidelity: f32,
@@ -135,20 +188,21 @@ pub struct AppState {
     pub img_lines_per_mm: f32,
     pub is_processing: bool,
     pub preview_version: u64,
-    pub text_content: String,
-    pub text_font: String,
+    pub text_content: Arc<String>,
+    pub text_font: Arc<String>,
     pub text_is_bold: bool,
     pub text_is_outline: bool,
     pub text_letter_spacing: f32,
     pub text_line_spacing: f32,
     pub text_curve_steps: u32,
     pub text_lines_per_mm: f32,
-    pub available_fonts: Vec<String>,
+    pub available_fonts: Arc<Vec<String>>,
     pub text_font_dropdown_open: bool,
     pub text_font_scroll_offset: f32,
     pub is_text_input_active: bool,
+    pub text_cursor_index: usize,
     pub current_preview_power: f32,
-    pub saved_states: Vec<SavedState>,
+    pub saved_states: Arc<Vec<SavedState>>,
     pub load_dialog_open: bool,
     pub is_burning: bool,
     pub burn_log_active: bool,
@@ -489,15 +543,17 @@ impl AppState {
         }
 
         if cmd != "?" || force_log {
-            self.serial_logs.push_back(LogEntry {
+            let mut logs = (*self.serial_logs).clone();
+            logs.push_back(LogEntry {
                 text: format!("SEND: {}", cmd),
                 explanation,
                 is_response: false,
                 timestamp: get_ts(),
             });
-            if self.serial_logs.len() > 1000 {
-                self.serial_logs.pop_front();
+            if logs.len() > 1000 {
+                logs.pop_front();
             }
+            self.serial_logs = Arc::new(logs);
         }
     }
 
@@ -523,8 +579,8 @@ impl AppState {
     pub fn get_text_burn_config(&self) -> TextBurnConfig {
         TextBurnConfig {
             base: self.get_burn_config(),
-            content: self.text_content.clone(),
-            font: self.text_font.clone(),
+            content: (*self.text_content).clone(),
+            font: (*self.text_font).clone(),
             is_bold: self.text_is_bold,
             is_outline: self.text_is_outline,
             letter_spacing: self.text_letter_spacing,
@@ -539,9 +595,9 @@ impl AppState {
         SavedState {
             timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             label: label.to_string(),
-            current_tab: self.current_tab.clone(),
-            text_content: self.text_content.clone(),
-            text_font: self.text_font.clone(),
+            current_tab: self.current_tab,
+            text_content: (*self.text_content).clone(),
+            text_font: (*self.text_font).clone(),
             text_is_bold: self.text_is_bold,
             text_is_outline: self.text_is_outline,
             text_letter_spacing: self.text_letter_spacing,
@@ -556,16 +612,16 @@ impl AppState {
             img_low_fidelity: self.img_low_fidelity,
             img_high_fidelity: self.img_high_fidelity,
             img_lines_per_mm: self.img_lines_per_mm,
-            custom_image_path: self.custom_image_path.clone(),
-            custom_svg_path: self.custom_svg_path.clone(),
+            custom_image_path: self.custom_image_path.as_ref().map(|p| (**p).clone()),
+            custom_svg_path: self.custom_svg_path.as_ref().map(|p| (**p).clone()),
         }
     }
 
     pub fn apply_state(&mut self, state: &SavedState) {
         println!("[{}] Applying saved state: {}", get_ts(), state.label);
-        self.current_tab = state.current_tab.clone();
-        self.text_content = state.text_content.clone();
-        self.text_font = state.text_font.clone();
+        self.current_tab = state.current_tab;
+        self.text_content = Arc::new(state.text_content.clone());
+        self.text_font = Arc::new(state.text_font.clone());
         self.text_is_bold = state.text_is_bold;
         self.text_is_outline = state.text_is_outline;
         self.text_letter_spacing = state.text_letter_spacing;
@@ -580,8 +636,8 @@ impl AppState {
         self.img_low_fidelity = state.img_low_fidelity;
         self.img_high_fidelity = state.img_high_fidelity;
         self.img_lines_per_mm = state.img_lines_per_mm;
-        self.custom_image_path = state.custom_image_path.clone();
-        self.custom_svg_path = state.custom_svg_path.clone();
+        self.custom_image_path = state.custom_image_path.as_ref().map(|p| Arc::new(p.clone()));
+        self.custom_svg_path = state.custom_svg_path.as_ref().map(|p| Arc::new(p.clone()));
         
         // Clear preview when state is changed to avoid showing old data
         self.preview_pattern = None;
@@ -610,7 +666,7 @@ impl AppState {
         }
     }
 
-    fn get_config_path(&self) -> Result<std::path::PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+    fn get_config_path(&self) -> Result<std::path::PathBuf, crate::error::TrogdorError> {
         let home = std::env::var("HOME")?;
         Ok(std::path::PathBuf::from(home)
             .join(".config")

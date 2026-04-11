@@ -11,7 +11,7 @@ pub fn load_svg_as_gcode(
     center_y: f32,
     s_val: i32,
     f_val: i32,
-) -> Result<(String, f32, f32, f32, f32), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(String, f32, f32, f32, f32), crate::error::TrogdorError> {
     let data = std::fs::read(path)?;
     load_svg_data_as_gcode(&data, scale, fit, center_x, center_y, s_val, f_val)
 }
@@ -24,7 +24,7 @@ pub fn load_svg_data_as_gcode(
     center_y: f32,
     s_val: i32,
     f_val: i32,
-) -> Result<(String, f32, f32, f32, f32), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(String, f32, f32, f32, f32), crate::error::TrogdorError> {
     let opt = usvg::Options::default();
     let tree = usvg::Tree::from_data(data, &opt)?;
 

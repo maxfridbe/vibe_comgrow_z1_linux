@@ -1,5 +1,5 @@
 use crate::gcode::decode_response;
-use crate::state::{AppState, LogEntry, ToastType};
+use crate::state::{AppState, LogEntry, MachineState, ToastType};
 use crate::virtual_device::VirtualDevice;
 use std::collections::VecDeque;
 use std::io::{Read, Write};
@@ -79,13 +79,13 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                 guard.port.clone()
             };
 
-            if port_name == "VIRTUAL" {
+            if *port_name == "VIRTUAL" {
                 let mut last_status_query = std::time::Instant::now();
                 loop {
                     // Check if port changed back to real
                     let (port_changed, burn_log_active, is_idle) = {
                         let guard = state.lock().unwrap();
-                        (guard.port != "VIRTUAL", guard.burn_log_active, guard.machine_state == "Idle")
+                        (*guard.port != "VIRTUAL", guard.burn_log_active, guard.machine_state == MachineState::Idle)
                     };
 
                     if port_changed { break; }
@@ -152,17 +152,19 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                 }
             } else {
                 if let Ok(mut port) =
-                    serialport::new(&port_name, baud_rate).timeout(std::time::Duration::from_millis(10)).open()
+                    serialport::new(&*port_name, baud_rate).timeout(std::time::Duration::from_millis(10)).open()
                 {
                     println!("[{}] SERIAL: Connected to {}", get_timestamp(), port_name);
                     {
                         let mut guard = state.lock().unwrap();
-                        guard.serial_logs.push_back(LogEntry {
+                        let mut logs = (*guard.serial_logs).clone();
+                        logs.push_back(LogEntry {
                             text: format!("Connected to {}", port_name),
                             explanation: format!("Baud rate: {}", baud_rate),
                             is_response: false,
                             timestamp: get_timestamp(),
                         });
+                        guard.serial_logs = Arc::new(logs);
                     }
 
                     let mut serial_buf: Vec<u8> = vec![0; 1024];
@@ -173,7 +175,7 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
                         // Check if port changed to virtual
                         let (port_changed, burn_log_active, is_idle) = {
                             let guard = state.lock().unwrap();
-                            (guard.port != port_name, guard.burn_log_active, guard.machine_state == "Idle")
+                            (*guard.port != *port_name, guard.burn_log_active, guard.machine_state == MachineState::Idle)
                         };
 
                         if port_changed { break; }
@@ -259,7 +261,7 @@ pub fn start_serial_thread(state: Arc<Mutex<AppState>>, rx: Receiver<String>) {
 fn handle_responses(state: &Arc<Mutex<AppState>>, responses: Vec<String>, wait_for_ok: &mut bool, force_log: bool, logger: &mut Logger) {
     let (burn_log_active, is_virtual) = {
         let guard = state.lock().unwrap();
-        (guard.burn_log_active, guard.port == "VIRTUAL")
+        (guard.burn_log_active, *guard.port == "VIRTUAL")
     };
     for line in responses {
         if line.is_empty() {
@@ -283,7 +285,7 @@ fn handle_responses(state: &Arc<Mutex<AppState>>, responses: Vec<String>, wait_f
             };
             let parts: Vec<&str> = content.split('|').collect();
             if let Some(state_name) = parts.get(0) {
-                guard.machine_state = state_name.to_string();
+                guard.machine_state = MachineState::from_str(state_name);
             }
 
             for part in &parts[1..] {
@@ -300,15 +302,17 @@ fn handle_responses(state: &Arc<Mutex<AppState>>, responses: Vec<String>, wait_f
 
         let is_periodic_status = line.starts_with('<') && line.contains('|');
         if !is_periodic_status || line.contains("Alarm") || line.contains("Hold") || force_log {
-            guard.serial_logs.push_back(LogEntry {
+            let mut logs = (*guard.serial_logs).clone();
+            logs.push_back(LogEntry {
                 text: format!("RECV: {}", line),
                 explanation,
                 is_response: true,
                 timestamp: get_timestamp(),
             });
-            if guard.serial_logs.len() > 500 {
-                guard.serial_logs.pop_front();
+            if logs.len() > 500 {
+                logs.pop_front();
             }
+            guard.serial_logs = Arc::new(logs);
         }
     }
 }

@@ -1,13 +1,14 @@
 #![windows_subsystem = "windows"]
 
 mod comm;
+mod error;
 mod gcode;
 mod icons;
 mod state;
 mod styles;
 mod theme;
 mod svg_helper;
-mod ui;
+mod ui_components;
 mod ui_image;
 mod ui_manual;
 mod ui_svg;
@@ -31,8 +32,8 @@ mod virtual_device;
 use crate::cli_and_helpers::*;
 use crate::comm::start_serial_thread;
 use crate::icons::*;
-use crate::state::{AppState, StringArena, UITab};
-use crate::ui::{Command, Section, render_tab_btn};
+use crate::state::{AppState, MachineState, StringArena, UITab};
+use crate::ui_components::{Command, Section, render_tab_btn};
 
 const FONT_DATA: &[u8] = include_bytes!("../assets/font.ttf");
 
@@ -46,7 +47,7 @@ impl FontMeasureEx for raylib::prelude::Font {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn main() -> Result<(), crate::error::TrogdorError> {
     let _args: Vec<String> = std::env::args().collect();
 
     let state = Arc::new(Mutex::new(AppState {
@@ -59,11 +60,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         log_scroll_offset: 0.0,
         col2_scroll_offset: 0.0,
         is_absolute: true,
-        port: "/dev/ttyUSB0".to_string(),
-        wattage: "10W".to_string(),
+        port: Arc::new("/dev/ttyUSB0".to_string()),
+        wattage: Arc::new("10W".to_string()),
         v_pos: Vector2::new(0.0, 0.0),
         machine_pos: Vector2::new(0.0, 0.0),
-        machine_state: "Idle".to_string(),
+        machine_state: MachineState::Idle,
         paths: Vec::new(),
         preview_paths: Vec::new(),
         preview_pattern: None,
@@ -71,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         custom_image_path: None,
         last_command: String::new(),
         copied_at: None,
-        serial_logs: std::collections::VecDeque::new(),
+        serial_logs: Arc::new(std::collections::VecDeque::new()),
         tx: mpsc::channel().0,
         bounds: crate::state::Bounds {
             enabled: false,
@@ -85,24 +86,25 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         img_lines_per_mm: 5.0,
         is_processing: false,
         preview_version: 0,
-        text_content: "Comgrow Z1".to_string(),
-        text_font: "Default".to_string(),
+        text_content: Arc::new("Comgrow Z1".to_string()),
+        text_font: Arc::new("Default".to_string()),
         text_is_bold: false,
         text_is_outline: false,
         text_letter_spacing: 0.0,
         text_line_spacing: 1.0,
         text_curve_steps: 10,
         text_lines_per_mm: 5.0,
-        available_fonts: {
+        available_fonts: Arc::new({
             let mut fonts = SystemSource::new().all_families().unwrap_or_default();
             fonts.sort();
             fonts
-        },
+        }),
         text_font_dropdown_open: false,
         text_font_scroll_offset: 0.0,
         is_text_input_active: false,
+        text_cursor_index: 0,
         current_preview_power: 1000.0,
-        saved_states: Vec::new(),
+        saved_states: Arc::new(Vec::new()),
         load_dialog_open: false,
         is_burning: false,
         burn_log_active: false,
@@ -153,6 +155,10 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ICON_CHECK,
         ICON_FILE,
         ICON_EYE,
+        ICON_EYE_SLASH,
+        ICON_STOP,
+        ICON_FONT,
+        ICON_SQUARE_VECTOR,
         ICON_SPINNER,
         ICON_IMAGE,
     ];
@@ -431,12 +437,102 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 if rl.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
                     g.is_text_input_active = false;
                 }
+                
+                let mut content = (*g.text_content).clone();
+                let mut cursor = g.text_cursor_index;
+                // Ensure cursor is at a valid char boundary
+                if !content.is_char_boundary(cursor) {
+                    cursor = content.len();
+                }
+
+                // Arrow keys
+                if rl.is_key_pressed(KeyboardKey::KEY_LEFT) && cursor > 0 {
+                    let mut prev = cursor - 1;
+                    while prev > 0 && !content.is_char_boundary(prev) {
+                        prev -= 1;
+                    }
+                    cursor = prev;
+                }
+                if rl.is_key_pressed(KeyboardKey::KEY_RIGHT) && cursor < content.len() {
+                    let mut next = cursor + 1;
+                    while next < content.len() && !content.is_char_boundary(next) {
+                        next += 1;
+                    }
+                    cursor = next;
+                }
+                if rl.is_key_pressed(KeyboardKey::KEY_UP) {
+                    let start_of_current_line = content[..cursor].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+                    let column = content[start_of_current_line..cursor].chars().count();
+                    if start_of_current_line > 0 {
+                        let start_of_prev_line = content[..start_of_current_line - 1].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+                        let prev_line = &content[start_of_prev_line..start_of_current_line - 1];
+                        let mut new_col_bytes = 0;
+                        for (i, c) in prev_line.chars().enumerate() {
+                            if i >= column { break; }
+                            new_col_bytes += c.len_utf8();
+                        }
+                        cursor = start_of_prev_line + new_col_bytes;
+                    }
+                }
+                if rl.is_key_pressed(KeyboardKey::KEY_DOWN) {
+                    let start_of_current_line = content[..cursor].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+                    let column = content[start_of_current_line..cursor].chars().count();
+                    if let Some(next_newline) = content[cursor..].find('\n') {
+                        let start_of_next_line = cursor + next_newline + 1;
+                        let end_of_next_line = content[start_of_next_line..].find('\n').map(|idx| start_of_next_line + idx).unwrap_or(content.len());
+                        let next_line = &content[start_of_next_line..end_of_next_line];
+                        let mut new_col_bytes = 0;
+                        for (i, c) in next_line.chars().enumerate() {
+                            if i >= column { break; }
+                            new_col_bytes += c.len_utf8();
+                        }
+                        cursor = start_of_next_line + new_col_bytes;
+                    }
+                }
+                if rl.is_key_pressed(KeyboardKey::KEY_HOME) {
+                    if rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL) {
+                        cursor = 0;
+                    } else {
+                        cursor = content[..cursor].rfind('\n').map(|idx| idx + 1).unwrap_or(0);
+                    }
+                }
+                if rl.is_key_pressed(KeyboardKey::KEY_END) {
+                    if rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL) {
+                        cursor = content.len();
+                    } else {
+                        cursor = content[cursor..].find('\n').map(|idx| cursor + idx).unwrap_or(content.len());
+                    }
+                }
+
+                // Newline
+                if rl.is_key_pressed(KeyboardKey::KEY_ENTER) {
+                    content.insert(cursor, '\n');
+                    cursor += 1;
+                }
+
+                // Backspace
+                if rl.is_key_pressed(KeyboardKey::KEY_BACKSPACE) && cursor > 0 {
+                    let mut prev = cursor - 1;
+                    while prev > 0 && !content.is_char_boundary(prev) {
+                        prev -= 1;
+                    }
+                    content.remove(prev);
+                    cursor = prev;
+                }
+                // Delete
+                if rl.is_key_pressed(KeyboardKey::KEY_DELETE) && cursor < content.len() {
+                    content.remove(cursor);
+                }
+
+                // Character input
                 while let Some(c) = rl.get_char_pressed() {
-                    g.text_content.push(c);
+                    content.insert(cursor, c);
+                    cursor += c.len_utf8();
                 }
-                if rl.is_key_pressed(KeyboardKey::KEY_BACKSPACE) {
-                    g.text_content.pop();
-                }
+
+                g.text_content = Arc::new(content);
+                g.text_cursor_index = cursor;
+
                 // Blur if clicking outside
                 if mouse_pressed && !clay.pointer_over(clay_scope_id("text_input")) {
                     g.is_text_input_active = false;
@@ -587,22 +683,22 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         (g.port.clone(), g.wattage.clone())
                     };
                     let mut port_bg = theme.cl_bg_dark;
-                    let mut port_text_color = COLOR_PORT_TEXT;
+                    let mut port_text_color = theme.cl_text_sub;
                     if clay_scope.pointer_over(port_h_id) {
                         port_bg = theme.cl_primary_hover;
                         port_text_color = theme.cl_text_main;
                         if mouse_pressed {
                             let mut g = state.lock().unwrap();
-                            if g.port == "VIRTUAL" {
-                                g.port = "/dev/ttyUSB0".to_string();
+                            if *g.port == "VIRTUAL" {
+                                g.port = Arc::new("/dev/ttyUSB0".to_string());
                             } else {
-                                g.port = "VIRTUAL".to_string();
-                                g.machine_state = "Idle".to_string();
+                                g.port = Arc::new("VIRTUAL".to_string());
+                                g.machine_state = MachineState::Idle;
                                 g.machine_pos = Vector2::new(0.0, 0.0);
                             }
                         }
                     }
-                    if port == "VIRTUAL" {
+                    if *port == "VIRTUAL" {
                         port_bg = theme.cl_accent;
                         port_text_color = theme.cl_text_main;
                     }
@@ -641,17 +737,17 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .end();
                     clay_scope.with(&wattage_box, |clay_scope| {
                         clay_scope.text(
-                            arena.push(format!("{}   {}", ICON_CPU, wattage)),
+                            arena.push(format!("{}   {}", ICON_POWER, wattage)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
-                                .color(COLOR_WATTAGE_TEXT)
+                                .color(theme.cl_text_sub)
                                 .end(),
                         );
                     });
 
                     let estop_h_id = clay_scope.id("estop_header");
-                    let mstate = { state.lock().unwrap().machine_state.clone() };
-                    let is_emergency = mstate == "Alarm" || mstate == "Hold";
+                    let mstate = state.lock().unwrap().machine_state;
+                    let is_emergency = mstate == MachineState::Alarm || mstate == MachineState::Hold;
                     let mut estop_h_color = if is_emergency {
                         theme.cl_success
                     } else {
@@ -683,7 +779,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .end();
                     clay_scope.with(&estop_h_btn, |clay_scope| {
                         clay_scope.text(
-                            arena.push(format!("{}   E-STOP", ICON_FLAME)),
+                            arena.push(format!("{}   E-STOP", ICON_STOP)),
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
                                 .color(theme.cl_text_main)
@@ -706,7 +802,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let mut tab_bar = Declaration::<Texture2D, ()>::new();
                 tab_bar.layout().direction(LayoutDirection::LeftToRight).child_gap(10).end();
                 clay_scope.with(&tab_bar, |clay_scope| {
-                    let current_tab = state.lock().unwrap().current_tab.clone();
+                    let current_tab = state.lock().unwrap().current_tab;
                     if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, &arena, font_scale, &theme) {
                         state.lock().unwrap().current_tab = UITab::Manual;
                     }
@@ -740,12 +836,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         if mouse_pressed {
                             let mut g = state.lock().unwrap();
                             let label = match g.current_tab {
-                                UITab::Text => format!("Text: {}", g.text_content),
-                                UITab::Image => g.custom_image_path.clone().unwrap_or("Image".to_string()),
+                                UITab::Text => format!("Text: {}", *g.text_content),
+                                UITab::Image => g.custom_image_path.as_ref().map(|p| (**p).clone()).unwrap_or_else(|| "Image".to_string()),
                                 _ => "State".to_string(),
                             };
                             let new_state = g.capture_state(&label);
-                            g.saved_states.push(new_state);
+                            let mut states = (*g.saved_states).clone();
+                            states.push(new_state);
+                            g.saved_states = Arc::new(states);
                             g.save_persistence();
                         }
                     }
@@ -806,11 +904,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .width(grow!())
                 .height(grow!())
                 .direction(LayoutDirection::LeftToRight)
-                .padding(Padding::all(standard_margin))
+                .padding(Padding::new(standard_margin, standard_margin, standard_margin, 0))
                 .child_gap(16)
                 .end();
             clay_scope.with(&content_area, |clay_scope| {
-                let current_tab = state.lock().unwrap().current_tab.clone();
+                let current_tab = state.lock().unwrap().current_tab;
 
                 // Column 1: Grid (Always on Left, Grows)
                 let mut col1 = Declaration::<Texture2D, ()>::new();
@@ -848,7 +946,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     clay_scope.with(&label_box, |clay_scope| {
                         let (vx, vy, mx, my, mstate) = {
                             let g = state.lock().unwrap();
-                            (g.v_pos.x, g.v_pos.y, g.machine_pos.x, g.machine_pos.y, g.machine_state.clone())
+                            (g.v_pos.x, g.v_pos.y, g.machine_pos.x, g.machine_pos.y, g.machine_state)
                         };
                         clay_scope.text(
                             arena.push(format!("V:   X: {:.1}   Y: {:.1}", vx, vy)),
@@ -916,7 +1014,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let mut col2_scroll = Declaration::<Texture2D, ()>::new();
                 let col2_id = clay_scope.id("controls_column");
                 let col2_width = 400.0;
-                let c2_offset = { state.lock().unwrap().col2_scroll_offset };
+                let c2_offset = state.lock().unwrap().col2_scroll_offset;
 
                 col2_scroll
                     .id(col2_id)
@@ -1031,8 +1129,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .end();
 
             clay_scope.with(&bottom_area, |clay_scope| {
-                let mstate = { state.lock().unwrap().machine_state.clone() };
-                let is_emergency = mstate == "Alarm" || mstate == "Hold";
+                let mstate = state.lock().unwrap().machine_state;
+                let is_emergency = mstate == MachineState::Alarm || mstate == MachineState::Hold;
                 let mut estop_b_color = if is_emergency {
                     theme.cl_success
                 } else {
@@ -1061,6 +1159,8 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     .layout()
                     .width(fixed!(estop_size))
                     .height(fixed!(estop_size))
+                    .direction(LayoutDirection::LeftToRight)
+                    .child_gap(8)
                     .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
                     .end()
                     .background_color(estop_b_color)
@@ -1069,9 +1169,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     .end();
                 clay_scope.with(&estop_b, |clay_scope| {
                     clay_scope.text(
-                        arena.push(format!("{}   E-STOP", ICON_FLAME)),
+                        ICON_STOP,
                         clay_layout::text::TextConfig::new()
-                            .font_size((24.0 * font_scale) as u16)
+                            .font_size((64.0 * font_scale) as u16)
+                            .color(theme.cl_text_main)
+                            .end(),
+                    );
+                    clay_scope.text(
+                        "E-STOP",
+                        clay_layout::text::TextConfig::new()
+                            .font_size((14.0 * font_scale) as u16)
                             .color(theme.cl_text_main)
                             .end(),
                     );
@@ -1110,13 +1217,13 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             "SERIAL LOG",
                             clay_layout::text::TextConfig::new()
                                 .font_size((12.0 * font_scale) as u16)
-                                .color(COLOR_TEXT_DISABLED)
+                                .color(theme.cl_text_label)
                                 .end(),
                         );
                     });
 
                     let logs = state.lock().unwrap().serial_logs.clone();
-                    let offset = { state.lock().unwrap().log_scroll_offset };
+                    let offset = state.lock().unwrap().log_scroll_offset;
                     let mut log_scroll = Declaration::<Texture2D, ()>::new();
                     let log_scroll_id = clay_scope.id("log_scroll");
                     log_scroll
@@ -1300,7 +1407,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                         del_color = theme.cl_danger;
                                         if mouse_pressed {
                                             let mut g = state.lock().unwrap();
-                                            g.saved_states.remove(idx);
+                                            let mut states = (*g.saved_states).clone();
+                                            states.remove(idx);
+                                            g.saved_states = Arc::new(states);
                                             g.save_persistence();
                                         }
                                     }
@@ -1349,7 +1458,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
         });
 
-        crate::ui::render_toasts(&mut clay_scope, &state, &arena, font_scale, mouse_pressed, &theme);
+        crate::ui_components::render_toasts(&mut clay_scope, &state, &arena, font_scale, mouse_pressed, &theme);
         let render_commands = clay_scope.end();
 
         let mut d = rl.begin_drawing(&thread);
@@ -1550,13 +1659,20 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let font_size = command.bounding_box.height;
                     let text_size = font.measure_text_ex(text_str, font_size, 0.0);
 
-                    if text_str == ICON_SPINNER {
-                        let rotation = frame_time_total * 360.0; // 1 rotation per second
+                    if text_str.chars().count() == 1 {
+                        let rotation = if text_str == ICON_SPINNER { frame_time_total * 360.0 } else { 0.0 };
                         let center = raylib::math::Vector2::new(
                             command.bounding_box.x + command.bounding_box.width / 2.0,
                             command.bounding_box.y + command.bounding_box.height / 2.0,
                         );
-                        let origin = raylib::math::Vector2::new(text_size.x / 2.0, text_size.y / 2.0);
+                        let mut origin = raylib::math::Vector2::new(text_size.x / 2.0, text_size.y / 2.0);
+                        if let Some(c) = text_str.chars().next() {
+                            if c as u32 > 127 {
+                                // eye and eye-slash (\u{f06e}, \u{f070}) need more nudge
+                                let nudge_factor = if c == '\u{f06e}' || c == '\u{f070}' { 0.22 } else { 0.10 };
+                                origin.x += font_size * nudge_factor;
+                            }
+                        }
                         d.draw_text_pro(&font, text_str, center, origin, rotation, font_size, 0.0, color);
                     } else {
                         let pos = raylib::math::Vector2::new(

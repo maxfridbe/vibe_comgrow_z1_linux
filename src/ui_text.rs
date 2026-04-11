@@ -1,9 +1,9 @@
 use crate::cli_and_helpers::generate_text_gcode;
 use crate::icons::*;
-use crate::state::{AppState, StringArena};
+use crate::state::{AppState, MachineState, StringArena};
 use crate::styles::*;
 use crate::theme::Theme;
-use crate::ui::{Section, render_burn_btn, render_checkbox, render_outline_btn, render_slider};
+use crate::ui_components::{Section, render_burn_btn, render_checkbox, render_outline_btn, render_slider};
 use arboard::Clipboard;
 use clay_layout::layout::{Alignment, LayoutAlignmentX, LayoutAlignmentY, LayoutDirection, Padding};
 use clay_layout::math::Vector2 as ClayVector2;
@@ -26,8 +26,8 @@ pub fn render_text_controls<'a, 'render>(
 ) where
     'a: 'render,
 {
-    let is_idle = { state.lock().unwrap().machine_state == "Idle" };
-    let is_processing = { state.lock().unwrap().is_processing };
+    let is_idle = state.lock().unwrap().machine_state == MachineState::Idle;
+    let is_processing = state.lock().unwrap().is_processing;
 
     let mut container = Declaration::<Texture2D, ()>::new();
     container.layout().width(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
@@ -54,7 +54,7 @@ pub fn render_text_controls<'a, 'render>(
                 let preview_id = clay_scope.id("preview_text");
                 let is_active_preview = {
                     let g = state.lock().unwrap();
-                    g.preview_pattern == Some("text".to_string())
+                    g.preview_pattern.as_ref().map(|p| **p == "text").unwrap_or(false)
                 };
                 let mut preview_color = if is_active_preview { theme.cl_primary } else { theme.cl_bg_dark };
                 if clay_scope.pointer_over(preview_id) {
@@ -66,7 +66,7 @@ pub fn render_text_controls<'a, 'render>(
                             g.preview_paths.clear();
                             g.preview_version += 1;
                         } else {
-                            g.preview_pattern = Some("text".to_string());
+                            g.preview_pattern = Some(Arc::new("text".to_string()));
                             g.preview_paths.clear();
                             g.preview_version += 1;
                             g.is_processing = true;
@@ -89,8 +89,8 @@ pub fn render_text_controls<'a, 'render>(
                 preview_btn
                     .id(preview_id)
                     .layout()
-                    .width(fixed!(32.0 * font_scale))
-                    .height(fixed!(32.0 * font_scale))
+                    .width(fixed!(theme.sz_btn_height * font_scale))
+                    .height(fixed!(theme.sz_btn_height * font_scale))
                     .direction(LayoutDirection::TopToBottom)
                     .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
                     .padding(Padding::all(2))
@@ -101,14 +101,13 @@ pub fn render_text_controls<'a, 'render>(
                     .end();
                 clay_scope.with(&preview_btn, |clay| {
                     clay.text(
-                        ICON_EYE,
+                        if is_active_preview { ICON_EYE } else { ICON_EYE_SLASH },
                         clay_layout::text::TextConfig::new()
-                            .font_size((18.0 * font_scale) as u16)
+                            .font_size((24.0 * font_scale) as u16)
                             .color(theme.cl_text_white)
                             .end(),
                     );
                 });
-
                 if render_burn_btn(
                     clay_scope,
                     "burn_text",
@@ -191,7 +190,7 @@ pub fn render_text_controls<'a, 'render>(
             font_row.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(8).end();
             clay_scope.with(&font_row, |clay_scope| {
                 let dropdown_id = clay_scope.id("font_selector");
-                let is_open = { state.lock().unwrap().text_font_dropdown_open };
+                let is_open = state.lock().unwrap().text_font_dropdown_open;
                 let mut dropdown_color = if is_open {
                     theme.cl_primary
                 } else {
@@ -217,10 +216,10 @@ pub fn render_text_controls<'a, 'render>(
                     .all(8.0 * font_scale)
                     .end();
 
-                let font_name = { state.lock().unwrap().text_font.clone() };
+                let font_name = state.lock().unwrap().text_font.clone();
                 clay_scope.with(&dropdown_btn, |clay| {
                     clay.text(
-                        arena.push(format!("{}   {}", ICON_REFRESH, font_name)),
+                        arena.push(format!("{}   {}", ICON_FONT, font_name)),
                         clay_layout::text::TextConfig::new()
                             .font_size((14.0 * font_scale) as u16)
                             .color(theme.cl_text_main)
@@ -279,7 +278,7 @@ pub fn render_text_controls<'a, 'render>(
                             item_color = theme.cl_bg_section;
                             if mouse_pressed {
                                 let mut g = state.lock().unwrap();
-                                g.text_font = font.clone();
+                                g.text_font = Arc::new(font.clone());
                                 g.text_font_dropdown_open = false;
                             }
                         }
@@ -306,7 +305,7 @@ pub fn render_text_controls<'a, 'render>(
 
             // Input Box
             let input_id = clay_scope.id("text_input");
-            let is_active = { state.lock().unwrap().is_text_input_active };
+            let is_active = state.lock().unwrap().is_text_input_active;
             let mut input_color = theme.cl_bg_dark;
             let border_color = if is_active {
                 theme.cl_primary
@@ -345,7 +344,10 @@ pub fn render_text_controls<'a, 'render>(
                 .color(border_color)
                 .end();
 
-            let content = { state.lock().unwrap().text_content.clone() };
+            let (content, cursor_idx) = {
+                let g = state.lock().unwrap();
+                (g.text_content.clone(), g.text_cursor_index)
+            };
             clay_scope.with(&input_box_decl, |clay| {
                 let display_text = if content.is_empty() && !is_active {
                     "Type here..."
@@ -360,7 +362,8 @@ pub fn render_text_controls<'a, 'render>(
 
                 let mut text_arena = display_text.to_string();
                 if is_active && (unsafe { raylib::ffi::GetTime() } * 2.0) as i32 % 2 == 0 {
-                    text_arena.push('|');
+                    let cursor = cursor_idx.min(text_arena.len());
+                    text_arena.insert(cursor, '|');
                 }
 
                 clay.text(
@@ -417,25 +420,31 @@ pub fn render_text_controls<'a, 'render>(
                 )
             };
 
-            render_slider(clay_scope, "t_pwr", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-            render_slider(clay_scope, "t_spd", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-            render_slider(clay_scope, "t_scl", "Scale", scl, 0.1, 10.0, COLOR_SLIDER_STEP, state, |s, v| s.scale = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-            render_slider(clay_scope, "t_pas", "Passes", passes as f32, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| s.passes = v as u32, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+            let mut settings_grid = Declaration::<Texture2D, ()>::new();
+            settings_grid.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(16).end();
+            clay_scope.with(&settings_grid, |clay_scope| {
+                let mut col1 = Declaration::<Texture2D, ()>::new();
+                col1.layout().width(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
+                clay_scope.with(&col1, |clay_scope| {
+                    render_slider(clay_scope, "t_pwr", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| s.power = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                    render_slider(clay_scope, "t_spd", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| s.feed_rate = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                    render_slider(clay_scope, "t_scl", "Scale", scl, 0.1, 10.0, COLOR_SLIDER_STEP, state, |s, v| s.scale = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                    render_slider(clay_scope, "t_pas", "Passes", passes as f32, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| s.passes = v as u32, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                    render_checkbox(clay_scope, "t_bold", "Bold", bold, state, |s, v| s.text_is_bold = v, mouse_pressed, font_scale, theme);
+                });
 
-            let mut toggle_row = Declaration::<Texture2D, ()>::new();
-            toggle_row.layout().width(grow!()).direction(LayoutDirection::LeftToRight).child_gap(16).end();
-            clay_scope.with(&toggle_row, |clay_scope| {
-                render_checkbox(clay_scope, "t_bold", "Bold", bold, state, |s, v| s.text_is_bold = v, mouse_pressed, font_scale, theme);
-                render_checkbox(clay_scope, "t_out", "Outline", outline, state, |s, v| s.text_is_outline = v, mouse_pressed, font_scale, theme);
+                let mut col2 = Declaration::<Texture2D, ()>::new();
+                col2.layout().width(grow!()).direction(LayoutDirection::TopToBottom).child_gap(16).end();
+                clay_scope.with(&col2, |clay_scope| {
+                    render_slider(clay_scope, "t_lspc", "Letter Spacing", l_spc, -50.0, 100.0, COLOR_SLIDER_X, state, |s, v| s.text_letter_spacing = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                    render_slider(clay_scope, "t_lispc", "Line Spacing", li_spc, -50.0, 100.0, COLOR_SLIDER_Y, state, |s, v| s.text_line_spacing = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                    render_slider(clay_scope, "t_curv", "Curve Steps", curve as f32, 1.0, 50.0, COLOR_SLIDER_W, state, |s, v| s.text_curve_steps = v as u32, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                    if !outline {
+                        render_slider(clay_scope, "t_lpm", "Lines/mm", lpm, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| s.text_lines_per_mm = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                    }
+                    render_checkbox(clay_scope, "t_out", "Outline", outline, state, |s, v| s.text_is_outline = v, mouse_pressed, font_scale, theme);
+                });
             });
-
-            if !outline {
-                render_slider(clay_scope, "t_lpm", "Lines/mm", lpm, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| s.text_lines_per_mm = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-            }
-
-            render_slider(clay_scope, "t_lspc", "Letter Spacing", l_spc, -50.0, 100.0, COLOR_SLIDER_X, state, |s, v| s.text_letter_spacing = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-            render_slider(clay_scope, "t_lispc", "Line Spacing", li_spc, -50.0, 100.0, COLOR_SLIDER_Y, state, |s, v| s.text_line_spacing = v, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-            render_slider(clay_scope, "t_curv", "Curve Steps", curve as f32, 1.0, 50.0, COLOR_SLIDER_W, state, |s, v| s.text_curve_steps = v as u32, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
 
             render_checkbox(clay_scope, "t_ben", "Enable Bounds", b_en, state, |s, v| s.bounds.enabled = v, mouse_pressed, font_scale, theme);
 

@@ -1,7 +1,7 @@
-use crate::state::{AppState, StringArena};
+use crate::state::{AppState, MachineState, StringArena};
 use crate::styles::*;
 use crate::theme::Theme;
-use crate::ui::render_burn_btn;
+use crate::ui_components::render_burn_btn;
 use arboard::Clipboard;
 use clay_layout::{Declaration, fixed, grow};
 use raylib::prelude::*;
@@ -21,7 +21,7 @@ pub fn render_svg_left_col<'a, 'render>(
     let mut left_col = Declaration::<Texture2D, ()>::new();
     left_col.layout().height(grow!()).direction(clay_layout::layout::LayoutDirection::TopToBottom).child_gap(16).end();
 
-    let is_idle = { state.lock().unwrap().machine_state == "Idle" };
+    let is_idle = state.lock().unwrap().machine_state == MachineState::Idle;
 
     clay.with(&left_col, |clay_scope| {
         let mut svg_box = Declaration::<Texture2D, ()>::new();

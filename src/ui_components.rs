@@ -352,6 +352,7 @@ where
     btn.id(btn_id)
         .layout()
         .width(fixed!(65.0 * font_scale))
+        .height(fixed!(theme.sz_btn_height * font_scale))
         .padding(Padding::all(4))
         .direction(LayoutDirection::LeftToRight)
         .child_gap(4)
@@ -416,7 +417,8 @@ where
     let mut btn = Declaration::<Texture2D, ()>::new();
     btn.id(btn_id)
         .layout()
-        .width(fixed!(35.0 * font_scale))
+        .width(fixed!(theme.sz_btn_height * font_scale))
+        .height(fixed!(theme.sz_btn_height * font_scale))
         .padding(Padding::all(4))
         .direction(LayoutDirection::TopToBottom)
         .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
@@ -433,8 +435,8 @@ where
     };
     clay.with(&btn, |clay| {
         clay.text(
-            "[]",
-            clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(text_color).end(),
+            ICON_SQUARE_VECTOR,
+            clay_layout::text::TextConfig::new().font_size((24.0 * font_scale) as u16).color(text_color).end(),
         );
     });
     clicked
