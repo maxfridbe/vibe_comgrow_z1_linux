@@ -59,6 +59,8 @@ fn main() -> Result<(), crate::error::TrogdorError> {
         scale: 1.0,
         log_scroll_offset: 0.0,
         col2_scroll_offset: 0.0,
+        col2_track_height: 0.0,
+        col2_dragging: false,
         is_absolute: true,
         port: Arc::new("/dev/ttyUSB0".to_string()),
         wattage: Arc::new("10W".to_string()),
@@ -1096,46 +1098,58 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                 });
 
                 // Column 2: Controls (SCROLLABLE)
-                let mut col2_scroll = Declaration::<Texture2D, ()>::new();
-                let col2_id = clay_scope.id("controls_column");
+                let col2_outer_id = clay_scope.id("controls_outer");
+                let mut col2_outer = Declaration::<Texture2D, ()>::new();
                 let col2_width = 400.0;
-                let c2_offset = state.lock().unwrap().col2_scroll_offset;
-
-                col2_scroll
-                    .id(col2_id)
+                col2_outer
+                    .id(col2_outer_id)
                     .layout()
                     .width(fixed!(col2_width * font_scale))
                     .height(grow!())
-                    .direction(LayoutDirection::TopToBottom)
-                    .end()
-                    .clip(
-                        false,
-                        true,
-                        ClayVector2 {
-                            x: 0.0,
-                            y: c2_offset,
-                        },
-                    );
+                    .direction(LayoutDirection::LeftToRight)
+                    .child_gap(0)
+                    .end();
 
-                if clay_scope.pointer_over(col2_id) {
-                    let mut skip_scroll = false;
-                    {
-                        let g = state.lock().unwrap();
-                        if g.text_font_dropdown_open && clay_scope.pointer_over(clay_scope.id("font_dropdown_list")) {
-                            skip_scroll = true;
+                clay_scope.with(&col2_outer, |clay_scope| {
+                    let mut col2_scroll = Declaration::<Texture2D, ()>::new();
+                    let col2_id = clay_scope.id("controls_column");
+                    let c2_offset = state.lock().unwrap().col2_scroll_offset;
+
+                    col2_scroll
+                        .id(col2_id)
+                        .layout()
+                        .width(grow!())
+                        .height(grow!())
+                        .direction(LayoutDirection::TopToBottom)
+                        .end()
+                        .clip(
+                            false,
+                            true,
+                            ClayVector2 {
+                                x: 0.0,
+                                y: c2_offset,
+                            },
+                        );
+
+                    if clay_scope.pointer_over(col2_outer_id) || state.lock().unwrap().col2_dragging {
+                        let mut skip_scroll = false;
+                        {
+                            let g = state.lock().unwrap();
+                            if g.text_font_dropdown_open && clay_scope.pointer_over(clay_scope.id("font_dropdown_list")) {
+                                skip_scroll = true;
+                            }
+                        }
+
+                        if !skip_scroll {
+                            let mut g = state.lock().unwrap();
+                            g.col2_scroll_offset += scroll_delta.y * 40.0;
+                            if g.col2_scroll_offset > 0.0 {
+                                g.col2_scroll_offset = 0.0;
+                            }
                         }
                     }
 
-                    if !skip_scroll {
-                        let mut g = state.lock().unwrap();
-                        g.col2_scroll_offset += scroll_delta.y * 40.0;
-                        if g.col2_scroll_offset > 0.0 {
-                            g.col2_scroll_offset = 0.0;
-                        }
-                    }
-                }
-
-                clay_scope.with(&col2_scroll, |clay_scope| match current_tab {
+                    clay_scope.with(&col2_scroll, |clay_scope| match current_tab {
                     UITab::Manual => {
                         ui_manual::render_manual_left_subcol(
                             clay_scope,
@@ -1201,6 +1215,74 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                         &theme,
                     ),
                 });
+
+                let sb_area_id = clay_scope.id("col2_scrollbar_area");
+                let mut sb_area = Declaration::<Texture2D, ()>::new();
+                sb_area
+                    .id(sb_area_id)
+                    .layout()
+                    .width(fixed!(8.0 * font_scale))
+                    .height(grow!())
+                    .padding(Padding::vertical(4))
+                    .direction(LayoutDirection::TopToBottom)
+                    .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
+                    .end();
+
+                let is_dragging = state.lock().unwrap().col2_dragging;
+                if clay_scope.pointer_over(col2_outer_id) || is_dragging {
+                    clay_scope.with(&sb_area, |clay_scope| {
+                        let handle_height = 40.0 * font_scale;
+                        let track_height = 800.0 * font_scale;
+                        let max_scroll = 1500.0;
+                        let scroll_ratio = (-c2_offset / max_scroll).clamp(0.0, 1.0);
+                        let handle_y = ((track_height - handle_height) * scroll_ratio) as u16;
+
+                        if clay_scope.pointer_over(sb_area_id) && mouse_pressed {
+                            state.lock().unwrap().col2_dragging = true;
+                        }
+
+                        if state.lock().unwrap().col2_dragging {
+                            if !mouse_down {
+                                state.lock().unwrap().col2_dragging = false;
+                            } else {
+                                let dy = rl.get_mouse_delta().y;
+                                let mut g = state.lock().unwrap();
+                                // if we move handle down (dy > 0), content moves up (c2_offset decreases)
+                                g.col2_scroll_offset -= dy * (max_scroll / track_height);
+                                if g.col2_scroll_offset > 0.0 { g.col2_scroll_offset = 0.0; }
+                                if g.col2_scroll_offset < -max_scroll { g.col2_scroll_offset = -max_scroll; }
+                            }
+                        }
+
+                        let mut track = Declaration::<Texture2D, ()>::new();
+                        track.layout()
+                            .width(fixed!(2.0 * font_scale))
+                            .height(grow!())
+                            .padding(Padding::new(0, 0, handle_y, 0))
+                            .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
+                            .end()
+                            .background_color(theme.cl_text_sub);
+
+                        clay_scope.with(&track, |clay_scope| {
+                            let handle_id = clay_scope.id("col2_scroll_handle");
+                            let mut handle = Declaration::<Texture2D, ()>::new();
+                            handle.id(handle_id)
+                                .layout()
+                                .width(fixed!(6.0 * font_scale))
+                                .height(fixed!(handle_height))
+                                .end()
+                                .background_color(theme.cl_text_main)
+                                .corner_radius()
+                                .all(3.0 * font_scale)
+                                .end();
+                            
+                            clay_scope.with(&handle, |_| {});
+                        });
+                    });
+                } else {
+                    clay_scope.with(&sb_area, |_| {});
+                }
+            });
             });
 
             // FIXED BOTTOM AREA

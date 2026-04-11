@@ -167,6 +167,8 @@ pub struct AppState {
     pub scale: f32,
     pub log_scroll_offset: f32,
     pub col2_scroll_offset: f32,
+    pub col2_track_height: f32,
+    pub col2_dragging: bool,
     pub is_absolute: bool,
     pub port: Arc<String>,
     pub wattage: Arc<String>,
