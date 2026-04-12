@@ -64,7 +64,7 @@ pub fn render_test_controls<'a, 'render>(
             clay_scope.with(&pick_row, |clay_scope| {
                 let load_id = clay_scope.id("pick_svg_btn");
                 let mut load_color = if !is_idle {
-                    COLOR_BG_DISABLED
+                    theme.cl_bg_disabled
                 } else {
                     theme.cl_primary_hover
                 };
@@ -97,13 +97,17 @@ pub fn render_test_controls<'a, 'render>(
                     .all(8.0 * font_scale)
                     .end();
 
-                let (path_label, path_color) = {
+                let (path_label, mut path_color) = {
                     let g = state.lock().unwrap();
                     match &g.custom_svg_path {
                         Some(p) => (p.split('/').last().unwrap_or("SVG").to_string(), theme.cl_text_main),
                         None => ("No SVG loaded".to_string(), theme.cl_text_sub),
                     }
                 };
+
+                if !is_idle {
+                    path_color = theme.cl_text_disabled;
+                }
 
                 clay_scope.with(&load_btn, |clay| {
                     clay.text(
@@ -409,15 +413,15 @@ pub fn render_test_controls<'a, 'render>(
             let mut row1 = Declaration::<Texture2D, ()>::new();
             row1.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
             clay_scope.with(&row1, |clay_scope| {
-                render_slider(clay_scope, "p_pwr", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| { s.power = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
-                render_slider(clay_scope, "p_spd", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| { s.feed_rate = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
+                render_slider(clay_scope, "p_pwr", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, false, |s, v| { s.power = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
+                render_slider(clay_scope, "p_spd", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, false, |s, v| { s.feed_rate = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
             });
 
             let mut row2 = Declaration::<Texture2D, ()>::new();
             row2.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
             clay_scope.with(&row2, |clay_scope| {
-                render_slider(clay_scope, "p_scl", "Scale", scl, 0.1, 10.0, COLOR_SLIDER_STEP, state, |s, v| { s.scale = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
-                render_slider(clay_scope, "p_pas", "Passes", passes as f32, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| { s.passes = v as u32; s.clear_preview(); }, arena, font_scale, theme, interaction);
+                render_slider(clay_scope, "p_scl", "Scale", scl, 0.1, 10.0, COLOR_SLIDER_STEP, state, b_en, |s, v| { s.scale = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
+                render_slider(clay_scope, "p_pas", "Passes", passes as f32, 1.0, 20.0, COLOR_SLIDER_PASSES, state, false, |s, v| { s.passes = v as u32; s.clear_preview(); }, arena, font_scale, theme, interaction);
             });
 
             render_checkbox(clay_scope, "p_ben", "Enable Bounds", b_en, state, |s, v| { s.bounds.enabled = v; s.clear_preview(); }, font_scale, theme, interaction);
@@ -429,14 +433,14 @@ pub fn render_test_controls<'a, 'render>(
                     let mut r1 = Declaration::<Texture2D, ()>::new();
                     r1.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
                     clay_scope.with(&r1, |clay_scope| {
-                        render_slider(clay_scope, "p_bx", "X", bx, 0.0, 400.0, COLOR_SLIDER_X, state, |s, v| { s.bounds.x = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
-                        render_slider(clay_scope, "p_by", "Y", by, 0.0, 400.0, COLOR_SLIDER_Y, state, |s, v| { s.bounds.y = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
+                        render_slider(clay_scope, "p_bx", "X", bx, 0.0, 400.0, COLOR_SLIDER_X, state, false, |s, v| { s.bounds.x = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
+                        render_slider(clay_scope, "p_by", "Y", by, 0.0, 400.0, COLOR_SLIDER_Y, state, false, |s, v| { s.bounds.y = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
                     });
                     let mut r2 = Declaration::<Texture2D, ()>::new();
                     r2.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
                     clay_scope.with(&r2, |clay_scope| {
-                        render_slider(clay_scope, "p_bw", "W", bw, 1.0, 400.0, COLOR_SLIDER_W, state, |s, v| { s.bounds.w = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
-                        render_slider(clay_scope, "p_bh", "H", bh, 1.0, 400.0, COLOR_SLIDER_H, state, |s, v| { s.bounds.h = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
+                        render_slider(clay_scope, "p_bw", "W", bw, 1.0, 400.0, COLOR_SLIDER_W, state, false, |s, v| { s.bounds.w = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
+                        render_slider(clay_scope, "p_bh", "H", bh, 1.0, 400.0, COLOR_SLIDER_H, state, false, |s, v| { s.bounds.h = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
                     });
                 });
             }

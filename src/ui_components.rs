@@ -704,7 +704,7 @@ where
 {
     let btn_id = clay.id(id);
     let mut color = if disabled {
-        COLOR_BG_DISABLED
+        theme.cl_bg_disabled
     } else {
         theme.cl_bg_section
     };
@@ -738,7 +738,7 @@ where
         .end();
 
     let text_color = if disabled {
-        COLOR_TEXT_DISABLED
+        theme.cl_text_disabled
     } else {
         theme.cl_text_main
     };
@@ -770,7 +770,7 @@ where
 {
     let btn_id = clay.id(id);
     let mut color = if disabled {
-        COLOR_BG_DISABLED
+        theme.cl_bg_disabled
     } else {
         theme.cl_accent
     };
@@ -817,14 +817,14 @@ where
         .end();
 
     let text_color = if disabled {
-        COLOR_TEXT_DISABLED
+        theme.cl_text_disabled
     } else {
         theme.cl_text_main
     };
     clay.with(&btn, |clay| {
         clay.text(
             arena.push(format!("{}   {}", ICON_FLAME, label)),
-            clay_layout::text::TextConfig::new().font_size((10.0 * font_scale) as u16).color(text_color).end(),
+            clay_layout::text::TextConfig::new().font_size((14.0 * font_scale) as u16).color(text_color).end(),
         );
     });
     clicked
@@ -846,7 +846,7 @@ where
 {
     let btn_id = clay.id(id);
     let mut color = if disabled {
-        COLOR_BG_DISABLED
+        theme.cl_bg_disabled
     } else {
         theme.cl_bg_dark
     };
@@ -883,7 +883,7 @@ where
         .end();
 
     let text_color = if disabled {
-        COLOR_TEXT_DISABLED
+        theme.cl_text_disabled
     } else {
         theme.cl_text_main
     };
@@ -976,6 +976,7 @@ pub fn render_slider<'a, 'render, F>(
     max: f32,
     color: ClayColor,
     state: &Arc<Mutex<AppState>>,
+    disabled: bool,
     update: F,
     arena: &StringArena,
     font_scale: f32,
@@ -1009,7 +1010,7 @@ pub fn render_slider<'a, 'render, F>(
     };
 
     clay.with(&container, |clay| {
-        if clay.pointer_over(container_id) && interaction.scroll_delta.y != 0.0 {
+        if !disabled && clay.pointer_over(container_id) && interaction.scroll_delta.y != 0.0 {
             interaction.is_handled = true;
             // Up increases (delta > 0), Down decreases (delta < 0)
             let mut nv = value + interaction.scroll_delta.y * step;
@@ -1035,11 +1036,12 @@ pub fn render_slider<'a, 'render, F>(
             } else {
                 format!("{}   {:.1}", label, value)
             };
+            let text_color = if disabled { theme.cl_text_disabled } else { theme.cl_text_label };
             clay.text(
                 arena.push(val_str),
                 clay_layout::text::TextConfig::new()
                     .font_size((14.0 * font_scale) as u16)
-                    .color(theme.cl_text_label)
+                    .color(text_color)
                     .end(),
             );
         });
@@ -1055,8 +1057,8 @@ pub fn render_slider<'a, 'render, F>(
         clay.with(&slider_row, |clay| {
             // Minus Button
             let mut minus_box = Declaration::<Texture2D, ()>::new();
-            let mut minus_bg = theme.cl_bg_dark;
-            if clay.pointer_over(btn_minus_id) {
+            let mut minus_bg = if disabled { theme.cl_bg_disabled } else { theme.cl_bg_dark };
+            if !disabled && clay.pointer_over(btn_minus_id) {
                 minus_bg = theme.cl_primary_hover;
                 if interaction.mouse_pressed {
                     interaction.is_handled = true;
@@ -1081,30 +1083,32 @@ pub fn render_slider<'a, 'render, F>(
                 .all(4.0 * font_scale)
                 .end();
             clay.with(&minus_box, |clay| {
+                let text_color = if disabled { theme.cl_text_disabled } else { theme.cl_text_main };
                 clay.text(
                     "-",
                     clay_layout::text::TextConfig::new()
                         .font_size((14.0 * font_scale) as u16)
-                        .color(theme.cl_text_main)
+                        .color(text_color)
                         .end(),
                 );
             });
 
             // Track
             let mut track = Declaration::<Texture2D, ()>::new();
+            let track_bg = if disabled { theme.cl_bg_disabled } else { theme.cl_bg_dark };
             track
                 .id(slider_id)
                 .layout()
                 .width(grow!())
                 .height(fixed!(16.0 * font_scale))
                 .end()
-                .background_color(theme.cl_bg_dark)
+                .background_color(track_bg)
                 .corner_radius()
                 .all(4.0 * font_scale)
                 .end();
 
             let mut is_active = false;
-            {
+            if !disabled {
                 let mut g = state.lock().unwrap();
                 if clay.pointer_over(slider_id) && interaction.mouse_pressed && !g.col2_bg_dragging {
                     g.active_drag_id = Some(slider_id.id.id);
@@ -1134,11 +1138,12 @@ pub fn render_slider<'a, 'render, F>(
             clay.with(&track, |clay| {
                 let mut bar = Declaration::<Texture2D, ()>::new();
                 let percent = (value - min) / (max - min);
+                let bar_color = if disabled { theme.cl_bg_disabled } else { color };
                 bar.layout()
                     .width(fixed!(percent * 130.0 * font_scale))
                     .height(grow!())
                     .end()
-                    .background_color(color) // We keep custom slider color for now
+                    .background_color(bar_color) // We keep custom slider color for now
                     .corner_radius()
                     .all(4.0 * font_scale)
                     .end();
@@ -1147,8 +1152,8 @@ pub fn render_slider<'a, 'render, F>(
 
             // Plus Button
             let mut plus_box = Declaration::<Texture2D, ()>::new();
-            let mut plus_bg = theme.cl_bg_dark;
-            if clay.pointer_over(btn_plus_id) {
+            let mut plus_bg = if disabled { theme.cl_bg_disabled } else { theme.cl_bg_dark };
+            if !disabled && clay.pointer_over(btn_plus_id) {
                 plus_bg = theme.cl_primary_hover;
                 if interaction.mouse_pressed {
                     interaction.is_handled = true;
@@ -1173,11 +1178,12 @@ pub fn render_slider<'a, 'render, F>(
                 .all(4.0 * font_scale)
                 .end();
             clay.with(&plus_box, |clay| {
+                let text_color = if disabled { theme.cl_text_disabled } else { theme.cl_text_main };
                 clay.text(
                     "+",
                     clay_layout::text::TextConfig::new()
                         .font_size((14.0 * font_scale) as u16)
-                        .color(theme.cl_text_main)
+                        .color(text_color)
                         .end(),
                 );
             });
