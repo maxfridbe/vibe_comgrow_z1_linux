@@ -28,6 +28,7 @@ pub const ICON_EYE_SLASH: &str = "\u{f070}"; // fa-eye-slash
 pub const ICON_SPINNER: &str = "\u{f110}"; // fa-spinner
 pub const ICON_SERIAL: &str = "\u{f120}"; // fa-terminal (using same as terminal for now)
 pub const ICON_SQUARE: &str = "\u{f096}"; // fa-square-o
+pub const ICON_CUBE: &str = "\u{f1b2}"; // fa-cube
 pub const ICON_SQUARE_VECTOR: &str = "\u{f0001}"; // nf-mdi-vector-square
 pub const ICON_FONT: &str = "\u{e659}"; // nf-seti-font
 pub const ICON_STOP: &str = "\u{f03c3}"; // nf-mdi-stop-circle (or similar)

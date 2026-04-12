@@ -8,6 +8,7 @@ mod state;
 mod styles;
 mod theme;
 mod svg_helper;
+mod preview;
 mod ui_components;
 mod ui_image;
 mod ui_manual;
@@ -98,6 +99,12 @@ fn main() -> Result<(), crate::error::TrogdorError> {
         text_lines_per_mm: 5.0,
         active_drag_id: None,
         col2_bg_dragging: false,
+        is_3d: false,
+        anim_3d: 0.0,
+        preview_zoom: 1.2,
+        cam_orbit_angle: 0.0,
+        touch_dist_prev: 0.0,
+        touch_angle_prev: 0.0,
         available_fonts: Arc::new({
             let mut fonts = SystemSource::new().all_families().unwrap_or_default();
             fonts.sort();
@@ -1134,6 +1141,40 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                                     .end(),
                             );
                         });
+
+                        let d3d_id = clay_scope.id("toggle_3d");
+                        let is_3d = state.lock().unwrap().is_3d;
+                        let mut d3d_color = if is_3d { theme.cl_primary } else { theme.cl_text_label };
+                        if clay_scope.pointer_over(d3d_id) {
+                            d3d_color = theme.cl_primary_hover;
+                            if interaction.mouse_pressed {
+                                interaction.is_handled = true;
+                                let mut guard = state.lock().unwrap();
+                                guard.is_3d = !guard.is_3d;
+                            }
+                        }
+                        let mut d3d_btn = Declaration::<Texture2D, ()>::new();
+                        d3d_btn
+                            .id(d3d_id)
+                            .layout()
+                            .padding(Padding::all(6))
+                            .direction(LayoutDirection::LeftToRight)
+                            .child_gap(8)
+                            .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Center))
+                            .end()
+                            .background_color(theme.cl_bg_dark)
+                            .corner_radius()
+                            .all(6.0 * font_scale)
+                            .end();
+                        clay_scope.with(&d3d_btn, |clay| {
+                            clay.text(
+                                arena.push(format!("{}   3D", ICON_CUBE)),
+                                clay_layout::text::TextConfig::new()
+                                    .font_size((12.0 * font_scale) as u16)
+                                    .color(d3d_color)
+                                    .end(),
+                            );
+                        });
                     });
                 });
 
@@ -1654,120 +1695,20 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                             side,
                         );
 
-                        // 1. Draw grid lines
-                        for i in 0..=20 {
-                            let offset = (i as f32 / 20.0) * side;
-                            let is_major = i % 5 == 0;
-                            let color = if is_major {
-                                raylib::color::Color::new(
-                                    theme.cl_grid_major.r as u8,
-                                    theme.cl_grid_major.g as u8,
-                                    theme.cl_grid_major.b as u8,
-                                    80,
-                                )
-                            } else {
-                                raylib::color::Color::new(
-                                    theme.cl_grid_minor.r as u8,
-                                    theme.cl_grid_minor.g as u8,
-                                    theme.cl_grid_minor.b as u8,
-                                    30,
-                                )
-                            };
-                            let thickness = if is_major { 2.0 } else { 1.0 };
-                            d.draw_line_ex(
-                                raylib::math::Vector2::new(draw_area.x + offset, draw_area.y),
-                                raylib::math::Vector2::new(draw_area.x + offset, draw_area.y + draw_area.height),
-                                thickness,
-                                color,
-                            );
-                            d.draw_line_ex(
-                                raylib::math::Vector2::new(draw_area.x, draw_area.y + offset),
-                                raylib::math::Vector2::new(draw_area.x + draw_area.width, draw_area.y + offset),
-                                thickness,
-                                color,
-                            );
-                        }
-
-                        // 2. Draw cached preview
-                        d.draw_texture_pro(
+                        // Use the new preview module for 2D/3D rendering
+                        let frame_time = d.get_frame_time();
+                        crate::preview::render_preview(
+                            &mut d,
+                            &state,
+                            &mut interaction,
+                            draw_area,
+                            side,
+                            font_scale,
+                            &theme,
                             &preview_texture,
-                            raylib::math::Rectangle::new(0.0, 0.0, 2000.0, -2000.0),
-                            raylib::math::Rectangle::new(draw_area.x, draw_area.y, side, side),
-                            raylib::math::Vector2::new(0.0, 0.0),
-                            0.0,
-                            raylib::color::Color::WHITE,
+                            frame_time,
                         );
 
-                        let guard = state.lock().unwrap();
-                        // 3. Draw bounds
-                        if guard.bounds.enabled {
-                            let bx = draw_area.x + (guard.bounds.x / 400.0) * side;
-                            let by = draw_area.y + draw_area.height - (guard.bounds.y / 400.0) * side - (guard.bounds.h / 400.0) * side;
-                            d.draw_rectangle_lines_ex(
-                                raylib::math::Rectangle::new(
-                                    bx,
-                                    by,
-                                    (guard.bounds.w / 400.0) * side,
-                                    (guard.bounds.h / 400.0) * side,
-                                ),
-                                2.0,
-                                raylib::color::Color::new(
-                                    theme.cl_bounds.r as u8,
-                                    theme.cl_bounds.g as u8,
-                                    theme.cl_bounds.b as u8,
-                                    150,
-                                ),
-                            );
-                        }
-
-                        // 4. Draw real-time paths
-                        for p in &guard.paths {
-                            let start = raylib::math::Vector2::new(
-                                draw_area.x + (p.x1 / 400.0) * side,
-                                draw_area.y + draw_area.height - (p.y1 / 400.0) * side,
-                            );
-                            let end = raylib::math::Vector2::new(
-                                draw_area.x + (p.x2 / 400.0) * side,
-                                draw_area.y + draw_area.height - (p.y2 / 400.0) * side,
-                            );
-                            d.draw_line_ex(
-                                start,
-                                end,
-                                2.0,
-                                raylib::color::Color::new(
-                                    theme.cl_path.r as u8,
-                                    theme.cl_path.g as u8,
-                                    theme.cl_path.b as u8,
-                                    (p.intensity * 255.0) as u8,
-                                ),
-                            );
-                        }
-
-                        // 5. Draw laser head
-                        let head_pos = raylib::math::Vector2::new(
-                            draw_area.x + (guard.machine_pos.x / 400.0) * side,
-                            draw_area.y + draw_area.height - (guard.machine_pos.y / 400.0) * side,
-                        );
-                        d.draw_circle_v(
-                            head_pos,
-                            5.0 * font_scale,
-                            raylib::color::Color::new(
-                                theme.cl_head.r as u8,
-                                theme.cl_head.g as u8,
-                                theme.cl_head.b as u8,
-                                100,
-                            ),
-                        );
-                        d.draw_circle_v(
-                            head_pos,
-                            2.0 * font_scale,
-                            raylib::color::Color::new(
-                                theme.cl_danger.r as u8,
-                                theme.cl_danger.g as u8,
-                                theme.cl_danger.b as u8,
-                                255,
-                            ),
-                        );
                     }
                 }
                 RenderCommandConfig::Image(config) => {
