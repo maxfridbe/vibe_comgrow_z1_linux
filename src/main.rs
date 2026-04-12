@@ -103,6 +103,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
         anim_3d: 0.0,
         preview_zoom: 1.2,
         cam_orbit_angle: 0.0,
+        cam_tilt_angle: 45.0f32.to_radians(), // Start with some tilt
         touch_dist_prev: 0.0,
         touch_angle_prev: 0.0,
         available_fonts: Arc::new({
@@ -1151,6 +1152,10 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                                 interaction.is_handled = true;
                                 let mut guard = state.lock().unwrap();
                                 guard.is_3d = !guard.is_3d;
+                                // Reset camera to initial positioning
+                                guard.preview_zoom = 1.2;
+                                guard.cam_orbit_angle = 0.0;
+                                guard.cam_tilt_angle = 45.0f32.to_radians();
                             }
                         }
                         let mut d3d_btn = Declaration::<Texture2D, ()>::new();
@@ -1168,7 +1173,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                             .end();
                         clay_scope.with(&d3d_btn, |clay| {
                             clay.text(
-                                arena.push(format!("{}   3D", ICON_CUBE)),
+                                "3D",
                                 clay_layout::text::TextConfig::new()
                                     .font_size((12.0 * font_scale) as u16)
                                     .color(d3d_color)

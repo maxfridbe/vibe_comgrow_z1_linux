@@ -204,6 +204,7 @@ pub struct AppState {
     pub anim_3d: f32,
     pub preview_zoom: f32,
     pub cam_orbit_angle: f32,
+    pub cam_tilt_angle: f32,
     pub touch_dist_prev: f32,
     pub touch_angle_prev: f32,
     pub available_fonts: Arc<Vec<String>>,

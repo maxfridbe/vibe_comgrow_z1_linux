@@ -31,14 +31,14 @@ fn draw_2d(
                 theme.cl_grid_major.r as u8,
                 theme.cl_grid_major.g as u8,
                 theme.cl_grid_major.b as u8,
-                120, // Increased alpha
+                theme.cl_grid_major.a as u8,
             )
         } else {
             Color::new(
                 theme.cl_grid_minor.r as u8,
                 theme.cl_grid_minor.g as u8,
                 theme.cl_grid_minor.b as u8,
-                60, // Increased alpha
+                theme.cl_grid_minor.a as u8,
             )
         };
         let thickness = if is_major { 2.0 } else { 1.0 };
@@ -171,8 +171,15 @@ pub fn render_preview(
                 g.touch_dist_prev = dist;
             } else if touch_count == 1 || interaction.mouse_down {
                 interaction.is_handled = true;
-                // Rotate camera around center when dragging left/right
-                g.cam_orbit_angle += interaction.mouse_delta.x * 0.01;
+                // Rotate camera around center: Left/Right = orbit, Up/Down = tilt
+                g.cam_orbit_angle -= interaction.mouse_delta.x * 0.01;
+                g.cam_tilt_angle += interaction.mouse_delta.y * 0.01;
+                
+                // Clamp tilt to avoid flipping (e.g., 5 to 85 degrees)
+                let min_tilt = 5.0f32.to_radians();
+                let max_tilt = 85.0f32.to_radians();
+                if g.cam_tilt_angle < min_tilt { g.cam_tilt_angle = min_tilt; }
+                if g.cam_tilt_angle > max_tilt { g.cam_tilt_angle = max_tilt; }
             } else {
                 g.touch_dist_prev = 0.0;
             }
@@ -222,16 +229,19 @@ pub fn render_preview(
 
     let target = Vector3::new(200.0, 200.0 + head_y_offset, 0.0);
     
-    // Calculate rotated position based on orbit angle
-    let angle = g.cam_orbit_angle;
-    let dist_xy = 765.0;
-    let cam_z = 600.0;
+    // Calculate rotated position based on orbit and tilt angles
+    let orbit = g.cam_orbit_angle;
+    let tilt = g.cam_tilt_angle;
+    let radius = 970.0; // Total distance from center
     
-    // a=0 is looking from \"south\" (negative Y)
+    // Spherical coordinates:
+    // x = r * cos(tilt) * sin(orbit)
+    // y = -r * cos(tilt) * cos(orbit)
+    // z = r * sin(tilt)
     let orbit_pos = Vector3::new(
-        target.x + dist_xy * angle.sin(),
-        target.y - dist_xy * angle.cos(),
-        target.z + cam_z,
+        target.x + radius * tilt.cos() * orbit.sin(),
+        target.y - radius * tilt.cos() * orbit.cos(),
+        target.z + radius * tilt.sin(),
     );
 
     let start_pos = Vector3::new(200.0, 200.0 + head_y_offset, 600.0);
@@ -282,9 +292,19 @@ pub fn render_preview(
             let offset = (i as f32 / 20.0) * 400.0;
             let is_major = i % 5 == 0;
             let color = if is_major {
-                Color::new(theme.cl_grid_major.r as u8, theme.cl_grid_major.g as u8, theme.cl_grid_major.b as u8, 80)
+                Color::new(
+                    theme.cl_grid_major.r as u8,
+                    theme.cl_grid_major.g as u8,
+                    theme.cl_grid_major.b as u8,
+                    theme.cl_grid_major.a as u8,
+                )
             } else {
-                Color::new(theme.cl_grid_minor.r as u8, theme.cl_grid_minor.g as u8, theme.cl_grid_minor.b as u8, 30)
+                Color::new(
+                    theme.cl_grid_minor.r as u8,
+                    theme.cl_grid_minor.g as u8,
+                    theme.cl_grid_minor.b as u8,
+                    theme.cl_grid_minor.a as u8,
+                )
             };
             d3d.draw_line_3D(Vector3::new(offset, head_y_offset, 0.0), Vector3::new(offset, 400.0 + head_y_offset, 0.0), color);
             d3d.draw_line_3D(Vector3::new(0.0, offset + head_y_offset, 0.0), Vector3::new(400.0, offset + head_y_offset, 0.0), color);
@@ -324,7 +344,7 @@ pub fn render_preview(
             let rail_thickness = 20.0;
             
             // Helper to draw a \"2020 extrusion\" style rail
-            let mut draw_rail = |d3d: &mut RaylibMode3D<RaylibScissorMode<RaylibDrawHandle>>, p: Vector3, w: f32, h: f32, l: f32| {
+            let draw_rail = |d3d: &mut RaylibMode3D<RaylibScissorMode<RaylibDrawHandle>>, p: Vector3, w: f32, h: f32, l: f32| {
                 d3d.draw_cube(p, w, h, l, black_alu);
                 // Draw \"slots\" on the 4 longitudinal faces
                 if w > h && w > l { // X-aligned
@@ -341,16 +361,16 @@ pub fn render_preview(
             };
 
             // Outer frame rails - moved outward to clear 400x400 grid
-            let frame_w = 510.0;
-            let frame_l = 540.0;
+            let frame_w = 500.0;
+            let frame_l = 600.0;
             
-            // X-axis rails (Front and back)
-            draw_rail(&mut d3d, Vector3::new(200.0, -70.0, 10.0), frame_w, rail_thickness, rail_thickness);
-            draw_rail(&mut d3d, Vector3::new(200.0, 450.0, 10.0), frame_w, rail_thickness, rail_thickness);
+            // X-axis rails (Front and back) - T-ing into the side rails
+            draw_rail(&mut d3d, Vector3::new(200.0, -80.0, 10.0), frame_w, rail_thickness, rail_thickness);
+            draw_rail(&mut d3d, Vector3::new(200.0, 480.0, 10.0), frame_w, rail_thickness, rail_thickness);
 
-            // Y-axis rails (Left and right)
-            draw_rail(&mut d3d, Vector3::new(-45.0, 190.0, 10.0), rail_thickness, frame_l, rail_thickness);
-            draw_rail(&mut d3d, Vector3::new(445.0, 190.0, 10.0), rail_thickness, frame_l, rail_thickness);
+            // Y-axis rails (Left and right) - The long continuous members
+            draw_rail(&mut d3d, Vector3::new(-60.0, 200.0, 10.0), rail_thickness, frame_l, rail_thickness);
+            draw_rail(&mut d3d, Vector3::new(460.0, 200.0, 10.0), rail_thickness, frame_l, rail_thickness);
 
             // Gantry Rail (moves along Y) - Spans Z=20 to 60
             let gantry_y = machine_pos.y;
@@ -363,27 +383,35 @@ pub fn render_preview(
             d3d.draw_cube(Vector3::new(200.0, gantry_y, gantry_z + 20.0), gantry_width, 6.0, 4.0, slot_color);
             d3d.draw_cube(Vector3::new(200.0, gantry_y, gantry_z - 20.0), gantry_width, 6.0, 4.0, slot_color);
 
-            // Y Motors (Blue Accents)
-            d3d.draw_cylinder(Vector3::new(-45.0, -70.0, 15.0), 8.0, 8.0, 25.0, 16, blue_accent);
-            d3d.draw_cylinder(Vector3::new(445.0, -70.0, 15.0), 8.0, 8.0, 25.0, 16, blue_accent);
+            // Y Motors (Affixed to gantry beam ends, axis along X)
+            let motor_radius = 12.0;
+            let motor_len = 30.0;
+            d3d.draw_cylinder_ex(Vector3::new(-60.0 - motor_len/2.0, gantry_y, gantry_z), Vector3::new(-60.0 + motor_len/2.0, gantry_y, gantry_z), motor_radius, motor_radius, 16, blue_accent);
+            d3d.draw_cylinder_ex(Vector3::new(460.0 - motor_len/2.0, gantry_y, gantry_z), Vector3::new(460.0 + motor_len/2.0, gantry_y, gantry_z), motor_radius, motor_radius, 16, blue_accent);
 
-            // X Motor (Blue Accent)
-            d3d.draw_cylinder(Vector3::new(-45.0, gantry_y, gantry_z), 7.0, 7.0, 20.0, 16, blue_accent);
-
-            // Laser Head (45x45x60 total)
+            // Gantry Head (Blue component wrapping the gantry arm)
             let head_x = machine_pos.x;
             let head_y = machine_pos.y;
-            // Positioned in front of the gantry to avoid intersection
+            d3d.draw_cube(Vector3::new(head_x, head_y, gantry_z), 55.0, 30.0, 50.0, blue_accent);
+
+            // X Motor (Protruding away from the laser body along -Y)
+            d3d.draw_cylinder_ex(
+                Vector3::new(head_x - 35.0, head_y, gantry_z),
+                Vector3::new(head_x - 35.0, head_y + 25.0, gantry_z),
+                10.0, 10.0, 16, blue_accent
+            );
+
+            // Laser Head (45x45x60 total)
             let head_y_pos = head_y + head_y_offset; 
             
             // Black top part (30 units high)
             d3d.draw_cube(Vector3::new(head_x, head_y_pos, 45.0), 45.0, 45.0, 30.0, Color::new(45, 45, 45, hw_alpha as u8));
             // Translucent red shroud (30 units high)
-            let shroud_color = Color::new(255, 0, 0, (hw_alpha as f32 * 0.4) as u8);
+            let shroud_color = Color::new(255, 0, 0, (hw_alpha as f32 * 0.6) as u8);
             d3d.draw_cube(Vector3::new(head_x, head_y_pos, 15.0), 45.0, 45.0, 30.0, shroud_color);
             
-            // Laser head accent - raised to 55.5 to avoid Z-fighting with top face at 60.0
-            d3d.draw_cube(Vector3::new(head_x, head_y_pos, 55.5), 47.0, 47.0, 10.0, blue_accent);
+            // Laser head accent - raised to 61.1 to avoid Z-fighting with top face at 60.0
+            d3d.draw_cube(Vector3::new(head_x, head_y_pos, 61.1), 47.0, 47.0, 2.0, blue_accent);
 
             // Burning Effect
             if is_burning {
@@ -392,13 +420,14 @@ pub fn render_preview(
                 
                 // Add some basic particles around the burn point
                 let time = unsafe { raylib::ffi::GetTime() } as f32;
-                for i in 0..8 {
-                    let angle = time * 15.0 + (i as f32) * 0.8;
-                    let radius = 1.0 + (time * 10.0 + i as f32).sin().abs() * 4.0;
+                for i in 0..20 { // Increased particle count
+                    let angle = time * 10.0 + (i as f32) * 2.0;
+                    let radius = 0.5 + (time * 5.0 + i as f32).sin().abs() * 5.0;
                     let px = head_x + angle.cos() * radius;
                     let py = head_y_pos + angle.sin() * radius;
-                    let pz = (time * 12.0 + i as f32 * 0.3).fract() * 8.0;
-                    d3d.draw_cube(Vector3::new(px, py, pz), 1.2, 1.2, 1.2, Color::new(255, 150, 0, hw_alpha as u8));
+                    let pz = (time * 5.0 + i as f32 * 0.1).fract() * 15.0; // Higher particles
+                    let p_alpha = (1.0 - (pz / 15.0)) * 255.0;
+                    d3d.draw_cube(Vector3::new(px, py, pz), 2.5, 2.5, 2.5, Color::new(255, 100, 0, (p_alpha as f32 * (hw_alpha as f32 / 255.0)) as u8));
                 }
             }
         }
