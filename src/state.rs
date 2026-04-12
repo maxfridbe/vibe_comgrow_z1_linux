@@ -198,6 +198,8 @@ pub struct AppState {
     pub text_line_spacing: f32,
     pub text_curve_steps: u32,
     pub text_lines_per_mm: f32,
+    pub active_drag_id: Option<u32>,
+    pub col2_bg_dragging: bool,
     pub available_fonts: Arc<Vec<String>>,
     pub text_font_dropdown_open: bool,
     pub text_font_scroll_offset: f32,

@@ -1009,6 +1009,18 @@ pub fn render_slider<'a, 'render, F>(
     };
 
     clay.with(&container, |clay| {
+        if clay.pointer_over(container_id) && interaction.scroll_delta.y != 0.0 {
+            interaction.is_handled = true;
+            // Up increases (delta > 0), Down decreases (delta < 0)
+            let mut nv = value + interaction.scroll_delta.y * step;
+            if max - min > 10.0 {
+                nv = nv.round();
+            } else {
+                nv = (nv * 10.0).round() / 10.0;
+            }
+            next_val = Some(nv.clamp(min, max));
+        }
+
         let mut header = Declaration::<Texture2D, ()>::new();
         header
             .layout()
@@ -1091,7 +1103,18 @@ pub fn render_slider<'a, 'render, F>(
                 .all(4.0 * font_scale)
                 .end();
 
-            if clay.pointer_over(slider_id) && interaction.mouse_down {
+            let mut is_active = false;
+            {
+                let mut g = state.lock().unwrap();
+                if clay.pointer_over(slider_id) && interaction.mouse_pressed && !g.col2_bg_dragging {
+                    g.active_drag_id = Some(slider_id.id.id);
+                }
+                if g.active_drag_id == Some(slider_id.id.id) {
+                    is_active = true;
+                }
+            }
+
+            if is_active && interaction.mouse_down {
                 interaction.is_handled = true;
                 let data = unsafe { clay_layout::bindings::Clay_GetElementData(slider_id.id) };
                 if data.found {

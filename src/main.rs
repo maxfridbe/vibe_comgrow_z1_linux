@@ -96,6 +96,8 @@ fn main() -> Result<(), crate::error::TrogdorError> {
         text_line_spacing: 1.0,
         text_curve_steps: 10,
         text_lines_per_mm: 5.0,
+        active_drag_id: None,
+        col2_bg_dragging: false,
         available_fonts: Arc::new({
             let mut fonts = SystemSource::new().all_families().unwrap_or_default();
             fonts.sort();
@@ -454,6 +456,12 @@ fn main() -> Result<(), crate::error::TrogdorError> {
             scroll_delta: scroll_delta.into(),
             is_handled: false,
         };
+
+        if !mouse_down {
+            let mut g = state.lock().unwrap();
+            g.active_drag_id = None;
+            g.col2_bg_dragging = false;
+        }
 
         let frame_time_total = rl.get_time() as f32;
 
@@ -1135,7 +1143,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                 let is_dragging = state.lock().unwrap().col2_dragging;
                 
                 // Early check for scrollbar interaction to prevent drag-to-scroll conflict
-                if (clay_scope.pointer_over(sb_area_id) || is_dragging) && (interaction.mouse_down || interaction.mouse_pressed) {
+                if (clay_scope.pointer_over(sb_area_id) || is_dragging) && (interaction.mouse_down || interaction.mouse_pressed) && !state.lock().unwrap().col2_bg_dragging {
                     interaction.is_handled = true;
                 }
 
@@ -1177,23 +1185,6 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                                 y: c2_offset,
                             },
                         );
-
-                    if clay_scope.pointer_over(col2_outer_id) || state.lock().unwrap().col2_dragging {
-                        let mut skip_scroll = false;
-                        {
-                            let g = state.lock().unwrap();
-                            if g.text_font_dropdown_open && clay_scope.pointer_over(clay_scope.id("font_dropdown_list")) {
-                                skip_scroll = true;
-                            }
-                        }
-
-                        if !skip_scroll {
-                            let mut g = state.lock().unwrap();
-                            g.col2_scroll_offset += interaction.scroll_delta.y * 40.0;
-                            if g.col2_scroll_offset > 0.0 { g.col2_scroll_offset = 0.0; }
-                            if g.col2_scroll_offset < -max_scroll { g.col2_scroll_offset = -max_scroll; }
-                        }
-                    }
 
                     clay_scope.with(&col2_scroll, |clay_scope| match current_tab {
                     UITab::Manual => {
@@ -1250,9 +1241,30 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                     ),
                 });
 
+                // Wheel scroll logic (After content so children can handle it first)
+                if (clay_scope.pointer_over(col2_outer_id) || state.lock().unwrap().col2_dragging) && !interaction.is_handled {
+                    let mut skip_scroll = false;
+                    {
+                        let g = state.lock().unwrap();
+                        if g.text_font_dropdown_open && clay_scope.pointer_over(clay_scope.id("font_dropdown_list")) {
+                            skip_scroll = true;
+                        }
+                    }
+
+                    if !skip_scroll {
+                        let mut g = state.lock().unwrap();
+                        g.col2_scroll_offset += interaction.scroll_delta.y * 40.0;
+                        if g.col2_scroll_offset > 0.0 { g.col2_scroll_offset = 0.0; }
+                        if g.col2_scroll_offset < -max_scroll { g.col2_scroll_offset = -max_scroll; }
+                    }
+                }
+
                 // Drag-to-scroll logic
                 if clay_scope.pointer_over(col2_outer_id) && interaction.mouse_down && !interaction.is_handled {
                     let mut g = state.lock().unwrap();
+                    if interaction.mouse_pressed {
+                        g.col2_bg_dragging = true;
+                    }
                     g.col2_scroll_offset += interaction.mouse_delta.y;
                     if g.col2_scroll_offset > 0.0 { g.col2_scroll_offset = 0.0; }
                     if g.col2_scroll_offset < -max_scroll { g.col2_scroll_offset = -max_scroll; }
@@ -1276,7 +1288,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                         let scroll_ratio = (-c2_offset / max_scroll).clamp(0.0, 1.0);
                         let handle_y = ((track_height - handle_height) * scroll_ratio) as u16;
 
-                        if clay_scope.pointer_over(sb_area_id) && interaction.mouse_pressed {
+                        if clay_scope.pointer_over(sb_area_id) && interaction.mouse_pressed && !state.lock().unwrap().col2_bg_dragging {
                             state.lock().unwrap().col2_dragging = true;
                         }
 
