@@ -1,7 +1,7 @@
 use crate::state::{AppState, MachineState, StringArena};
 use crate::styles::*;
 use crate::theme::Theme;
-use crate::ui_components::render_burn_btn;
+use crate::ui_components::{render_burn_btn, Interaction};
 use arboard::Clipboard;
 use clay_layout::{Declaration, fixed, grow};
 use raylib::prelude::*;
@@ -10,11 +10,11 @@ use std::sync::{Arc, Mutex};
 pub fn render_svg_left_col<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
     state: &Arc<Mutex<AppState>>,
-    mouse_pressed: bool,
     clipboard: &mut Option<Clipboard>,
     _arena: &StringArena,
     font_scale: f32,
     theme: &Theme,
+    interaction: &mut Interaction,
 ) where
     'a: 'render,
 {
@@ -53,12 +53,12 @@ pub fn render_svg_left_col<'a, 'render>(
                 state,
                 0.0,
                 0.0,
-                mouse_pressed,
                 clipboard,
                 _arena,
                 font_scale,
                 !is_idle,
                 theme,
+                interaction,
             ) {
                 println!("Load SVG Dialog Triggered");
             }

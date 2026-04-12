@@ -4,7 +4,7 @@ use crate::icons::*;
 use crate::state::{AppState, MachineState, StringArena};
 use crate::styles::*;
 use crate::theme::Theme;
-use crate::ui_components::{Section, render_burn_btn, render_jog_btn, render_outline_btn, render_slider};
+use crate::ui_components::{Section, render_burn_btn, render_jog_btn, render_outline_btn, render_slider, Interaction};
 use arboard::Clipboard;
 use clay_layout::layout::{Alignment, LayoutAlignmentX, LayoutAlignmentY, LayoutDirection, Padding};
 use clay_layout::{Declaration, fixed, grow};
@@ -15,11 +15,11 @@ pub fn render_manual_left_subcol<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
     state: &Arc<Mutex<AppState>>,
     sections: &[Section],
-    mouse_pressed: bool,
     _clipboard: &mut Option<Clipboard>,
     arena: &StringArena,
     font_scale: f32,
     theme: &Theme,
+    interaction: &mut Interaction,
 ) where
     'a: 'render,
 {
@@ -89,7 +89,8 @@ pub fn render_manual_left_subcol<'a, 'render>(
                             if !disabled && clay_scope.pointer_over(btn_id) {
                                 btn_color = theme.cl_primary_hover;
                                 text_color = theme.cl_text_main;
-                                if mouse_pressed {
+                                if interaction.mouse_pressed {
+                                    interaction.is_handled = true;
                                     if section.title == "Test Patterns" {
                                         let config = state.lock().unwrap().get_burn_config();
                                         if let Ok((gcode, _)) = generate_pattern_gcode(cmd.label, &config, false) {
@@ -153,14 +154,11 @@ pub fn render_manual_right_col<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
     state: &Arc<Mutex<AppState>>,
     _sections: &[Section],
-    mouse_pos: raylib::math::Vector2,
-    mouse_down: bool,
-    mouse_pressed: bool,
-    scroll_y: f32,
     clipboard: &mut Option<Clipboard>,
     arena: &StringArena,
     font_scale: f32,
     theme: &Theme,
+    interaction: &mut Interaction,
 ) where
     'a: 'render,
 {
@@ -216,12 +214,12 @@ pub fn render_manual_right_col<'a, 'render>(
                         state,
                         -1.0,
                         1.0,
-                        mouse_pressed,
                         clipboard,
                         arena,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
 
@@ -235,12 +233,12 @@ pub fn render_manual_right_col<'a, 'render>(
                         state,
                         0.0,
                         1.0,
-                        mouse_pressed,
                         clipboard,
                         arena,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
 
@@ -254,12 +252,12 @@ pub fn render_manual_right_col<'a, 'render>(
                         state,
                         1.0,
                         1.0,
-                        mouse_pressed,
                         clipboard,
                         arena,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
             });
@@ -279,12 +277,12 @@ pub fn render_manual_right_col<'a, 'render>(
                         state,
                         -1.0,
                         0.0,
-                        mouse_pressed,
                         clipboard,
                         arena,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
 
@@ -309,7 +307,8 @@ pub fn render_manual_right_col<'a, 'render>(
                     if is_idle && clay_scope.pointer_over(btn_id) {
                         btn_color = COLOR_DANGER_BRIGHT;
                         fire_text_color = theme.cl_text_main;
-                        if mouse_pressed {
+                        if interaction.mouse_pressed {
+                            interaction.is_handled = true;
                             let mut guard = state.lock().unwrap();
                             let s = guard.power;
                             guard.send_command(gcode::laser_on(s));
@@ -346,7 +345,8 @@ pub fn render_manual_right_col<'a, 'render>(
                     if clay_scope.pointer_over(off_id) {
                         off_color = theme.cl_primary_hover;
                         off_text_color = theme.cl_text_main;
-                        if mouse_pressed {
+                        if interaction.mouse_pressed {
+                            interaction.is_handled = true;
                             state.lock().unwrap().send_command(gcode::CMD_LASER_OFF.to_string());
                         }
                     }
@@ -385,12 +385,12 @@ pub fn render_manual_right_col<'a, 'render>(
                         state,
                         1.0,
                         0.0,
-                        mouse_pressed,
                         clipboard,
                         arena,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
             });
@@ -410,12 +410,12 @@ pub fn render_manual_right_col<'a, 'render>(
                         state,
                         -1.0,
                         -1.0,
-                        mouse_pressed,
                         clipboard,
                         arena,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
 
@@ -429,12 +429,12 @@ pub fn render_manual_right_col<'a, 'render>(
                         state,
                         0.0,
                         -1.0,
-                        mouse_pressed,
                         clipboard,
                         arena,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
 
@@ -448,12 +448,12 @@ pub fn render_manual_right_col<'a, 'render>(
                         state,
                         1.0,
                         -1.0,
-                        mouse_pressed,
                         clipboard,
                         arena,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
             });
@@ -488,7 +488,8 @@ pub fn render_manual_right_col<'a, 'render>(
                     if !disabled && clay.pointer_over(btn_id) {
                         btn_color = theme.cl_primary_hover;
                         btn_text_color = theme.cl_text_main;
-                        if mouse_pressed {
+                        if interaction.mouse_pressed {
+                            interaction.is_handled = true;
                             state.lock().unwrap().send_command(cmd.to_string());
                         }
                     }
@@ -551,11 +552,11 @@ pub fn render_manual_right_col<'a, 'render>(
                         state,
                         "Y",
                         1.0,
-                        mouse_pressed,
                         clipboard,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
 
@@ -572,11 +573,11 @@ pub fn render_manual_right_col<'a, 'render>(
                         state,
                         "X",
                         -1.0,
-                        mouse_pressed,
                         clipboard,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
 
                     let center_id = clay_scope.id("center");
@@ -587,7 +588,8 @@ pub fn render_manual_right_col<'a, 'render>(
                     };
                     if is_idle && clay_scope.pointer_over(center_id) {
                         center_color = theme.cl_bg_section;
-                        if mouse_pressed {
+                        if interaction.mouse_pressed {
+                            interaction.is_handled = true;
                             let mut guard = state.lock().unwrap();
                             guard.v_pos = raylib::prelude::Vector2::new(0.0, 0.0);
                             guard.send_command(gcode::CMD_SET_ORIGIN.to_string());
@@ -634,7 +636,8 @@ pub fn render_manual_right_col<'a, 'render>(
                     };
                     if is_idle && clay_scope.pointer_over(home_zero_id) {
                         home_zero_color = theme.cl_bg_section;
-                        if mouse_pressed {
+                        if interaction.mouse_pressed {
+                            interaction.is_handled = true;
                             let mut guard = state.lock().unwrap();
                             guard.v_pos = raylib::prelude::Vector2::new(0.0, 0.0);
                             let cmd = format!("{} {}", gcode::CMD_ABSOLUTE_POS, gcode::move_xy(0.0, 0.0));
@@ -681,11 +684,11 @@ pub fn render_manual_right_col<'a, 'render>(
                         state,
                         "X",
                         1.0,
-                        mouse_pressed,
                         clipboard,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
 
@@ -699,11 +702,11 @@ pub fn render_manual_right_col<'a, 'render>(
                         state,
                         "Y",
                         -1.0,
-                        mouse_pressed,
                         clipboard,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
             });
@@ -737,12 +740,10 @@ pub fn render_manual_right_col<'a, 'render>(
                 COLOR_SLIDER_STEP,
                 state,
                 |s, v| s.distance = v,
-                mouse_pos,
-                mouse_down,
-                scroll_y,
                 arena,
                 font_scale,
                 theme,
+                interaction,
             );
             render_slider(
                 clay_scope,
@@ -754,12 +755,10 @@ pub fn render_manual_right_col<'a, 'render>(
                 COLOR_SLIDER_SPEED,
                 state,
                 |s, v| s.feed_rate = v,
-                mouse_pos,
-                mouse_down,
-                scroll_y,
                 arena,
                 font_scale,
                 theme,
+                interaction,
             );
             render_slider(
                 clay_scope,
@@ -771,12 +770,10 @@ pub fn render_manual_right_col<'a, 'render>(
                 COLOR_SLIDER_POWER,
                 state,
                 |s, v| s.power = v,
-                mouse_pos,
-                mouse_down,
-                scroll_y,
                 arena,
                 font_scale,
                 theme,
+                interaction,
             );
         });
     });

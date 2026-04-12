@@ -3,7 +3,7 @@ use crate::icons::*;
 use crate::state::{AppState, MachineState, StringArena, ToastType};
 use crate::styles::*;
 use crate::theme::Theme;
-use crate::ui_components::{Command, Section, render_burn_btn, render_checkbox, render_outline_btn, render_slider};
+use crate::ui_components::{Command, Section, render_burn_btn, render_checkbox, render_outline_btn, render_slider, Interaction};
 use arboard::Clipboard;
 use clay_layout::layout::{Alignment, LayoutAlignmentX, LayoutAlignmentY, LayoutDirection, Padding};
 use clay_layout::{Declaration, fixed, grow};
@@ -15,14 +15,11 @@ pub fn render_test_controls<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
     state: &Arc<Mutex<AppState>>,
     _sections: &[Section],
-    mouse_pos: raylib::math::Vector2,
-    mouse_down: bool,
-    mouse_pressed: bool,
-    scroll_y: f32,
     clipboard: &mut Option<Clipboard>,
     arena: &StringArena,
     font_scale: f32,
     theme: &Theme,
+    interaction: &mut Interaction,
 ) where
     'a: 'render,
 {
@@ -73,7 +70,8 @@ pub fn render_test_controls<'a, 'render>(
                 };
                 if is_idle && clay_scope.pointer_over(load_id) {
                     load_color = theme.cl_primary;
-                    if mouse_pressed {
+                    if interaction.mouse_pressed {
+                        interaction.is_handled = true;
                         if let Some(path_buf) =
                             FileDialog::new().add_filter("Scalable Vector Graphics", &["svg"]).pick_file()
                         {
@@ -138,7 +136,8 @@ pub fn render_test_controls<'a, 'render>(
                     let mut preview_color = if is_active_preview { theme.cl_primary } else { theme.cl_bg_dark };
                     if clay_scope.pointer_over(preview_id) {
                         preview_color = theme.cl_primary_hover;
-                        if mouse_pressed {
+                        if interaction.mouse_pressed {
+                            interaction.is_handled = true;
                             let mut g = state.lock().unwrap();
                             if is_active_preview {
                                 g.preview_pattern = None;
@@ -190,12 +189,12 @@ pub fn render_test_controls<'a, 'render>(
                         state,
                         0.0,
                         0.0,
-                        mouse_pressed,
                         clipboard,
                         arena,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     ) {
                         let mut g = state.lock().unwrap();
                         g.is_burning = true;
@@ -214,10 +213,10 @@ pub fn render_test_controls<'a, 'render>(
                             let config = state.lock().unwrap().get_burn_config();
                             generate_pattern_gcode(&path_clone, &config, false).ok().map(|(g, _)| g)
                         },
-                        mouse_pressed,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
             }
@@ -285,7 +284,8 @@ pub fn render_test_controls<'a, 'render>(
                     let mut preview_color = if is_active_preview { theme.cl_primary } else { theme.cl_bg_dark };
                     if clay_scope.pointer_over(preview_id) {
                         preview_color = theme.cl_primary_hover;
-                        if mouse_pressed {
+                        if interaction.mouse_pressed {
+                            interaction.is_handled = true;
                             let mut g = state.lock().unwrap();
                             if is_active_preview {
                                 g.preview_pattern = None;
@@ -336,12 +336,12 @@ pub fn render_test_controls<'a, 'render>(
                         state,
                         0.0,
                         0.0,
-                        mouse_pressed,
                         clipboard,
                         arena,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     ) {
                         let mut g = state.lock().unwrap();
                         g.is_burning = true;
@@ -359,10 +359,10 @@ pub fn render_test_controls<'a, 'render>(
                             let config = state.lock().unwrap().get_burn_config();
                             generate_pattern_gcode(cmd.label, &config, false).ok().map(|(g, _)| g)
                         },
-                        mouse_pressed,
                         font_scale,
                         !is_idle,
                         theme,
+                        interaction,
                     );
                 });
             }
@@ -409,18 +409,18 @@ pub fn render_test_controls<'a, 'render>(
             let mut row1 = Declaration::<Texture2D, ()>::new();
             row1.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
             clay_scope.with(&row1, |clay_scope| {
-                render_slider(clay_scope, "p_pwr", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| { s.power = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-                render_slider(clay_scope, "p_spd", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| { s.feed_rate = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                render_slider(clay_scope, "p_pwr", "Power", pwr, 0.0, 1000.0, COLOR_SLIDER_POWER, state, |s, v| { s.power = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
+                render_slider(clay_scope, "p_spd", "Speed", spd, 10.0, 6000.0, COLOR_SLIDER_SPEED, state, |s, v| { s.feed_rate = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
             });
 
             let mut row2 = Declaration::<Texture2D, ()>::new();
             row2.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
             clay_scope.with(&row2, |clay_scope| {
-                render_slider(clay_scope, "p_scl", "Scale", scl, 0.1, 10.0, COLOR_SLIDER_STEP, state, |s, v| { s.scale = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-                render_slider(clay_scope, "p_pas", "Passes", passes as f32, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| { s.passes = v as u32; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                render_slider(clay_scope, "p_scl", "Scale", scl, 0.1, 10.0, COLOR_SLIDER_STEP, state, |s, v| { s.scale = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
+                render_slider(clay_scope, "p_pas", "Passes", passes as f32, 1.0, 20.0, COLOR_SLIDER_PASSES, state, |s, v| { s.passes = v as u32; s.clear_preview(); }, arena, font_scale, theme, interaction);
             });
 
-            render_checkbox(clay_scope, "p_ben", "Enable Bounds", b_en, state, |s, v| { s.bounds.enabled = v; s.clear_preview(); }, mouse_pressed, font_scale, theme);
+            render_checkbox(clay_scope, "p_ben", "Enable Bounds", b_en, state, |s, v| { s.bounds.enabled = v; s.clear_preview(); }, font_scale, theme, interaction);
 
             if b_en {
                 let mut grid = Declaration::<Texture2D, ()>::new();
@@ -429,14 +429,14 @@ pub fn render_test_controls<'a, 'render>(
                     let mut r1 = Declaration::<Texture2D, ()>::new();
                     r1.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
                     clay_scope.with(&r1, |clay_scope| {
-                        render_slider(clay_scope, "p_bx", "X", bx, 0.0, 400.0, COLOR_SLIDER_X, state, |s, v| { s.bounds.x = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-                        render_slider(clay_scope, "p_by", "Y", by, 0.0, 400.0, COLOR_SLIDER_Y, state, |s, v| { s.bounds.y = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                        render_slider(clay_scope, "p_bx", "X", bx, 0.0, 400.0, COLOR_SLIDER_X, state, |s, v| { s.bounds.x = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
+                        render_slider(clay_scope, "p_by", "Y", by, 0.0, 400.0, COLOR_SLIDER_Y, state, |s, v| { s.bounds.y = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
                     });
                     let mut r2 = Declaration::<Texture2D, ()>::new();
                     r2.layout().direction(LayoutDirection::LeftToRight).child_gap(8).end();
                     clay_scope.with(&r2, |clay_scope| {
-                        render_slider(clay_scope, "p_bw", "W", bw, 1.0, 400.0, COLOR_SLIDER_W, state, |s, v| { s.bounds.w = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
-                        render_slider(clay_scope, "p_bh", "H", bh, 1.0, 400.0, COLOR_SLIDER_H, state, |s, v| { s.bounds.h = v; s.clear_preview(); }, mouse_pos, mouse_down, scroll_y, arena, font_scale, theme);
+                        render_slider(clay_scope, "p_bw", "W", bw, 1.0, 400.0, COLOR_SLIDER_W, state, |s, v| { s.bounds.w = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
+                        render_slider(clay_scope, "p_bh", "H", bh, 1.0, 400.0, COLOR_SLIDER_H, state, |s, v| { s.bounds.h = v; s.clear_preview(); }, arena, font_scale, theme, interaction);
                     });
                 });
             }

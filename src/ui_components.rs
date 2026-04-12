@@ -14,14 +14,27 @@ use crate::FontMeasureEx;
 
 pub static mut MEASURE_FONT_PTR: *const raylib::prelude::Font = std::ptr::null();
 
+pub struct Interaction {
+    pub mouse_pos: raylib::math::Vector2,
+    pub mouse_delta: raylib::math::Vector2,
+    pub mouse_down: bool,
+    pub mouse_pressed: bool,
+    pub is_right_down: bool,
+    pub is_right_pressed: bool,
+    pub is_middle_down: bool,
+    pub is_middle_pressed: bool,
+    pub is_touch: bool,
+    pub scroll_delta: raylib::math::Vector2, // 2D scrolling support
+    pub is_handled: bool,
+}
+
 pub fn render_log<'a, 'render>(
     clay: &mut clay_layout::ClayLayoutScope<'a, 'render, Texture2D, ()>,
     state: &Arc<Mutex<AppState>>,
-    scroll_delta: raylib::math::Vector2,
     arena: &StringArena,
     font_scale: f32,
     theme: &Theme,
-    mouse_pressed: bool,
+    interaction: &mut Interaction,
 ) where
     'a: 'render,
 {
@@ -46,7 +59,8 @@ pub fn render_log<'a, 'render>(
 
     clay.with(&log_box, |clay| {
         let toggle_id = clay.id("serial_log_toggle");
-        if clay.pointer_over(toggle_id) && mouse_pressed {
+        if clay.pointer_over(toggle_id) && interaction.mouse_pressed {
+            interaction.is_handled = true;
             let mut g = state.lock().unwrap();
             if g.bottom_bar_height > 65.0 {
                 g.bottom_bar_height = 60.0;
@@ -84,7 +98,7 @@ pub fn render_log<'a, 'render>(
         {
             let mut g = state.lock().unwrap();
             if clay.pointer_over(log_scroll_id) {
-                g.log_scroll_offset += scroll_delta.y * 40.0;
+                g.log_scroll_offset += interaction.scroll_delta.y * 40.0;
             }
             
             if g.log_scroll_offset > 0.0 {
@@ -94,7 +108,7 @@ pub fn render_log<'a, 'render>(
             let row_height = 18.0 * font_scale;
             let content_height = logs.len().min(1000) as f32 * row_height;
             let bottom_bar_height = g.bottom_bar_height * font_scale;
-            let container_height = bottom_bar_height - 24.0 - (6.0 * font_scale);
+            let container_height = bottom_bar_height - (8.0 * font_scale); // approximate
             let max_scroll = (container_height - content_height).min(0.0);
             
             if g.log_scroll_offset < max_scroll {
@@ -163,8 +177,7 @@ pub fn render_dropdown<'a, 'render, F, G, H>(
     arena: &StringArena,
     font_scale: f32,
     theme: &Theme,
-    mouse_pressed: bool,
-    scroll_y: f32,
+    interaction: &mut Interaction,
     on_toggle: F,
     on_select: G,
     on_scroll: H,
@@ -183,7 +196,8 @@ pub fn render_dropdown<'a, 'render, F, G, H>(
 
     if clay.pointer_over(dropdown_id) {
         dropdown_color = theme.cl_primary_hover;
-        if mouse_pressed {
+        if interaction.mouse_pressed {
+            interaction.is_handled = true;
             let mut g = state.lock().unwrap();
             on_toggle(&mut g);
         }
@@ -263,7 +277,7 @@ pub fn render_dropdown<'a, 'render, F, G, H>(
 
         if clay.pointer_over(dropdown_list_id) {
             let mut g = state.lock().unwrap();
-            let mut new_offset = scroll_offset + scroll_y * 40.0;
+            let mut new_offset = scroll_offset + interaction.scroll_delta.y * 40.0;
             if new_offset > 0.0 {
                 new_offset = 0.0;
             }
@@ -281,7 +295,8 @@ pub fn render_dropdown<'a, 'render, F, G, H>(
                 let mut item_color = theme.cl_bg_dark;
                 if clay_scope.pointer_over(item_id) {
                     item_color = theme.cl_bg_section;
-                    if mouse_pressed {
+                    if interaction.mouse_pressed {
+                        interaction.is_handled = true;
                         let mut g = state.lock().unwrap();
                         on_select(&mut g, item.clone());
                     }
@@ -315,7 +330,7 @@ pub fn render_text_input<'a, 'render>(
     arena: &StringArena,
     font_scale: f32,
     theme: &Theme,
-    mouse_pressed: bool,
+    interaction: &mut Interaction,
 ) where
     'a: 'render,
 {
@@ -337,7 +352,8 @@ pub fn render_text_input<'a, 'render>(
         if !is_active {
             input_color = theme.cl_bg_section;
         }
-        if mouse_pressed {
+        if interaction.mouse_pressed {
+            interaction.is_handled = true;
             let mut g = state.lock().unwrap();
             if !g.is_text_input_active {
                 g.is_text_input_active = true;
@@ -442,7 +458,7 @@ pub fn render_toasts<'a, 'render>(
     state: &Arc<Mutex<AppState>>,
     arena: &StringArena,
     font_scale: f32,
-    mouse_pressed: bool,
+    interaction: &mut Interaction,
     theme: &Theme,
 ) where
     'a: 'render,
@@ -515,7 +531,8 @@ pub fn render_toasts<'a, 'render>(
                     let mut btn_bg = theme.cl_bg_dark;
                     if clay_scope.pointer_over(action_btn_id) {
                         btn_bg = theme.cl_primary_hover;
-                        if mouse_pressed {
+                        if interaction.mouse_pressed {
+                            interaction.is_handled = true;
                             action_ids.push(toast.id);
                         }
                     }
@@ -545,7 +562,8 @@ pub fn render_toasts<'a, 'render>(
                     let mut btn_bg = theme.cl_bg_dark;
                     if clay_scope.pointer_over(dismiss_btn_id) {
                         btn_bg = theme.cl_danger;
-                        if mouse_pressed {
+                        if interaction.mouse_pressed {
+                            interaction.is_handled = true;
                             dismiss_ids.push(toast.id);
                         }
                     }
@@ -594,6 +612,7 @@ pub fn render_tab_btn<'a, 'render>(
     arena: &StringArena,
     font_scale: f32,
     theme: &Theme,
+    interaction: &mut Interaction,
 ) -> bool
 where
     'a: 'render,
@@ -647,9 +666,8 @@ where
             arena.push(format!("{}   {}", icon, label)),
             clay_layout::text::TextConfig::new().font_size((16.0 * font_scale) as u16).color(text_color).end(),
         );
-        if unsafe { raylib::ffi::IsMouseButtonPressed(raylib::ffi::MouseButton::MOUSE_BUTTON_LEFT as i32) }
-            && clay_scope.pointer_over(btn_id)
-        {
+        if interaction.mouse_pressed && clay_scope.pointer_over(btn_id) {
+            interaction.is_handled = true;
             clicked = true;
         }
     });
@@ -675,11 +693,11 @@ pub fn render_jog_btn<'a, 'render>(
     state: &Arc<Mutex<AppState>>,
     axis: &str,
     direction: f32,
-    mouse_pressed: bool,
     clipboard: &mut Option<Clipboard>,
     font_scale: f32,
     disabled: bool,
     theme: &Theme,
+    interaction: &mut Interaction,
 ) -> bool
 where
     'a: 'render,
@@ -693,7 +711,8 @@ where
     let mut clicked = false;
     if !disabled && clay.pointer_over(btn_id) {
         color = theme.cl_primary;
-        if mouse_pressed {
+        if interaction.mouse_pressed {
+            interaction.is_handled = true;
             clicked = true;
             let mut guard = state.lock().unwrap();
             let d = guard.distance;
@@ -739,12 +758,12 @@ pub fn render_burn_btn<'a, 'render>(
     state: &Arc<Mutex<AppState>>,
     dx: f32,
     dy: f32,
-    mouse_pressed: bool,
     clipboard: &mut Option<Clipboard>,
     arena: &StringArena,
     font_scale: f32,
     disabled: bool,
     theme: &Theme,
+    interaction: &mut Interaction,
 ) -> bool
 where
     'a: 'render,
@@ -758,7 +777,8 @@ where
     let mut clicked = false;
     if !disabled && clay.pointer_over(btn_id) {
         color = theme.cl_primary_hover; // or some light accent
-        if mouse_pressed {
+        if interaction.mouse_pressed {
+            interaction.is_handled = true;
             clicked = true;
             let mut guard = state.lock().unwrap();
             guard.is_burning = true;
@@ -815,10 +835,10 @@ pub fn render_outline_btn<'a, 'render, F>(
     id: &str,
     state: &Arc<Mutex<AppState>>,
     action: F,
-    mouse_pressed: bool,
     font_scale: f32,
     disabled: bool,
     theme: &Theme,
+    interaction: &mut Interaction,
 ) -> bool
 where
     F: FnOnce() -> Option<String>,
@@ -833,7 +853,8 @@ where
     let mut clicked = false;
     if !disabled && clay.pointer_over(btn_id) {
         color = theme.cl_primary_hover;
-        if mouse_pressed {
+        if interaction.mouse_pressed {
+            interaction.is_handled = true;
             clicked = true;
             if let Some(gcode) = action() {
                 if let Some((x, y, w, h)) = cli_and_helpers::get_gcode_bounds(&gcode) {
@@ -882,9 +903,9 @@ pub fn render_checkbox<'a, 'render, F>(
     checked: bool,
     state: &Arc<Mutex<AppState>>,
     update: F,
-    mouse_pressed: bool,
     font_scale: f32,
     theme: &Theme,
+    interaction: &mut Interaction,
 ) where
     F: FnOnce(&mut AppState, bool),
     'a: 'render,
@@ -902,7 +923,8 @@ pub fn render_checkbox<'a, 'render, F>(
         .all(8.0 * font_scale)
         .end();
 
-    if clay.pointer_over(btn_id) && mouse_pressed {
+    if clay.pointer_over(btn_id) && interaction.mouse_pressed {
+        interaction.is_handled = true;
         let mut guard = state.lock().unwrap();
         update(&mut guard, !checked);
     }
@@ -955,12 +977,10 @@ pub fn render_slider<'a, 'render, F>(
     color: ClayColor,
     state: &Arc<Mutex<AppState>>,
     update: F,
-    mouse_pos: raylib::math::Vector2,
-    mouse_down: bool,
-    _scroll_y: f32,
     arena: &StringArena,
     font_scale: f32,
     theme: &Theme,
+    interaction: &mut Interaction,
 ) where
     F: FnOnce(&mut AppState, f32),
     'a: 'render,
@@ -1026,7 +1046,8 @@ pub fn render_slider<'a, 'render, F>(
             let mut minus_bg = theme.cl_bg_dark;
             if clay.pointer_over(btn_minus_id) {
                 minus_bg = theme.cl_primary_hover;
-                if unsafe { raylib::ffi::IsMouseButtonPressed(raylib::ffi::MouseButton::MOUSE_BUTTON_LEFT as i32) } {
+                if interaction.mouse_pressed {
+                    interaction.is_handled = true;
                     let mut nv = value - step;
                     if max - min > 10.0 {
                         nv = nv.round();
@@ -1070,11 +1091,12 @@ pub fn render_slider<'a, 'render, F>(
                 .all(4.0 * font_scale)
                 .end();
 
-            if clay.pointer_over(slider_id) && mouse_down {
+            if clay.pointer_over(slider_id) && interaction.mouse_down {
+                interaction.is_handled = true;
                 let data = unsafe { clay_layout::bindings::Clay_GetElementData(slider_id.id) };
                 if data.found {
                     let rect = data.boundingBox;
-                    let mouse_x = mouse_pos.x;
+                    let mouse_x = interaction.mouse_pos.x;
                     let percent = ((mouse_x - rect.x) / rect.width).clamp(0.0, 1.0);
                     let raw_val = min + percent * (max - min);
                     // Intelligent rounding: round to integer if range is large, else 1 decimal
@@ -1105,7 +1127,8 @@ pub fn render_slider<'a, 'render, F>(
             let mut plus_bg = theme.cl_bg_dark;
             if clay.pointer_over(btn_plus_id) {
                 plus_bg = theme.cl_primary_hover;
-                if unsafe { raylib::ffi::IsMouseButtonPressed(raylib::ffi::MouseButton::MOUSE_BUTTON_LEFT as i32) } {
+                if interaction.mouse_pressed {
+                    interaction.is_handled = true;
                     let mut nv = value + step;
                     if max - min > 10.0 {
                         nv = nv.round();

@@ -426,10 +426,36 @@ fn main() -> Result<(), crate::error::TrogdorError> {
         };
 
         let mouse_pos = rl.get_mouse_position();
-        let frame_time_total = rl.get_time() as f32;
-
         let mouse_down = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT);
         let mouse_pressed = rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
+        let is_right_down = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_RIGHT);
+        let is_right_pressed = rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT);
+        let is_middle_down = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_MIDDLE);
+        let is_middle_pressed = rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_MIDDLE);
+        let mut mouse_delta = rl.get_mouse_delta();
+        let scroll_delta = rl.get_mouse_wheel_move_v();
+        let is_touch = unsafe { raylib::ffi::GetTouchPointCount() > 0 };
+
+        // Fix Touch Jump: if we just pressed, zero out delta for this frame
+        if mouse_pressed || is_touch && mouse_pressed {
+            mouse_delta = raylib::math::Vector2::new(0.0, 0.0);
+        }
+
+        let mut interaction = crate::ui_components::Interaction {
+            mouse_pos: mouse_pos.into(),
+            mouse_delta: mouse_delta.into(),
+            mouse_down,
+            mouse_pressed,
+            is_right_down,
+            is_right_pressed,
+            is_middle_down,
+            is_middle_pressed,
+            is_touch,
+            scroll_delta: scroll_delta.into(),
+            is_handled: false,
+        };
+
+        let frame_time_total = rl.get_time() as f32;
 
         if rl.is_key_pressed(KeyboardKey::KEY_T) && (rl.is_key_down(KeyboardKey::KEY_LEFT_ALT) || rl.is_key_down(KeyboardKey::KEY_RIGHT_ALT)) {
             let mut guard = state.lock().unwrap();
@@ -765,7 +791,8 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                     if clay_scope.pointer_over(port_h_id) {
                         port_bg = theme.cl_primary_hover;
                         port_text_color = theme.cl_text_main;
-                        if mouse_pressed {
+                        if interaction.mouse_pressed {
+                            interaction.is_handled = true;
                             let mut g = state.lock().unwrap();
                             if *g.port == "VIRTUAL" {
                                 g.port = Arc::new("/dev/ttyUSB0".to_string());
@@ -838,7 +865,8 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                         } else {
                             COLOR_DANGER_HOVER
                         };
-                        if mouse_pressed {
+                        if interaction.mouse_pressed {
+                            interaction.is_handled = true;
                             let mut guard = state.lock().unwrap();
                             guard.send_command(crate::gcode::CMD_FEED_HOLD.to_string());
                             guard.send_command(crate::gcode::CMD_LASER_OFF.to_string());
@@ -876,110 +904,112 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                 .child_alignment(Alignment::new(LayoutAlignmentX::Left, LayoutAlignmentY::Bottom))
                 .end();
 
-            clay_scope.with(&header_row, |clay_scope| {
-                let mut tab_bar = Declaration::<Texture2D, ()>::new();
-                tab_bar.layout().direction(LayoutDirection::LeftToRight).child_gap(0).end();
-                clay_scope.with(&tab_bar, |clay_scope| {
-                    let current_tab = state.lock().unwrap().current_tab;
-                    if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, &arena, font_scale, &theme) {
-                        let mut g = state.lock().unwrap();
-                        g.current_tab = UITab::Manual;
-                        g.save_user_config();
-                    }
-                    if render_tab_btn(clay_scope, "tab_pattern", "Pattern", current_tab == UITab::Pattern, &arena, font_scale, &theme) {
-                        let mut g = state.lock().unwrap();
-                        g.current_tab = UITab::Pattern;
-                        g.save_user_config();
-                    }
-                    if render_tab_btn(clay_scope, "tab_image", "Image", current_tab == UITab::Image, &arena, font_scale, &theme) {
-                        let mut g = state.lock().unwrap();
-                        g.current_tab = UITab::Image;
-                        g.save_user_config();
-                    }
-                    if render_tab_btn(clay_scope, "tab_text", "Text", current_tab == UITab::Text, &arena, font_scale, &theme) {
-                        let mut g = state.lock().unwrap();
-                        g.current_tab = UITab::Text;
-                        g.save_user_config();
-                    }
-                });
-
-                let mut spacer = Declaration::<Texture2D, ()>::new();
-                spacer.layout().width(grow!()).end();
-                clay_scope.with(&spacer, |_| {});
-
-                let mut persist_group = Declaration::<Texture2D, ()>::new();
-                persist_group
-                    .layout()
-                    .direction(LayoutDirection::LeftToRight)
-                    .child_gap(10)
-                    .padding(Padding::new(0, 0, 0, 4))
-                    .end();
-                clay_scope.with(&persist_group, |clay_scope| {
-                    let save_id = clay_scope.id("btn_save_state");
-                    let mut save_color = theme.cl_bg_section;
-                    if clay_scope.pointer_over(save_id) {
-                        save_color = theme.cl_primary_hover;
-                        if mouse_pressed {
+                clay_scope.with(&header_row, |clay_scope| {
+                    let mut tab_bar = Declaration::<Texture2D, ()>::new();
+                    tab_bar.layout().direction(LayoutDirection::LeftToRight).child_gap(0).end();
+                    clay_scope.with(&tab_bar, |clay_scope| {
+                        let current_tab = state.lock().unwrap().current_tab;
+                        if render_tab_btn(clay_scope, "tab_manual", "Manual", current_tab == UITab::Manual, &arena, font_scale, &theme, &mut interaction) {
                             let mut g = state.lock().unwrap();
-                            let label = match g.current_tab {
-                                UITab::Text => format!("Text: {}", *g.text_content),
-                                UITab::Image => g.custom_image_path.as_ref().map(|p| (**p).clone()).unwrap_or_else(|| "Image".to_string()),
-                                _ => "State".to_string(),
-                            };
-                            let new_state = g.capture_state(&label);
-                            let mut states = (*g.saved_states).clone();
-                            states.push(new_state);
-                            g.saved_states = Arc::new(states);
-                            g.save_persistence();
+                            g.current_tab = UITab::Manual;
+                            g.save_user_config();
                         }
-                    }
-                    let mut save_btn = Declaration::<Texture2D, ()>::new();
-                    save_btn
-                        .id(save_id)
-                        .layout()
-                        .padding(Padding::new(12, 12, 6, 6))
-                        .end()
-                        .background_color(save_color)
-                        .corner_radius()
-                        .all(6.0 * font_scale)
-                        .end();
-                    clay_scope.with(&save_btn, |clay| {
-                        clay.text(
-                            arena.push(format!("{}   SAVE", ICON_COPY)),
-                            clay_layout::text::TextConfig::new()
-                                .font_size((14.0 * font_scale) as u16)
-                                .color(theme.cl_text_main)
-                                .end(),
-                        );
+                        if render_tab_btn(clay_scope, "tab_pattern", "Pattern", current_tab == UITab::Pattern, &arena, font_scale, &theme, &mut interaction) {
+                            let mut g = state.lock().unwrap();
+                            g.current_tab = UITab::Pattern;
+                            g.save_user_config();
+                        }
+                        if render_tab_btn(clay_scope, "tab_image", "Image", current_tab == UITab::Image, &arena, font_scale, &theme, &mut interaction) {
+                            let mut g = state.lock().unwrap();
+                            g.current_tab = UITab::Image;
+                            g.save_user_config();
+                        }
+                        if render_tab_btn(clay_scope, "tab_text", "Text", current_tab == UITab::Text, &arena, font_scale, &theme, &mut interaction) {
+                            let mut g = state.lock().unwrap();
+                            g.current_tab = UITab::Text;
+                            g.save_user_config();
+                        }
                     });
 
-                    let load_id = clay_scope.id("btn_load_state");
-                    let mut load_color = theme.cl_bg_section;
-                    if clay_scope.pointer_over(load_id) {
-                        load_color = theme.cl_primary_hover;
-                        if mouse_pressed {
-                            let mut g = state.lock().unwrap();
-                            g.load_dialog_open = !g.load_dialog_open;
-                        }
-                    }
-                    let mut load_btn = Declaration::<Texture2D, ()>::new();
-                    load_btn
-                        .id(load_id)
+                    let mut spacer = Declaration::<Texture2D, ()>::new();
+                    spacer.layout().width(grow!()).end();
+                    clay_scope.with(&spacer, |_| {});
+
+                    let mut persist_group = Declaration::<Texture2D, ()>::new();
+                    persist_group
                         .layout()
-                        .padding(Padding::new(12, 12, 6, 6))
-                        .end()
-                        .background_color(load_color)
-                        .corner_radius()
-                        .all(6.0 * font_scale)
+                        .direction(LayoutDirection::LeftToRight)
+                        .child_gap(10)
+                        .padding(Padding::new(0, 0, 0, 4))
                         .end();
-                    clay_scope.with(&load_btn, |clay| {
-                        clay.text(
-                            arena.push(format!("{}   LOAD", ICON_LAYERS)),
-                            clay_layout::text::TextConfig::new()
-                                .font_size((14.0 * font_scale) as u16)
-                                .color(theme.cl_text_main)
-                                .end(),
-                        );
+                    clay_scope.with(&persist_group, |clay_scope| {
+                        let save_id = clay_scope.id("btn_save_state");
+                        let mut save_color = theme.cl_bg_section;
+                        if clay_scope.pointer_over(save_id) {
+                            save_color = theme.cl_primary_hover;
+                            if interaction.mouse_pressed {
+                                interaction.is_handled = true;
+                                let mut g = state.lock().unwrap();
+                                let label = match g.current_tab {
+                                    UITab::Text => format!("Text: {}", *g.text_content),
+                                    UITab::Image => g.custom_image_path.as_ref().map(|p| (**p).clone()).unwrap_or_else(|| "Image".to_string()),
+                                    _ => "State".to_string(),
+                                };
+                                let new_state = g.capture_state(&label);
+                                let mut states = (*g.saved_states).clone();
+                                states.push(new_state);
+                                g.saved_states = Arc::new(states);
+                                g.save_persistence();
+                            }
+                        }
+                        let mut save_btn = Declaration::<Texture2D, ()>::new();
+                        save_btn
+                            .id(save_id)
+                            .layout()
+                            .padding(Padding::new(12, 12, 6, 6))
+                            .end()
+                            .background_color(save_color)
+                            .corner_radius()
+                            .all(6.0 * font_scale)
+                            .end();
+                        clay_scope.with(&save_btn, |clay| {
+                            clay.text(
+                                arena.push(format!("{}   SAVE", ICON_COPY)),
+                                clay_layout::text::TextConfig::new()
+                                    .font_size((14.0 * font_scale) as u16)
+                                    .color(theme.cl_text_main)
+                                    .end(),
+                            );
+                        });
+
+                        let load_id = clay_scope.id("btn_load_state");
+                        let mut load_color = theme.cl_bg_section;
+                        if clay_scope.pointer_over(load_id) {
+                            load_color = theme.cl_primary_hover;
+                            if interaction.mouse_pressed {
+                                interaction.is_handled = true;
+                                let mut g = state.lock().unwrap();
+                                g.load_dialog_open = !g.load_dialog_open;
+                            }
+                        }
+                        let mut load_btn = Declaration::<Texture2D, ()>::new();
+                        load_btn
+                            .id(load_id)
+                            .layout()
+                            .padding(Padding::new(12, 12, 6, 6))
+                            .end()
+                            .background_color(load_color)
+                            .corner_radius()
+                            .all(6.0 * font_scale)
+                            .end();
+                        clay_scope.with(&load_btn, |clay| {
+                            clay.text(
+                                arena.push(format!("{}   LOAD", ICON_LAYERS)),
+                                clay_layout::text::TextConfig::new()
+                                    .font_size((14.0 * font_scale) as u16)
+                                    .color(theme.cl_text_main)
+                                    .end(),
+                            );
                         });
                     });
                 });
@@ -1067,7 +1097,8 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                         let mut tidy_color = theme.cl_text_label;
                         if clay_scope.pointer_over(tidy_id) {
                             tidy_color = theme.cl_text_main;
-                            if mouse_pressed {
+                            if interaction.mouse_pressed {
+                                interaction.is_handled = true;
                                 let mut guard = state.lock().unwrap();
                                 guard.paths.clear();
                             }
@@ -1099,6 +1130,21 @@ fn main() -> Result<(), crate::error::TrogdorError> {
 
                 // Column 2: Controls (SCROLLABLE)
                 let col2_outer_id = clay_scope.id("controls_outer");
+                let sb_area_id = clay_scope.id("col2_scrollbar_area");
+                let is_dragging = state.lock().unwrap().col2_dragging;
+                
+                // Early check for scrollbar interaction to prevent drag-to-scroll conflict
+                if (clay_scope.pointer_over(sb_area_id) || is_dragging) && (interaction.mouse_down || interaction.mouse_pressed) {
+                    interaction.is_handled = true;
+                }
+
+                let max_scroll = match current_tab {
+                    UITab::Manual => 800.0,
+                    UITab::Pattern => 1200.0,
+                    UITab::Image => 1500.0,
+                    UITab::Text => 1800.0,
+                } * font_scale;
+
                 let mut col2_outer = Declaration::<Texture2D, ()>::new();
                 let col2_width = 400.0;
                 col2_outer
@@ -1142,10 +1188,9 @@ fn main() -> Result<(), crate::error::TrogdorError> {
 
                         if !skip_scroll {
                             let mut g = state.lock().unwrap();
-                            g.col2_scroll_offset += scroll_delta.y * 40.0;
-                            if g.col2_scroll_offset > 0.0 {
-                                g.col2_scroll_offset = 0.0;
-                            }
+                            g.col2_scroll_offset += interaction.scroll_delta.y * 40.0;
+                            if g.col2_scroll_offset > 0.0 { g.col2_scroll_offset = 0.0; }
+                            if g.col2_scroll_offset < -max_scroll { g.col2_scroll_offset = -max_scroll; }
                         }
                     }
 
@@ -1155,69 +1200,63 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                             clay_scope,
                             &state,
                             &sections,
-                            mouse_pressed,
                             &mut clipboard,
                             &arena,
                             font_scale,
                             &theme,
+                            &mut interaction,
                         );
                         ui_manual::render_manual_right_col(
                             clay_scope,
                             &state,
                             &sections,
-                            mouse_pos,
-                            mouse_down,
-                            mouse_pressed,
-                            scroll_delta.y,
                             &mut clipboard,
                             &arena,
                             font_scale,
                             &theme,
+                            &mut interaction,
                         );
                     }
                     UITab::Pattern => ui_test::render_test_controls(
                         clay_scope,
                         &state,
                         &sections,
-                        mouse_pos,
-                        mouse_down,
-                        mouse_pressed,
-                        scroll_delta.y,
                         &mut clipboard,
                         &arena,
                         font_scale,
                         &theme,
+                        &mut interaction,
                     ),
                     UITab::Image => ui_image::render_image_controls(
                         clay_scope,
                         &state,
                         &sections,
-                        mouse_pos,
-                        mouse_down,
-                        mouse_pressed,
-                        scroll_delta.y,
                         &mut clipboard,
                         &arena,
                         font_scale,
                         &theme,
+                        &mut interaction,
                     ),
                     UITab::Text => ui_text::render_text_controls(
                         clay_scope,
                         &state,
                         &sections,
-                        mouse_pos,
-                        mouse_down,
-                        mouse_pressed,
-                        scroll_delta.y,
                         &mut clipboard,
                         &arena,
                         font_scale,
                         &theme,
+                        &mut interaction,
                     ),
                 });
 
-                let is_dragging = state.lock().unwrap().col2_dragging;
-                let sb_area_id = clay_scope.id("col2_scrollbar_area");
+                // Drag-to-scroll logic
+                if clay_scope.pointer_over(col2_outer_id) && interaction.mouse_down && !interaction.is_handled {
+                    let mut g = state.lock().unwrap();
+                    g.col2_scroll_offset += interaction.mouse_delta.y;
+                    if g.col2_scroll_offset > 0.0 { g.col2_scroll_offset = 0.0; }
+                    if g.col2_scroll_offset < -max_scroll { g.col2_scroll_offset = -max_scroll; }
+                }
+
                 let mut sb_area = Declaration::<Texture2D, ()>::new();
                 sb_area
                     .id(sb_area_id)
@@ -1233,21 +1272,19 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                     if clay_scope.pointer_over(sb_area_id) || is_dragging {
                         let handle_height = 40.0 * font_scale;
                         let track_height = 800.0 * font_scale;
-                        let max_scroll = 1500.0;
                         let scroll_ratio = (-c2_offset / max_scroll).clamp(0.0, 1.0);
                         let handle_y = ((track_height - handle_height) * scroll_ratio) as u16;
 
-                        if clay_scope.pointer_over(sb_area_id) && mouse_pressed {
+                        if clay_scope.pointer_over(sb_area_id) && interaction.mouse_pressed {
                             state.lock().unwrap().col2_dragging = true;
                         }
 
                         if state.lock().unwrap().col2_dragging {
-                            if !mouse_down {
+                            if !interaction.mouse_down {
                                 state.lock().unwrap().col2_dragging = false;
                             } else {
-                                let dy = rl.get_mouse_delta().y;
+                                let dy = interaction.mouse_delta.y;
                                 let mut g = state.lock().unwrap();
-                                // if we move handle down (dy > 0), content moves up (c2_offset decreases)
                                 g.col2_scroll_offset -= dy * (max_scroll / track_height);
                                 if g.col2_scroll_offset > 0.0 { g.col2_scroll_offset = 0.0; }
                                 if g.col2_scroll_offset < -max_scroll { g.col2_scroll_offset = -max_scroll; }
@@ -1310,7 +1347,8 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                     } else {
                         COLOR_DANGER_HOVER
                     };
-                    if mouse_pressed {
+                    if interaction.mouse_pressed {
+                        interaction.is_handled = true;
                         let mut g = state.lock().unwrap();
                         g.send_command(crate::gcode::CMD_FEED_HOLD.to_string());
                         g.send_command(crate::gcode::CMD_LASER_OFF.to_string());
@@ -1345,11 +1383,10 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                 crate::ui_components::render_log(
                     clay_scope,
                     &state,
-                    scroll_delta.into(),
                     &arena,
                     font_scale,
                     &theme,
-                    mouse_pressed,
+                    &mut interaction,
                 );
             });
         });
@@ -1405,7 +1442,8 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                             let mut close_color = theme.cl_text_sub;
                             if clay_scope.pointer_over(close_id) {
                                 close_color = theme.cl_text_main;
-                                if mouse_pressed {
+                                if interaction.mouse_pressed {
+                                    interaction.is_handled = true;
                                     state.lock().unwrap().load_dialog_open = false;
                                 }
                             }
@@ -1472,7 +1510,8 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                                     let mut del_color = theme.cl_text_sub;
                                     if clay_scope.pointer_over(del_id) {
                                         del_color = theme.cl_danger;
-                                        if mouse_pressed {
+                                        if interaction.mouse_pressed {
+                                            interaction.is_handled = true;
                                             let mut g = state.lock().unwrap();
                                             let mut states = (*g.saved_states).clone();
                                             states.remove(idx);
@@ -1483,7 +1522,8 @@ fn main() -> Result<(), crate::error::TrogdorError> {
 
                                     let mut info_col = Declaration::<Texture2D, ()>::new();
                                     info_col.layout().width(grow!()).direction(LayoutDirection::TopToBottom).end();
-                                    if clay_scope.pointer_over(item_id) && !clay_scope.pointer_over(del_id) && mouse_pressed {
+                                    if clay_scope.pointer_over(item_id) && !clay_scope.pointer_over(del_id) && interaction.mouse_pressed {
+                                        interaction.is_handled = true;
                                         let mut g = state.lock().unwrap();
                                         g.apply_state(s);
                                         g.load_dialog_open = false;
@@ -1524,7 +1564,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                 });
             }
 
-        crate::ui_components::render_toasts(&mut clay_scope, &state, &arena, font_scale, mouse_pressed, &theme);
+        crate::ui_components::render_toasts(&mut clay_scope, &state, &arena, font_scale, &mut interaction, &theme);
         let render_commands = clay_scope.end();
 
         let mut d = rl.begin_drawing(&thread);
