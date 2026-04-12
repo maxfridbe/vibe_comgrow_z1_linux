@@ -714,6 +714,7 @@ fn main() -> Result<(), crate::error::TrogdorError> {
 
             clay_scope.with(&main_container, |clay_scope| {
                 let bottom_bar_height = state.lock().unwrap().bottom_bar_height * font_scale;
+
                 let standard_margin = (20.0 * font_scale) as u16;
 
             // Combined Header and Tab Bar Container
@@ -1292,10 +1293,13 @@ fn main() -> Result<(), crate::error::TrogdorError> {
                         }
 
                         let mut track = Declaration::<Texture2D, ()>::new();
+                        let max_padding = (track_height - handle_height).max(0.0) as u16;
+                        let safe_handle_y = handle_y.min(max_padding);
+                        
                         track.layout()
                             .width(fixed!(2.0 * font_scale))
                             .height(grow!())
-                            .padding(Padding::new(0, 0, handle_y, 0))
+                            .padding(Padding::new(0, 0, safe_handle_y, 0))
                             .child_alignment(Alignment::new(LayoutAlignmentX::Center, LayoutAlignmentY::Top))
                             .end()
                             .background_color(theme.cl_text_sub);
